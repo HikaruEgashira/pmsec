@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a> · <a href="bash/">bash</a>
+  <a href="https://www.npmjs.com/package/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a> · <a href="bash/">bash</a> · <a href="powershell/">PowerShell</a>
 </p>
 
 ```bash
@@ -25,6 +25,14 @@ uvx pmsec unset
 curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
 pmsec check --min 7
+```
+
+```powershell
+# Windows? grab the PowerShell port:
+Invoke-WebRequest `
+  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
+  -OutFile $env:USERPROFILE\bin\pmsec.ps1
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1 check --min 7
 ```
 
 > Bootstrap: pmsec itself is subject to cooldown, so the very first install

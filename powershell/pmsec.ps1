@@ -1,0 +1,697 @@
+#!/usr/bin/env pwsh
+# pmsec — install-time cooldown for npm / pnpm / yarn / bun / cargo / mise / uv.
+# PowerShell port. Targets Windows PowerShell 5.1 and PowerShell 7+.
+# License: MIT.
+[CmdletBinding(PositionalBinding=$false)]
+param(
+  [Parameter(ValueFromRemainingArguments=$true)]
+  [string[]]$Argv
+)
+
+$ErrorActionPreference = 'Stop'
+$script:PmsecVersion = '0.3.0'
+$script:DefaultMin = 7
+$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
+
+# ---------- platform / paths ----------
+
+function Get-PmsecPlatform {
+  if ($env:PMSEC_PLATFORM) { return $env:PMSEC_PLATFORM }
+  if ($env:OS -eq 'Windows_NT') { return 'win32' }
+  if ($PSVersionTable.PSVersion.Major -ge 6 -and (Get-Variable -Name IsMacOS -ErrorAction Ignore) -and $IsMacOS) { return 'darwin' }
+  return 'linux'
+}
+
+# Pmsec ignores PowerShell's session-static $HOME so tests can override paths
+# via $env:HOME / $env:USERPROFILE / $env:PMSEC_HOME at runtime.
+function Get-PmsecHome {
+  if ($env:PMSEC_HOME) { return $env:PMSEC_HOME }
+  $platform = Get-PmsecPlatform
+  if ($platform -eq 'win32') {
+    if ($env:USERPROFILE) { return $env:USERPROFILE }
+  } else {
+    if ($env:HOME) { return $env:HOME }
+  }
+  return $HOME
+}
+
+function Get-NpmrcPath {
+  if ($env:NPM_CONFIG_USERCONFIG) { return $env:NPM_CONFIG_USERCONFIG }
+  return (Join-Path (Get-PmsecHome) '.npmrc')
+}
+function Get-UvPath {
+  if ($env:UV_CONFIG_FILE) { return $env:UV_CONFIG_FILE }
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    $base = if ($env:APPDATA) { $env:APPDATA } else { Join-Path (Get-PmsecHome) 'AppData/Roaming' }
+    return (Join-Path $base 'uv/uv.toml')
+  }
+  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path (Get-PmsecHome) '.config' }
+  return (Join-Path $base 'uv/uv.toml')
+}
+function Get-BunPath {
+  if ($env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
+  return (Join-Path (Get-PmsecHome) '.bunfig.toml')
+}
+function Get-YarnPath {
+  if ($env:YARN_RC_FILENAME) { return $env:YARN_RC_FILENAME }
+  return (Join-Path (Get-PmsecHome) '.yarnrc.yml')
+}
+function Get-CargoPath {
+  if ($env:CARGO_HOME) { return (Join-Path $env:CARGO_HOME 'config.toml') }
+  return (Join-Path (Get-PmsecHome) '.cargo/config.toml')
+}
+function Get-MisePath {
+  if ($env:MISE_GLOBAL_CONFIG_FILE) { return $env:MISE_GLOBAL_CONFIG_FILE }
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path (Get-PmsecHome) 'AppData/Local' }
+    return (Join-Path $base 'mise/config.toml')
+  }
+  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path (Get-PmsecHome) '.config' }
+  return (Join-Path $base 'mise/config.toml')
+}
+
+# ---------- line buffer ----------
+# Mirrors node/src/util/lines.mjs. LinesBuf is an ArrayList of strings; the
+# rendered file is buf joined by \n with a trailing \n iff non-empty.
+
+$script:LinesBuf = [System.Collections.ArrayList]::new()
+
+function LinesLoad([string]$Path) {
+  $script:LinesBuf = [System.Collections.ArrayList]::new()
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+  $raw = [System.IO.File]::ReadAllText($Path)
+  if ($raw -eq '') { return }
+  $normalized = $raw -replace "`r`n", "`n"
+  if ($normalized.EndsWith("`n")) { $normalized = $normalized.Substring(0, $normalized.Length - 1) }
+  foreach ($p in ($normalized -split "`n")) { [void]$script:LinesBuf.Add($p) }
+}
+
+function LinesDump {
+  if ($script:LinesBuf.Count -eq 0) { return '' }
+  return (($script:LinesBuf -join "`n") + "`n")
+}
+
+function LinesIsSection([string]$Line) {
+  return ($Line -match '^\s*\[[^\]]+\]\s*$')
+}
+
+function LinesEntryKey([string]$Line, [string]$Sep) {
+  if ($Sep -eq ':') {
+    if ($Line -match '^\s*([A-Za-z0-9_.\-]+)\s*:') { return $Matches[1] }
+  } else {
+    if ($Line -match '^\s*([A-Za-z0-9_.\-]+)\s*=') { return $Matches[1] }
+  }
+  return $null
+}
+
+function LinesSectionRange([string]$Section) {
+  $n = $script:LinesBuf.Count
+  if ([string]::IsNullOrEmpty($Section)) {
+    for ($i = 0; $i -lt $n; $i++) {
+      if (LinesIsSection $script:LinesBuf[$i]) { return ,@(0, $i) }
+    }
+    return ,@(0, $n)
+  }
+  $header = "[$Section]"
+  $start = -1
+  for ($i = 0; $i -lt $n; $i++) {
+    if ($script:LinesBuf[$i].Trim() -eq $header) { $start = $i + 1; break }
+  }
+  if ($start -lt 0) { return $null }
+  $end = $n
+  for ($i = $start; $i -lt $n; $i++) {
+    if (LinesIsSection $script:LinesBuf[$i]) { $end = $i; break }
+  }
+  return ,@($start, $end)
+}
+
+function LinesIndexOfKey([string]$Key, [string]$Sep, [int]$Start, [int]$End) {
+  for ($i = $Start; $i -lt $End; $i++) {
+    $k = LinesEntryKey $script:LinesBuf[$i] $Sep
+    if ($k -eq $Key) { return $i }
+  }
+  return -1
+}
+
+function LinesFirstSectionIdx {
+  $n = $script:LinesBuf.Count
+  for ($i = 0; $i -lt $n; $i++) {
+    if (LinesIsSection $script:LinesBuf[$i]) { return $i }
+  }
+  return -1
+}
+
+function LinesReadKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
+  $range = LinesSectionRange $Section
+  if ($null -eq $range) { return $null }
+  $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]
+  if ($idx -lt 0) { return $null }
+  $line = $script:LinesBuf[$idx]
+  if ($Sep -eq ':') {
+    if ($line -match '^\s*[A-Za-z0-9_.\-]+\s*:\s*(.*?)\s*$') { return $Matches[1] }
+  } else {
+    if ($line -match '^\s*[A-Za-z0-9_.\-]+\s*=\s*(.*?)\s*$') { return $Matches[1] }
+  }
+  return $null
+}
+
+function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [string]$Section = '') {
+  $n = $script:LinesBuf.Count
+  $range = LinesSectionRange $Section
+  if ($null -eq $range) {
+    if ($n -gt 0 -and $script:LinesBuf[$n-1] -ne '') { [void]$script:LinesBuf.Add('') }
+    [void]$script:LinesBuf.Add("[$Section]")
+    [void]$script:LinesBuf.Add($ValueLine)
+    return
+  }
+  $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]
+  if ($idx -ge 0) {
+    $script:LinesBuf[$idx] = $ValueLine
+    return
+  }
+  if (-not [string]::IsNullOrEmpty($Section)) {
+    $script:LinesBuf.Insert($range[0], $ValueLine)
+    return
+  }
+  $first = LinesFirstSectionIdx
+  if ($first -lt 0) {
+    [void]$script:LinesBuf.Add($ValueLine)
+  } else {
+    $script:LinesBuf.Insert($first, '')
+    $script:LinesBuf.Insert($first, $ValueLine)
+  }
+}
+
+function LinesRemoveKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
+  $range = LinesSectionRange $Section
+  if ($null -eq $range) { return $false }
+  $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]
+  if ($idx -lt 0) { return $false }
+  $script:LinesBuf.RemoveAt($idx)
+  if ($idx -lt $script:LinesBuf.Count -and $script:LinesBuf[$idx] -eq '') {
+    $script:LinesBuf.RemoveAt($idx)
+  }
+  return $true
+}
+
+# ---------- atomic write ----------
+
+function WriteAtomic([string]$Path, [string]$Content) {
+  $dir = Split-Path -Parent $Path
+  if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+    [void](New-Item -ItemType Directory -Force -Path $dir)
+  }
+  $bak = "$Path.bak"
+  if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-Path -LiteralPath $bak)) {
+    Copy-Item -LiteralPath $Path -Destination $bak
+  }
+  $tmp = "$Path." + [guid]::NewGuid().ToString('N').Substring(0,8) + '.tmp'
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+  [System.IO.File]::WriteAllText($tmp, $Content, $utf8NoBom)
+  Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
+# ---------- version detection ----------
+
+function VersionDetect([string]$Bin) {
+  if (-not (Get-Command $Bin -ErrorAction Ignore)) { return $null }
+  try { $out = & $Bin --version 2>$null } catch { return $null }
+  $text = ($out | Out-String)
+  if ($text -match '(\d+)\.(\d+)\.(\d+)') {
+    return @{ Major = [int]$Matches[1]; Minor = [int]$Matches[2]; Patch = [int]$Matches[3]; Raw = $Matches[0] }
+  }
+  return $null
+}
+
+function VersionGte($V, [int[]]$Target) {
+  if ($V.Major -ne $Target[0]) { return $V.Major -gt $Target[0] }
+  if ($V.Minor -ne $Target[1]) { return $V.Minor -gt $Target[1] }
+  return $V.Patch -ge $Target[2]
+}
+
+# ---------- per-tool metadata ----------
+
+function ToolPath([string]$Tool) {
+  switch ($Tool) {
+    'npm'   { return Get-NpmrcPath }
+    'pnpm'  { return Get-NpmrcPath }
+    'yarn'  { return Get-YarnPath }
+    'bun'   { return Get-BunPath }
+    'cargo' { return Get-CargoPath }
+    'mise'  { return Get-MisePath }
+    'uv'    { return Get-UvPath }
+  }
+}
+function ToolKey([string]$Tool) {
+  switch ($Tool) {
+    'npm'   { 'min-release-age' }
+    'pnpm'  { 'minimum-release-age' }
+    'yarn'  { 'npmMinimalAgeGate' }
+    'bun'   { 'minimumReleaseAge' }
+    'cargo' { 'minimum-release-age' }
+    'mise'  { 'minimum_release_age' }
+    'uv'    { 'exclude-newer' }
+  }
+}
+function ToolSection([string]$Tool) {
+  switch ($Tool) {
+    'bun'   { 'install' }
+    'cargo' { 'install' }
+    'mise'  { 'settings' }
+    default { '' }
+  }
+}
+function ToolSep([string]$Tool) {
+  if ($Tool -eq 'yarn') { return ':' }
+  return '='
+}
+
+# ---------- per-tool: read / write / unset ----------
+
+function ParseDaysDw([string]$Value) {
+  $v = $Value.Trim('"').Trim()
+  if ($v -match '^(\d+)\s*([A-Za-z]+)$') {
+    $n = [int]$Matches[1]
+    $u = $Matches[2].ToLower()
+    if (@('d','day','days') -contains $u) { return $n }
+    if (@('w','week','weeks') -contains $u) { return $n * 7 }
+  }
+  return $null
+}
+
+function ParseDaysMise([string]$Value) {
+  $v = $Value.Trim('"').Trim()
+  if ($v -match '^(\d+)\s*([A-Za-z]+)$') {
+    $n = [int]$Matches[1]
+    $u = $Matches[2].ToLower()
+    if (@('d','day','days') -contains $u) { return $n }
+    if (@('w','week','weeks') -contains $u) { return $n * 7 }
+    if (@('m','month','months') -contains $u) { return $n * 30 }
+    if (@('y','year','years') -contains $u) { return $n * 365 }
+  }
+  return $null
+}
+
+function ParseDaysUv([string]$Value) {
+  if ($Value -match '^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$') {
+    $n = [int]$Matches[1]
+    $u = $Matches[2].ToLower()
+    if (@('week','weeks','w') -contains $u) { return $n * 7 }
+    return $n
+  }
+  return $null
+}
+
+function ToolRead([string]$Tool) {
+  $key = ToolKey $Tool
+  $sep = ToolSep $Tool
+  $section = ToolSection $Tool
+  $path = ToolPath $Tool
+  LinesLoad $path
+  $val = LinesReadKey $key $sep $section
+  $days = $null
+  if ($null -ne $val) {
+    switch ($Tool) {
+      'npm'   { if ($val -match '^\d+$') { $days = [int]$val } }
+      'pnpm'  { if ($val -match '^\d+$') { $days = [int][math]::Floor([int]$val / 1440.0) } }
+      'bun'   { if ($val -match '^\d+$') { $days = [int][math]::Floor([int]$val / 86400.0) } }
+      'yarn'  { $days = ParseDaysDw $val }
+      'cargo' { $days = ParseDaysDw $val }
+      'mise'  { $days = ParseDaysMise $val }
+      'uv'    { $days = ParseDaysUv $val }
+    }
+  }
+  return @{ Path = $path; Configured = $val; Days = $days }
+}
+
+function ToolWriteValueLine([string]$Tool, [int]$Days) {
+  $key = ToolKey $Tool
+  switch ($Tool) {
+    'npm'   { return "$key=$Days" }
+    'pnpm'  { return ("$key=" + ($Days * 1440)) }
+    'yarn'  { return ('{0}: "{1}d"' -f $key, $Days) }
+    'bun'   { return ("$key = " + ($Days * 86400)) }
+    'cargo' { return ('{0} = "{1}d"' -f $key, $Days) }
+    'mise'  { return ('{0} = "{1}d"' -f $key, $Days) }
+    'uv'    { return ('{0} = "{1} days"' -f $key, $Days) }
+  }
+}
+
+function ToolWrite([string]$Tool, [int]$Days) {
+  $path = ToolPath $Tool
+  $line = ToolWriteValueLine $Tool $Days
+  LinesLoad $path
+  LinesSetKey (ToolKey $Tool) $line (ToolSep $Tool) (ToolSection $Tool)
+  WriteAtomic $path (LinesDump)
+  return @{ Path = $path }
+}
+
+function ToolUnset([string]$Tool) {
+  $path = ToolPath $Tool
+  LinesLoad $path
+  $removed = LinesRemoveKey (ToolKey $Tool) (ToolSep $Tool) (ToolSection $Tool)
+  if ($removed) { WriteAtomic $path (LinesDump) }
+  return @{ Path = $path; Removed = $removed }
+}
+
+function ToolPreflight([string]$Tool) {
+  if ($Tool -eq 'cargo') { return $null }
+  $v = VersionDetect $Tool
+  if ($null -eq $v) { return $null }
+  switch ($Tool) {
+    'npm' {
+      if (-not (VersionGte $v @(11,10,0))) {
+        return ('npm {0} < 11.10.0: min-release-age is silently ignored. Upgrade npm to enforce the cooldown.' -f $v.Raw)
+      }
+    }
+    'pnpm' {
+      if (-not (VersionGte $v @(10,6,0))) {
+        return ('pnpm {0} < 10.6.0: minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.' -f $v.Raw)
+      }
+    }
+    'yarn' {
+      if (-not (VersionGte $v @(4,10,0))) {
+        return ('yarn {0} < 4.10.0: npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' -f $v.Raw)
+      }
+    }
+    'bun' {
+      if (-not (VersionGte $v @(1,3,0))) {
+        return ('bun {0} < 1.3.0: minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' -f $v.Raw)
+      }
+    }
+    'mise' {
+      if (-not (VersionGte $v @(2026,4,22))) {
+        return ('mise {0} < 2026.4.22: setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' -f $v.Raw)
+      }
+    }
+    'uv' {
+      if (-not (VersionGte $v @(0,9,17))) {
+        return ('uv {0} < 0.9.17: writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' -f $v.Raw)
+      }
+    }
+  }
+  return $null
+}
+
+# ---------- JSON helpers ----------
+
+function JsonString([string]$S) {
+  if ($null -eq $S) { return 'null' }
+  $e = $S
+  $e = $e -replace '\\', '\\'
+  $e = $e -replace '"', '\"'
+  $e = $e -replace "`n", '\n'
+  $e = $e -replace "`r", '\r'
+  $e = $e -replace "`t", '\t'
+  return '"' + $e + '"'
+}
+
+function JsonStrOrNull($S) {
+  if ($null -eq $S) { return 'null' }
+  return (JsonString ([string]$S))
+}
+function JsonIntOrNull($N) {
+  if ($null -eq $N) { return 'null' }
+  return [string][int]$N
+}
+function JsonBool([bool]$B) { if ($B) { 'true' } else { 'false' } }
+
+# ---------- output streams ----------
+
+function StdOut([string]$S) { [Console]::Out.WriteLine($S) }
+function StdOutNoNewline([string]$S) { [Console]::Out.Write($S) }
+function StdErr([string]$S) { [Console]::Error.WriteLine($S) }
+
+function Pad4([string]$S) {
+  if ($S.Length -ge 4) { return $S }
+  return $S.PadRight(4)
+}
+
+# ---------- CLI ----------
+
+function PrintUsage {
+@"
+pmsec <command> [options]
+
+Commands:
+  check                 Inspect cooldown settings (exit 1 if any tool below --min)
+  set <DAYS>            Apply DAYS-day cooldown to all selected tools
+  unset                 Remove cooldown settings from selected tools
+
+Options:
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
+  --min DAYS            Minimum acceptable days for check (default $($script:DefaultMin))
+  --json                Emit JSON output
+  -h, --help            Show this help
+
+Examples:
+  pmsec check --min 7
+  pmsec set 7
+  pmsec unset --tool npm
+"@
+}
+
+function ParseArgs($Argv) {
+  $opts = @{
+    Command = ''; Days = $null; Min = $script:DefaultMin
+    Json = $false; Only = $null; Help = $false
+  }
+  $positional = New-Object System.Collections.Generic.List[string]
+  $i = 0
+  $n = if ($null -eq $Argv) { 0 } else { $Argv.Count }
+  while ($i -lt $n) {
+    $a = $Argv[$i]
+    if ($a -eq '-h' -or $a -eq '--help') { $opts.Help = $true }
+    elseif ($a -eq '--json') { $opts.Json = $true }
+    elseif ($a -eq '--min') { $i++; $opts.Min = [int]$Argv[$i] }
+    elseif ($a -like '--min=*') { $opts.Min = [int]($a.Substring(6)) }
+    elseif ($a -eq '--tool') { $i++; $opts.Only = $Argv[$i] -split ',' }
+    elseif ($a -like '--tool=*') { $opts.Only = $a.Substring(7) -split ',' }
+    elseif ($a.StartsWith('-')) { throw "unknown flag: $a" }
+    else { $positional.Add($a) }
+    $i++
+  }
+  if ($positional.Count -gt 0) { $opts.Command = $positional[0] }
+  if ($opts.Command -eq 'set' -and $positional.Count -gt 1) {
+    $opts.Days = [int]$positional[1]
+  }
+  return $opts
+}
+
+function SelectTools($Only) {
+  if ($null -eq $Only -or $Only.Count -eq 0) { return $script:Tools }
+  $found = New-Object System.Collections.Generic.List[string]
+  $missing = New-Object System.Collections.Generic.List[string]
+  foreach ($n in $Only) {
+    $n = $n.Trim()
+    if ($n -eq '') { continue }
+    if ($script:Tools -contains $n) { $found.Add($n) } else { $missing.Add($n) }
+  }
+  if ($missing.Count -gt 0) {
+    throw "unknown tool(s): $([string]::Join(',', $missing))"
+  }
+  return $found.ToArray()
+}
+
+function CmdCheck($Targets, [int]$Min, [bool]$Json) {
+  $rows = New-Object System.Collections.Generic.List[hashtable]
+  $failing = 0
+  foreach ($t in $Targets) {
+    $r = ToolRead $t
+    $warn = ToolPreflight $t
+    if ($null -eq $r.Days -or $r.Days -lt $Min) { $failing++ }
+    $rows.Add(@{
+      Tool = $t; Key = (ToolKey $t); Path = $r.Path
+      Configured = $r.Configured; Days = $r.Days; Warn = $warn
+    })
+  }
+  if ($Json) {
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('{')
+    [void]$sb.AppendLine("  ""min"": $Min,")
+    [void]$sb.AppendLine('  "rows": [')
+    for ($i = 0; $i -lt $rows.Count; $i++) {
+      $r = $rows[$i]
+      $cfg  = JsonStrOrNull $r.Configured
+      $days = JsonIntOrNull $r.Days
+      $warn = JsonStrOrNull $r.Warn
+      $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $days, ""warn"": $warn}"
+      if ($i -lt $rows.Count - 1) { $entry += ',' }
+      [void]$sb.AppendLine($entry)
+    }
+    [void]$sb.AppendLine('  ],')
+    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failing -eq 0))")
+    [void]$sb.Append('}')
+    StdOut $sb.ToString()
+  } else {
+    foreach ($r in $rows) {
+      $status = if ($null -eq $r.Days) { 'MISSING' } elseif ($r.Days -lt $Min) { 'STALE  ' } else { 'OK     ' }
+      $disp = if ($null -eq $r.Configured) { '(unset)' } else { $r.Configured }
+      StdOut ('{0} {1} {2} = {3}  [{4}]' -f $status, (Pad4 $r.Tool), $r.Key, $disp, $r.Path)
+      if ($r.Warn) { StdOut ("       `u{26A0} " + $r.Warn) }
+    }
+  }
+  if ($failing -gt 0) {
+    StdErr ("pmsec: $failing tool(s) below $Min days")
+    return 1
+  }
+  return 0
+}
+
+function ExplainFsError([string]$Tool, $Err) {
+  return ("$Tool" + ': ' + $Err.ToString())
+}
+
+function CmdSet($Targets, [int]$Days, [bool]$Json) {
+  if ($Days -le 0) { throw 'set requires DAYS > 0' }
+  $results = New-Object System.Collections.Generic.List[hashtable]
+  $failures = New-Object System.Collections.Generic.List[string]
+  $warnCount = 0
+  foreach ($t in $Targets) {
+    $warn = ToolPreflight $t
+    if ($warn) { $warnCount++ }
+    $err = $null
+    $path = ToolPath $t
+    try {
+      $w = ToolWrite $t $Days
+      $path = $w.Path
+    } catch {
+      $err = ExplainFsError $t $_
+      $failures.Add($err)
+    }
+    $results.Add(@{
+      Tool = $t; Path = $path; Days = $Days
+      Ok = ($null -eq $err); Warn = $warn; Error = $err
+    })
+  }
+  if ($Json) {
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('{')
+    [void]$sb.AppendLine("  ""set"": $Days,")
+    [void]$sb.AppendLine('  "results": [')
+    for ($i = 0; $i -lt $results.Count; $i++) {
+      $r = $results[$i]
+      $entry = "    {""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
+      if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
+      $entry += '}'
+      if ($i -lt $results.Count - 1) { $entry += ',' }
+      [void]$sb.AppendLine($entry)
+    }
+    [void]$sb.AppendLine('  ],')
+    [void]$sb.Append('  "warnings": [')
+    $first = $true
+    foreach ($r in $results) {
+      if ($r.Warn) {
+        if (-not $first) { [void]$sb.Append(',') }
+        $first = $false
+        [void]$sb.Append("`n    {""tool"": $(JsonString $r.Tool), ""warn"": $(JsonString $r.Warn)}")
+      }
+    }
+    if (-not $first) { [void]$sb.Append("`n  ") }
+    [void]$sb.AppendLine('],')
+    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failures.Count -eq 0))")
+    [void]$sb.Append('}')
+    StdOut $sb.ToString()
+  } else {
+    foreach ($r in $results) {
+      if ($r.Ok) {
+        StdOut ('set  {0} {1} days  [{2}]' -f (Pad4 $r.Tool), $r.Days, $r.Path)
+        if ($r.Warn) { StdOut ("     `u{26A0} " + $r.Warn) }
+      } else {
+        StdOut ('FAIL {0} {1}' -f (Pad4 $r.Tool), $r.Error)
+      }
+    }
+  }
+  foreach ($f in $failures) { StdErr "pmsec: $f" }
+  if ($warnCount -gt 0) {
+    StdErr "pmsec: $warnCount tool(s) configured but runtime may silently ignore the cooldown — see `u{26A0} above"
+  }
+  if ($failures.Count -gt 0) { return 1 }
+  return 0
+}
+
+function CmdUnset($Targets, [bool]$Json) {
+  $results = New-Object System.Collections.Generic.List[hashtable]
+  $failures = New-Object System.Collections.Generic.List[string]
+  foreach ($t in $Targets) {
+    $err = $null
+    $path = ToolPath $t
+    $removed = $false
+    try {
+      $u = ToolUnset $t
+      $path = $u.Path
+      $removed = [bool]$u.Removed
+    } catch {
+      $err = ExplainFsError $t $_
+      $failures.Add($err)
+    }
+    $results.Add(@{
+      Tool = $t; Path = $path; Removed = $removed
+      Ok = ($null -eq $err); Error = $err
+    })
+  }
+  if ($Json) {
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('{')
+    [void]$sb.AppendLine('  "results": [')
+    for ($i = 0; $i -lt $results.Count; $i++) {
+      $r = $results[$i]
+      $entry = "    {""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""removed"": $(JsonBool $r.Removed), ""ok"": $(JsonBool $r.Ok)"
+      if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
+      $entry += '}'
+      if ($i -lt $results.Count - 1) { $entry += ',' }
+      [void]$sb.AppendLine($entry)
+    }
+    [void]$sb.AppendLine('  ],')
+    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failures.Count -eq 0))")
+    [void]$sb.Append('}')
+    StdOut $sb.ToString()
+  } else {
+    foreach ($r in $results) {
+      if (-not $r.Ok) {
+        StdOut ('FAIL {0} {1}' -f (Pad4 $r.Tool), $r.Error)
+      } elseif ($r.Removed) {
+        StdOut ('rm   {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
+      } else {
+        StdOut ('skip {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
+      }
+    }
+  }
+  foreach ($f in $failures) { StdErr "pmsec: $f" }
+  if ($failures.Count -gt 0) { return 1 }
+  return 0
+}
+
+# ---------- entry ----------
+
+try {
+  $opts = ParseArgs $Argv
+} catch {
+  StdErr "pmsec: $_"
+  exit 2
+}
+
+if ($opts.Help) { PrintUsage; exit 0 }
+if ([string]::IsNullOrEmpty($opts.Command)) { PrintUsage; exit 2 }
+
+try {
+  $targets = SelectTools $opts.Only
+} catch {
+  StdErr "pmsec: $_"
+  exit 2
+}
+
+try {
+  switch ($opts.Command) {
+    'check' { exit (CmdCheck $targets $opts.Min $opts.Json) }
+    'set'   {
+      if ($null -eq $opts.Days) { StdErr 'pmsec: set requires DAYS'; exit 2 }
+      exit (CmdSet $targets $opts.Days $opts.Json)
+    }
+    'unset' { exit (CmdUnset $targets $opts.Json) }
+    default { StdErr ("pmsec: unknown command ""{0}""" -f $opts.Command); exit 2 }
+  }
+} catch {
+  StdErr "pmsec: $_"
+  exit 1
+}

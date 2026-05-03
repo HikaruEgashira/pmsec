@@ -6,12 +6,14 @@ on:
       - 'node/**'
       - 'python/**'
       - 'bash/**'
+      - 'powershell/**'
       - '.github/workflows/pmsec-ci.yml'
   pull_request:
     paths:
       - 'node/**'
       - 'python/**'
       - 'bash/**'
+      - 'powershell/**'
       - '.github/workflows/pmsec-ci.yml'
 permissions: {}
 jobs:
@@ -81,3 +83,29 @@ jobs:
       - name: test
         timeout-minutes: 5
         run: bash test/test.sh
+  powershell:
+    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, shell: pwsh }
+          - { os: windows-latest, shell: powershell }
+          - { os: ubuntu-latest,  shell: pwsh }
+          - { os: macos-latest,   shell: pwsh }
+    defaults:
+      run:
+        working-directory: powershell
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: shell version
+        timeout-minutes: 1
+        run: $PSVersionTable | Format-List
+      - name: test
+        timeout-minutes: 5
+        run: ${{ matrix.shell }} -NoProfile -File test/test.ps1
