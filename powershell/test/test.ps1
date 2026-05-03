@@ -4,9 +4,15 @@
 # the other suites verify.
 $ErrorActionPreference = 'Stop'
 $Here  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Pmsec = Resolve-Path (Join-Path $Here '..\pmsec.ps1') -ErrorAction Ignore
-if (-not $Pmsec) { $Pmsec = (Resolve-Path (Join-Path $Here '../pmsec.ps1')).Path }
-else { $Pmsec = $Pmsec.Path }
+function _PathJoinBootstrap {
+  if ($args.Count -eq 0) { return '' }
+  $r = $args[0]
+  for ($i = 1; $i -lt $args.Count; $i++) {
+    foreach ($p in ($args[$i] -split '[\\/]')) { if ($p -ne '') { $r = Join-Path $r $p } }
+  }
+  return $r
+}
+$Pmsec = (Resolve-Path (_PathJoinBootstrap $Here '..' 'pmsec.ps1')).Path
 $PwshExe = if ($IsWindows) {
   (Get-Process -Id $PID).Path
 } else {
@@ -17,8 +23,19 @@ $script:Pass = 0
 $script:Fail = 0
 $script:LastFail = ''
 
+function PathJoin {
+  if ($args.Count -eq 0) { return '' }
+  $result = $args[0]
+  for ($i = 1; $i -lt $args.Count; $i++) {
+    foreach ($p in ($args[$i] -split '[\\/]')) {
+      if ($p -ne '') { $result = Join-Path $result $p }
+    }
+  }
+  return $result
+}
+
 function NewHome {
-  $d = Join-Path ([System.IO.Path]::GetTempPath()) ('pmsec-ps-' + [guid]::NewGuid().ToString('N').Substring(0,8))
+  $d = PathJoin ([System.IO.Path]::GetTempPath()) ('pmsec-ps-' + [guid]::NewGuid().ToString('N').Substring(0,8))
   [void](New-Item -ItemType Directory -Path $d -Force)
   return $d
 }
@@ -107,9 +124,9 @@ T 'set writes every supported tool config' {
     $ok = $ok -and (AssertMatch 'bun section' '(?m)^\[install\]$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
     $ok = $ok -and (AssertMatch 'bun key' '(?m)^minimumReleaseAge = 604800$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
     $ok = $ok -and (AssertMatch 'yarn key' '(?m)^npmMinimalAgeGate: "7d"$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
-    $ok = $ok -and (AssertMatch 'uv key' '(?m)^exclude-newer = "7 days"$' ([System.IO.File]::ReadAllText((Join-Path $h '.config/uv/uv.toml'))))
-    $ok = $ok -and (AssertMatch 'mise section' '(?m)^\[settings\]$' ([System.IO.File]::ReadAllText((Join-Path $h '.config/mise/config.toml'))))
-    $ok = $ok -and (AssertMatch 'mise key' '(?m)^minimum_release_age = "7d"$' ([System.IO.File]::ReadAllText((Join-Path $h '.config/mise/config.toml'))))
+    $ok = $ok -and (AssertMatch 'uv key' '(?m)^exclude-newer = "7 days"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
+    $ok = $ok -and (AssertMatch 'mise section' '(?m)^\[settings\]$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
+    $ok = $ok -and (AssertMatch 'mise key' '(?m)^minimum_release_age = "7d"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
     return $ok
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -140,14 +157,14 @@ T 'unset preserves unrelated keys per file' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "registry=https://r/`nmin-release-age=7`nminimum-release-age=10080`n")
-    [void](New-Item -ItemType Directory -Force -Path (Join-Path $h '.config/uv'))
-    [System.IO.File]::WriteAllText((Join-Path $h '.config/uv/uv.toml'), "exclude-newer = ""7 days""`nindex-strategy = ""unsafe-best-match""`n")
+    [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.config' 'uv'))
+    [System.IO.File]::WriteAllText((PathJoin $h '.config' 'uv' 'uv.toml'), "exclude-newer = ""7 days""`nindex-strategy = ""unsafe-best-match""`n")
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "[install]`nminimumReleaseAge = 604800`nregistry = ""https://x/""`n")
     [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""7d""`nnpmRegistryServer: ""https://r/""`n")
     [void](InvokePmsec $h $null @('unset'))
     $ok = $true
     $ok = $ok -and (AssertFileEq '.npmrc'    "registry=https://r/`n"                                  (Join-Path $h '.npmrc'))
-    $ok = $ok -and (AssertFileEq 'uv.toml'   "index-strategy = ""unsafe-best-match""`n"               (Join-Path $h '.config/uv/uv.toml'))
+    $ok = $ok -and (AssertFileEq 'uv.toml'   "index-strategy = ""unsafe-best-match""`n"               (PathJoin $h '.config' 'uv' 'uv.toml'))
     $ok = $ok -and (AssertFileEq '.bunfig'   "[install]`nregistry = ""https://x/""`n"                 (Join-Path $h '.bunfig.toml'))
     $ok = $ok -and (AssertFileEq '.yarnrc'   "npmRegistryServer: ""https://r/""`n"                    (Join-Path $h '.yarnrc.yml'))
     return $ok
@@ -169,7 +186,7 @@ T '--tool restricts which tools get written' {
     [void](InvokePmsec $h $null @('set','7','--tool','npm,bun'))
     if (-not (Test-Path -LiteralPath (Join-Path $h '.npmrc')))      { $script:LastFail = '.npmrc not written'; return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $h '.bunfig.toml'))){ $script:LastFail = '.bunfig.toml not written'; return $false }
-    if (Test-Path -LiteralPath (Join-Path $h '.config/uv/uv.toml')) { $script:LastFail = 'uv.toml unexpectedly written'; return $false }
+    if (Test-Path -LiteralPath (PathJoin $h '.config' 'uv' 'uv.toml')) { $script:LastFail = 'uv.toml unexpectedly written'; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -177,9 +194,9 @@ T '--tool restricts which tools get written' {
 T 'Windows uv path uses APPDATA' {
   $h = NewHome
   try {
-    $appdata = Join-Path $h 'AppData/Roaming'
+    $appdata = PathJoin $h 'AppData' 'Roaming'
     [void](InvokePmsec $h @{ APPDATA = $appdata; PMSEC_PLATFORM = 'win32' } @('set','7','--tool','uv'))
-    return (AssertMatch 'uv key' '(?m)^exclude-newer = "7 days"$' ([System.IO.File]::ReadAllText((Join-Path $appdata 'uv/uv.toml'))))
+    return (AssertMatch 'uv key' '(?m)^exclude-newer = "7 days"$' ([System.IO.File]::ReadAllText((PathJoin $appdata 'uv' 'uv.toml'))))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 

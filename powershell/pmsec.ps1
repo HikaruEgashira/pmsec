@@ -39,35 +39,49 @@ function Get-NpmrcPath {
   if ($env:NPM_CONFIG_USERCONFIG) { return $env:NPM_CONFIG_USERCONFIG }
   return (Join-Path (Get-PmsecHome) '.npmrc')
 }
+# PathJoin keeps the first segment as a base path and joins each subsequent
+# argument's components through Join-Path so the platform separator wins
+# even when the input string itself contains a foreign separator.
+function PathJoin {
+  if ($args.Count -eq 0) { return '' }
+  $result = $args[0]
+  for ($i = 1; $i -lt $args.Count; $i++) {
+    foreach ($p in ($args[$i] -split '[\\/]')) {
+      if ($p -ne '') { $result = Join-Path $result $p }
+    }
+  }
+  return $result
+}
+
 function Get-UvPath {
   if ($env:UV_CONFIG_FILE) { return $env:UV_CONFIG_FILE }
   if ((Get-PmsecPlatform) -eq 'win32') {
-    $base = if ($env:APPDATA) { $env:APPDATA } else { Join-Path (Get-PmsecHome) 'AppData/Roaming' }
-    return (Join-Path $base 'uv/uv.toml')
+    $base = if ($env:APPDATA) { $env:APPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Roaming' }
+    return (PathJoin $base 'uv' 'uv.toml')
   }
-  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path (Get-PmsecHome) '.config' }
-  return (Join-Path $base 'uv/uv.toml')
+  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { PathJoin (Get-PmsecHome) '.config' }
+  return (PathJoin $base 'uv' 'uv.toml')
 }
 function Get-BunPath {
   if ($env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
-  return (Join-Path (Get-PmsecHome) '.bunfig.toml')
+  return (PathJoin (Get-PmsecHome) '.bunfig.toml')
 }
 function Get-YarnPath {
   if ($env:YARN_RC_FILENAME) { return $env:YARN_RC_FILENAME }
-  return (Join-Path (Get-PmsecHome) '.yarnrc.yml')
+  return (PathJoin (Get-PmsecHome) '.yarnrc.yml')
 }
 function Get-CargoPath {
-  if ($env:CARGO_HOME) { return (Join-Path $env:CARGO_HOME 'config.toml') }
-  return (Join-Path (Get-PmsecHome) '.cargo/config.toml')
+  if ($env:CARGO_HOME) { return (PathJoin $env:CARGO_HOME 'config.toml') }
+  return (PathJoin (Get-PmsecHome) '.cargo' 'config.toml')
 }
 function Get-MisePath {
   if ($env:MISE_GLOBAL_CONFIG_FILE) { return $env:MISE_GLOBAL_CONFIG_FILE }
   if ((Get-PmsecPlatform) -eq 'win32') {
-    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path (Get-PmsecHome) 'AppData/Local' }
-    return (Join-Path $base 'mise/config.toml')
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
+    return (PathJoin $base 'mise' 'config.toml')
   }
-  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path (Get-PmsecHome) '.config' }
-  return (Join-Path $base 'mise/config.toml')
+  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { PathJoin (Get-PmsecHome) '.config' }
+  return (PathJoin $base 'mise' 'config.toml')
 }
 
 # ---------- line buffer ----------
@@ -422,6 +436,9 @@ function StdOut([string]$S) { [Console]::Out.WriteLine($S) }
 function StdOutNoNewline([string]$S) { [Console]::Out.Write($S) }
 function StdErr([string]$S) { [Console]::Error.WriteLine($S) }
 
+# Built dynamically because Windows PowerShell 5.1 does not parse `u{XXXX}.
+$script:WarnGlyph = [string][char]0x26A0
+
 function Pad4([string]$S) {
   if ($S.Length -ge 4) { return $S }
   return $S.PadRight(4)
@@ -528,7 +545,7 @@ function CmdCheck($Targets, [int]$Min, [bool]$Json) {
       $status = if ($null -eq $r.Days) { 'MISSING' } elseif ($r.Days -lt $Min) { 'STALE  ' } else { 'OK     ' }
       $disp = if ($null -eq $r.Configured) { '(unset)' } else { $r.Configured }
       StdOut ('{0} {1} {2} = {3}  [{4}]' -f $status, (Pad4 $r.Tool), $r.Key, $disp, $r.Path)
-      if ($r.Warn) { StdOut ("       `u{26A0} " + $r.Warn) }
+      if ($r.Warn) { StdOut ('       ' + $script:WarnGlyph + ' ' + $r.Warn) }
     }
   }
   if ($failing -gt 0) {
@@ -596,7 +613,7 @@ function CmdSet($Targets, [int]$Days, [bool]$Json) {
     foreach ($r in $results) {
       if ($r.Ok) {
         StdOut ('set  {0} {1} days  [{2}]' -f (Pad4 $r.Tool), $r.Days, $r.Path)
-        if ($r.Warn) { StdOut ("     `u{26A0} " + $r.Warn) }
+        if ($r.Warn) { StdOut ('     ' + $script:WarnGlyph + ' ' + $r.Warn) }
       } else {
         StdOut ('FAIL {0} {1}' -f (Pad4 $r.Tool), $r.Error)
       }
@@ -604,7 +621,7 @@ function CmdSet($Targets, [int]$Days, [bool]$Json) {
   }
   foreach ($f in $failures) { StdErr "pmsec: $f" }
   if ($warnCount -gt 0) {
-    StdErr "pmsec: $warnCount tool(s) configured but runtime may silently ignore the cooldown — see `u{26A0} above"
+    StdErr ('pmsec: ' + $warnCount + ' tool(s) configured but runtime may silently ignore the cooldown — see ' + $script:WarnGlyph + ' above')
   }
   if ($failures.Count -gt 0) { return 1 }
   return 0
