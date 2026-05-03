@@ -19,10 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org/
-      - name: Upgrade npm to a release that supports OIDC trusted publishing
-        run: npm install -g npm@latest
       - name: Verify tag matches package.json version
         run: |
           tag_version="${GITHUB_REF_NAME#pmsec-node-v}"
