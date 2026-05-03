@@ -1,16 +1,15 @@
 name: pmsec release pypi
-
 on:
   push:
     tags:
       - 'pmsec-py-v*'
-
 permissions:
   contents: read
   id-token: write
-
+  attestations: write
 jobs:
   publish:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -19,15 +18,30 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        timeout-minutes: 5
       - name: Verify tag matches pyproject.toml version
+        timeout-minutes: 5
         run: |
           tag_version="${GITHUB_REF_NAME#pmsec-py-v}"
           pkg_version=$(awk -F\" '/^version *= */ {print $2; exit}' pyproject.toml)
           [ "$tag_version" = "$pkg_version" ] || { echo "tag $tag_version != pyproject.toml $pkg_version" >&2; exit 1; }
-      - run: uv run --with pytest pytest -q
-      - run: uv build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Test
+        timeout-minutes: 5
+        run: uv run --with pytest pytest -q
+      - name: Build
+        timeout-minutes: 5
+        run: uv build
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        timeout-minutes: 5
+        with:
+          subject-path: 'python/dist/*'
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        timeout-minutes: 5
         with:
           packages-dir: python/dist
