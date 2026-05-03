@@ -24,9 +24,9 @@ Options:
   -h, --help            Show this help
 
 Examples:
-  npx pmsec check --min 7
-  npx pmsec set 7
-  npx pmsec unset --tool npm
+  npx @hikae/pmsec check --min 7
+  npx @hikae/pmsec set 7
+  npx @hikae/pmsec unset --tool npm
 `;
 
 function parse(argv) {
