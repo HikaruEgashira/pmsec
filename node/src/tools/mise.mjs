@@ -1,12 +1,21 @@
 import { miseConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
+import { detectVersion, gte } from "../util/version.mjs";
 export const name = "mise";
 export const key = "minimum_release_age";
 export const section = "settings";
 export const docs = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age";
+export const minBin = [2026, 4, 22];
 
 export function path(env, home, platform) { return miseConfigPath(env, home, platform); }
+
+export function preflight() {
+  const v = detectVersion("mise");
+  if (v === null) return { ok: true, message: null };
+  if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
+  return { ok: true, warn: true, version: v.raw, message: `mise ${v.raw} < ${minBin.join(".")}: setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (\`mise self-update\`) to enforce the cooldown.` };
+}
 
 function parseDays(value) {
   if (value === null) return null;

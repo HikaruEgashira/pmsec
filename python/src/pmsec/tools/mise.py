@@ -6,11 +6,27 @@ from pathlib import Path
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import mise_config_path
+from pmsec.util.version import detect_version, gte
 
 NAME = "mise"
 KEY = "minimum_release_age"
 SECTION = "settings"
 DOCS = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age"
+MIN_BIN = (2026, 4, 22)
+
+
+def preflight() -> dict:
+    v = detect_version("mise")
+    if v is None:
+        return {"ok": True, "message": None}
+    if gte(v, MIN_BIN):
+        return {"ok": True, "version": v[3], "message": None}
+    msg = (
+        f"mise {v[3]} < {'.'.join(str(n) for n in MIN_BIN)}: setting was named "
+        "install_before before 2026.4.22 and minimum_release_age is silently ignored "
+        "on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown."
+    )
+    return {"ok": True, "warn": True, "version": v[3], "message": msg}
 
 _DURATION = re.compile(
     r'^"?\s*(\d+)\s*(d|days?|w|weeks?|m|months?|y|years?)\s*"?$',
