@@ -7,7 +7,7 @@
 - Node 版（`npx`）と Python 版（`uvx`）を同梱、依存ゼロ
 - check / set / unset を持ち、`check` は不足時に exit 1（CI gate に使える）
 - macOS / Linux / Windows のパス解決対応
-- `set` 時に各ツールの `--version` を preflight し、cooldown キーが認識されない古いランタイムへの書き込み事故を防止（uv は config を読めず壊れるため block、それ以外は warn）
+- `set` は常に書き込み、ランタイムが古くて key を無視する場合は ⚠ 行で告知（CI からも気付ける）
 
 ## 対応ツール
 
@@ -56,7 +56,7 @@ uvx pmsec set 7
 | Command | 説明 |
 | --- | --- |
 | `pmsec check [--min N]` | 各ツールの設定を読み、`min` 未満 / 未設定があれば exit 1 |
-| `pmsec set <DAYS> [--force]` | 全対象ツールに `DAYS` 日の cooldown を書き込み（uv 旧版検出時は `--force` 必須） |
+| `pmsec set <DAYS>` | 全対象ツールに `DAYS` 日の cooldown を書き込み（古いランタイムは ⚠ で告知） |
 | `pmsec unset` | 各設定ファイルから cooldown キーのみ削除（他キーは保持） |
 
 オプション:

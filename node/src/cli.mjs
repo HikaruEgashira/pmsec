@@ -30,7 +30,7 @@ Examples:
 `;
 
 function parse(argv) {
-  const opts = { command: null, days: null, min: DEFAULT_MIN, json: false, only: null, help: false, force: false };
+  const opts = { command: null, days: null, min: DEFAULT_MIN, json: false, only: null, help: false };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -40,7 +40,6 @@ function parse(argv) {
     else if (a.startsWith("--min=")) opts.min = Number(a.slice(6));
     else if (a === "--tool") opts.only = argv[++i].split(",");
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
-    else if (a === "--force") opts.force = true;
     else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
     else positional.push(a);
   }
@@ -98,7 +97,7 @@ function explainFsError(e, tool) {
   return `${tool}: ${e?.message ?? e}`;
 }
 
-async function runSet(targets, days, json, _force, env, home, platform, out, err) {
+async function runSet(targets, days, json, env, home, platform, out, err) {
   if (!Number.isFinite(days) || days <= 0) throw new Error(`set requires DAYS > 0`);
   const results = [];
   const failures = [];
@@ -165,7 +164,7 @@ export async function run(argv, {
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
   try {
     if (opts.command === "check") return await runCheck(targets, opts, env, home, platform, out, err);
-    if (opts.command === "set") return await runSet(targets, opts.days, opts.json, opts.force, env, home, platform, out, err);
+    if (opts.command === "set") return await runSet(targets, opts.days, opts.json, env, home, platform, out, err);
     if (opts.command === "unset") return await runUnset(targets, opts.json, env, home, platform, out, err);
     err.write(`pmsec: unknown command "${opts.command}"\n`);
     return 2;

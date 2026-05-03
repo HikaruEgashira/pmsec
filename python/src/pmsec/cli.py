@@ -37,7 +37,6 @@ def _parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("set", parents=[common], help="apply cooldown")
     s.add_argument("days", type=int, help="cooldown in days (must be > 0)")
-    s.add_argument("--force", action="store_true", help="apply even if a tool's installed version is too old")
 
     sub.add_parser("unset", parents=[common], help="remove cooldown")
 
