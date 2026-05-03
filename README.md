@@ -12,15 +12,7 @@
 
 `pmsec` は各パッケージマネージャの「公開直後 N 日はインストールしない」設定（`min-release-age` / `exclude-newer` 等）を一括で検査・適用する CLI です。供給チェーン攻撃の多くは公開後数時間〜数日で検出・撤去されるため、3〜7 日の cooldown を入れるだけで影響範囲が大きく削れます。
 
-Node 版（`npx`）と Python 版（`uvx`）を同梱、依存ゼロ。macOS / Linux / Windows 対応。
-
-## なぜ pmsec？
-
-- **1 コマンドで 7 ツール一括** — 各マネージャごとに `~/.npmrc` `~/.bunfig.toml` `~/.yarnrc.yml` を覚えて手書きする必要がない
-- **CI gate になる** — `pmsec check --min 7` は不足時 exit 1。PR で「cooldown が緩んでないか」を強制できる
-- **ランタイム劣化に気付ける** — 古い npm / mise / uv が cooldown を silently ignore する場合は ⚠ 行で告知
-- **権限事故から自己復旧** — `~/.npmrc` が root 所有になっていても `sudo chown` を 1 回挟んで書き戻す
-- **OS 横断** — bash 製 OSS と違い Windows・GitHub Actions・ローカル開発を同じ呼び出しでカバー
+Node 版（`npx`）と Python 版（`uvx`）を同梱、macOS / Linux / Windows 対応。
 
 ## Quick Start
 
