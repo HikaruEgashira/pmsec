@@ -22,7 +22,7 @@ examples:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pmsec",
-        description="Inspect and apply install-time cooldown for npm, pnpm, yarn, bun, mise, and uv.",
+        description="Inspect and apply install-time cooldown for npm, pnpm, yarn, bun, cargo, mise, and uv.",
         epilog=USAGE_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

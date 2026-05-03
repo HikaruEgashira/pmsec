@@ -1,12 +1,17 @@
 [project]
 name = "pmsec"
-version = "0.1.0"
+version = "0.1.1"
 description = "Inspect and apply install-time cooldown (min-release-age / exclude-newer) for npm and uv."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Hikaru Egashira", email = "ai@egahika.dev" }]
 keywords = ["supply-chain", "cooldown", "min-release-age", "exclude-newer", "npm", "uv", "pmsec"]
+
+[project.urls]
+Homepage = "https://github.com/HikaruEgashira/pmsec"
+Repository = "https://github.com/HikaruEgashira/pmsec"
+Issues = "https://github.com/HikaruEgashira/pmsec/issues"
 
 [project.scripts]
 pmsec = "pmsec.cli:main"
