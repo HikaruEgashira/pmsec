@@ -1,19 +1,33 @@
 # pmsec
 
-`pmsec` は npm と uv の **install-time cooldown**（新しく公開されたパッケージを一定期間インストールさせない設定）を検査・適用する CLI です。npm の `min-release-age` と uv の `exclude-newer` を user-global config に書き込みます。
+`pmsec` は npm / pnpm / yarn / bun / mise / uv の **install-time cooldown**（新しく公開されたパッケージを一定期間インストールさせない設定）を一括で検査・適用する CLI です。
 
-供給チェーン攻撃の多くは公開後数時間〜数日で検出・撤去されるため、7 日程度の cooldown を入れるだけで影響範囲を大きく削れます。
+供給チェーン攻撃の多くは公開後数時間〜数日で検出・撤去されるため、3〜7 日程度の cooldown を入れるだけで影響範囲を大きく削れます。
 
-- Node 版（`npx`）と Python 版（`uvx`）を同梱
-- 依存ゼロ（Node は標準ライブラリのみ、Python は stdlib のみ）
+- Node 版（`npx`）と Python 版（`uvx`）を同梱、依存ゼロ
 - check / set / unset を持ち、`check` は不足時に exit 1（CI gate に使える）
 - macOS / Linux / Windows のパス解決対応
-- `set` 時に `uv --version` を preflight し、`exclude-newer = "N days"` 構文を理解できない古い uv（< 0.9.17）に書き込むと自身が起動不能になる事故を防止
+- `set` 時に各ツールの `--version` を preflight し、cooldown キーが認識されない古いランタイムへの書き込み事故を防止（uv は config を読めず壊れるため block、それ以外は warn）
+
+## 対応ツール
+
+| Tool | Key | Unit | Path (Unix / Windows) | Min |
+|------|-----|------|------------------------|-----|
+| npm | `min-release-age` | days | `~/.npmrc` | 11.10 |
+| pnpm | `minimum-release-age` | minutes | `~/.npmrc` | 10.6 |
+| yarn (v4+) | `npmMinimalAgeGate` | duration `"7d"` | `~/.yarnrc.yml` | 4.10 |
+| bun | `[install].minimumReleaseAge` | seconds | `~/.bunfig.toml` | 1.3 |
+| mise | `[settings].minimum_release_age` | duration `"7d"` | `~/.config/mise/config.toml` / `%LOCALAPPDATA%\mise\config.toml` | latest |
+| uv | `exclude-newer` | duration `"7 days"` | `~/.config/uv/uv.toml` / `%APPDATA%\uv\uv.toml` | 0.9.17 |
+
+`pmsec set 7` 一回で全ツールに 7 日 cooldown を書き込みます。各ツールが要求する単位（日 / 分 / 秒 / duration string）には pmsec が自動変換するので、ユーザは「日数」だけ意識すればよい構造です。
+
+> note: pnpm の旧名 `installBefore` (= `install_before`) は `minimumReleaseAge` に rename されており、pmsec は新名のみ書き出します。mise も同様に `install_before` → `minimum_release_age` を踏襲しています。
 
 ## このリポジトリから直接実行する
 
 ```bash
-# Node（要 Node 18+）
+# Node（要 Node 20+）
 npm exec --package=./node -- pmsec check
 npm exec --package=./node -- pmsec set 7
 npm exec --package=./node -- pmsec unset
@@ -34,7 +48,7 @@ uvx pmsec check --min 7
 uvx pmsec set 7
 ```
 
-公開状況: [npm](https://www.npmjs.com/package/pmsec) / [PyPI](https://pypi.org/project/pmsec/) — どちらもタグ push で `.github/workflows/release.yml` がトリガーする trusted publishing で配布します。
+公開状況: [npm](https://www.npmjs.com/package/pmsec) / [PyPI](https://pypi.org/project/pmsec/) — どちらもタグ push (`pmsec-node-vX.Y.Z` / `pmsec-py-vX.Y.Z`) で `.github/workflows/pmsec-release-*.yml` がトリガーする trusted publishing で配布します。
 
 ## コマンド
 
@@ -46,29 +60,23 @@ uvx pmsec set 7
 
 オプション:
 
-- `--tool npm,uv` — 対象ツールを限定
+- `--tool npm,pnpm,yarn,bun,mise,uv` — 対象ツールを限定
 - `--json` — JSON 出力（CI 連携用）
 
-## 書き込む設定
+## 環境変数による上書き
 
-| Tool | Key | Path (Unix) | Path (Windows) |
-| --- | --- | --- | --- |
-| npm | `min-release-age` | `~/.npmrc` | `%USERPROFILE%\.npmrc` |
-| uv | `exclude-newer` | `${XDG_CONFIG_HOME:-~/.config}/uv/uv.toml` | `%APPDATA%\uv\uv.toml` |
+| 変数 | 用途 |
+|------|------|
+| `NPM_CONFIG_USERCONFIG` | npm / pnpm の config パス（`.npmrc`） |
+| `BUN_CONFIG_FILE` | bun の `.bunfig.toml` |
+| `YARN_RC_FILENAME` | yarn の `.yarnrc.yml` |
+| `MISE_GLOBAL_CONFIG_FILE` | mise の `config.toml` |
+| `UV_CONFIG_FILE` | uv の `uv.toml` |
+| `XDG_CONFIG_HOME` / `APPDATA` / `LOCALAPPDATA` | 各 OS の標準ベースを上書き |
 
-`set` 時、初回のみ既存ファイルを `.bak` にバックアップしてから書き換えます（2 回目以降は元の手書き設定を上書き保存しない）。`[section]` ヘッダの前に挿入し、既存キーは in-place 置換するので他の設定行は壊しません。
+## 安全性
 
-環境変数で出力先を上書きできます:
-
-- `NPM_CONFIG_USERCONFIG` → npm のユーザー config パス
-- `UV_CONFIG_FILE` → uv の config パス
-- `XDG_CONFIG_HOME` / `APPDATA` → 各 OS の標準を上書き
-
-## バージョン要件
-
-- npm: `11.10.0` 以上で `min-release-age` が解釈されます。
-- uv: `0.9.17` 以上で `"7 days"` のような相対 duration が読めます。古い uv で書き込むと config 解析失敗で uv 自身が動かなくなるため、`pmsec set` は preflight でブロックします（明示的に通すなら `--force`）。
-- pip / pnpm / yarn / bun などへの拡張は `node/src/tools/` または `python/src/pmsec/tools/` にプラグインを追加すれば対応できます。スコープを絞るため v1 は npm + uv のみです。
+`set` 時、初回のみ既存ファイルを `.bak` にバックアップしてから書き換えます（2 回目以降は元の手書き設定を上書き保存しない）。`[section]` ヘッダの前後を尊重し、既存キーは in-place 置換するので他の設定行は壊しません。bun / mise については対応セクション（`[install]` / `[settings]`）が無ければ自動追加します。
 
 ## CI での使い方
 
@@ -90,7 +98,7 @@ uvx pmsec set 7
 
 ```bash
 # Node
-cd node && node --test 'test/**/*.test.mjs'
+cd node && node --test
 
 # Python
 cd python && uv run --with pytest pytest -q

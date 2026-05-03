@@ -14,3 +14,21 @@ export function uvConfigPath(env = process.env, home = homedir(), platform = pro
   const base = env.XDG_CONFIG_HOME || join(home, ".config");
   return join(base, "uv", "uv.toml");
 }
+
+export function bunConfigPath(env = process.env, home = homedir()) {
+  return env.BUN_CONFIG_FILE || join(home, ".bunfig.toml");
+}
+
+export function yarnrcPath(env = process.env, home = homedir()) {
+  return env.YARN_RC_FILENAME || join(home, ".yarnrc.yml");
+}
+
+export function miseConfigPath(env = process.env, home = homedir(), platform = process.platform) {
+  if (env.MISE_GLOBAL_CONFIG_FILE) return env.MISE_GLOBAL_CONFIG_FILE;
+  if (platform === "win32") {
+    const base = env.LOCALAPPDATA || join(home, "AppData", "Local");
+    return join(base, "mise", "config.toml");
+  }
+  const base = env.XDG_CONFIG_HOME || join(home, ".config");
+  return join(base, "mise", "config.toml");
+}

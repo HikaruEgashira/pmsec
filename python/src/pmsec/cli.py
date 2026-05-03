@@ -5,10 +5,10 @@ import json
 import sys
 from pathlib import Path
 
-from pmsec.tools import npm, uv
+from pmsec.tools import bun, mise, npm, pnpm, uv, yarn
 from pmsec.util.paths import current_platform
 
-TOOLS = [npm, uv]
+TOOLS = [npm, pnpm, yarn, bun, mise, uv]
 DEFAULT_MIN = 7
 
 USAGE_EPILOG = """\
@@ -22,14 +22,14 @@ examples:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pmsec",
-        description="Inspect and apply install-time cooldown for npm and uv.",
+        description="Inspect and apply install-time cooldown for npm, pnpm, yarn, bun, mise, and uv.",
         epilog=USAGE_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = p.add_subparsers(dest="command", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--tool", help="comma-separated subset of tools (npm,uv)")
+    common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,mise,uv)")
     common.add_argument("--json", action="store_true", help="emit JSON output")
 
     c = sub.add_parser("check", parents=[common], help="inspect cooldown settings")
