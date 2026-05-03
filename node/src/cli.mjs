@@ -83,6 +83,14 @@ async function runCheck(targets, { min, json }, env, home, platform, out, err) {
   return failing.length ? 1 : 0;
 }
 
+function explainFsError(e, tool) {
+  if (e?.code === "EACCES" || e?.code === "EPERM") {
+    return `${tool}: cannot write ${e.path ?? ""} (${e.code}). Check file ownership: \`ls -la ${e.path ?? ""}\` — if owned by root, run \`sudo chown $(id -u):$(id -g) ${e.path ?? ""}\`.`;
+  }
+  if (e?.code === "EROFS") return `${tool}: ${e.path ?? ""} is on a read-only filesystem (EROFS).`;
+  return `${tool}: ${e?.message ?? e}`;
+}
+
 async function runSet(targets, days, json, force, env, home, platform, out, err) {
   if (!Number.isFinite(days) || days <= 0) throw new Error(`set requires DAYS > 0`);
   for (const t of targets) {
@@ -94,24 +102,44 @@ async function runSet(targets, days, json, force, env, home, platform, out, err)
     err.write(`pmsec: ${t.name}: ${pf.message} (continuing due to --force)\n`);
   }
   const results = [];
+  const failures = [];
   for (const t of targets) {
-    const r = await t.write(days, env, home, platform);
-    results.push({ tool: t.name, path: r.path, days });
+    try {
+      const r = await t.write(days, env, home, platform);
+      results.push({ tool: t.name, path: r.path, days, ok: true });
+    } catch (e) {
+      failures.push({ tool: t.name, error: explainFsError(e, t.name) });
+      results.push({ tool: t.name, path: e?.path ?? null, days, ok: false, error: explainFsError(e, t.name) });
+    }
   }
-  if (json) out.write(JSON.stringify({ set: days, results }, null, 2) + "\n");
-  else for (const r of results) out.write(`set  ${r.tool.padEnd(4)} ${r.days} days  [${r.path}]\n`);
-  return 0;
+  if (json) out.write(JSON.stringify({ set: days, results, ok: failures.length === 0 }, null, 2) + "\n");
+  else for (const r of results) {
+    if (r.ok) out.write(`set  ${r.tool.padEnd(4)} ${r.days} days  [${r.path}]\n`);
+    else out.write(`FAIL ${r.tool.padEnd(4)} ${r.error}\n`);
+  }
+  for (const f of failures) err.write(`pmsec: ${f.error}\n`);
+  return failures.length ? 1 : 0;
 }
 
-async function runUnset(targets, json, env, home, platform, out) {
+async function runUnset(targets, json, env, home, platform, out, err) {
   const results = [];
+  const failures = [];
   for (const t of targets) {
-    const r = await t.unset(env, home, platform);
-    results.push({ tool: t.name, path: r.path, removed: r.removed });
+    try {
+      const r = await t.unset(env, home, platform);
+      results.push({ tool: t.name, path: r.path, removed: r.removed, ok: true });
+    } catch (e) {
+      failures.push({ tool: t.name, error: explainFsError(e, t.name) });
+      results.push({ tool: t.name, path: e?.path ?? null, removed: false, ok: false, error: explainFsError(e, t.name) });
+    }
   }
-  if (json) out.write(JSON.stringify({ results }, null, 2) + "\n");
-  else for (const r of results) out.write(`${r.removed ? "rm  " : "skip"} ${r.tool.padEnd(4)} [${r.path}]\n`);
-  return 0;
+  if (json) out.write(JSON.stringify({ results, ok: failures.length === 0 }, null, 2) + "\n");
+  else for (const r of results) {
+    if (!r.ok) out.write(`FAIL ${r.tool.padEnd(4)} ${r.error}\n`);
+    else out.write(`${r.removed ? "rm  " : "skip"} ${r.tool.padEnd(4)} [${r.path}]\n`);
+  }
+  for (const f of failures) err.write(`pmsec: ${f.error}\n`);
+  return failures.length ? 1 : 0;
 }
 
 export async function run(argv, {
@@ -131,7 +159,7 @@ export async function run(argv, {
   try {
     if (opts.command === "check") return await runCheck(targets, opts, env, home, platform, out, err);
     if (opts.command === "set") return await runSet(targets, opts.days, opts.json, opts.force, env, home, platform, out, err);
-    if (opts.command === "unset") return await runUnset(targets, opts.json, env, home, platform, out);
+    if (opts.command === "unset") return await runUnset(targets, opts.json, env, home, platform, out, err);
     err.write(`pmsec: unknown command "${opts.command}"\n`);
     return 2;
   } catch (e) {

@@ -89,6 +89,20 @@ def _check(args, targets, env, home, platform, out, err):
     return 0
 
 
+def _explain_fs_error(exc: BaseException, tool: str) -> str:
+    if isinstance(exc, PermissionError):
+        path = getattr(exc, "filename", "") or ""
+        return (
+            f"{tool}: cannot write {path} (PermissionError). "
+            f"Check file ownership: `ls -la {path}` — if owned by root, "
+            f"run `sudo chown $(id -u):$(id -g) {path}`."
+        )
+    if isinstance(exc, OSError) and exc.errno == 30:
+        path = getattr(exc, "filename", "") or ""
+        return f"{tool}: {path} is on a read-only filesystem (EROFS)."
+    return f"{tool}: {exc}"
+
+
 def _set(args, targets, env, home, platform, out, err):
     if args.days <= 0:
         raise SystemExit("pmsec: set requires DAYS > 0")
@@ -105,29 +119,51 @@ def _set(args, targets, env, home, platform, out, err):
             raise SystemExit(f"pmsec: {t.NAME}: {result['message']}")
         err.write(f"pmsec: {t.NAME}: {result['message']} (continuing due to --force)\n")
     results = []
+    failures = []
     for t in targets:
-        r = t.write(args.days, env, home, platform)
-        results.append({"tool": t.NAME, "path": r["path"], "days": args.days})
+        try:
+            r = t.write(args.days, env, home, platform)
+            results.append({"tool": t.NAME, "path": r["path"], "days": args.days, "ok": True})
+        except OSError as exc:
+            msg = _explain_fs_error(exc, t.NAME)
+            failures.append(msg)
+            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": args.days, "ok": False, "error": msg})
     if args.json:
-        out.write(json.dumps({"set": args.days, "results": results}, indent=2) + "\n")
+        out.write(json.dumps({"set": args.days, "results": results, "ok": not failures}, indent=2) + "\n")
     else:
         for r in results:
-            out.write(f"set  {r['tool']:<4} {r['days']} days  [{r['path']}]\n")
-    return 0
+            if r["ok"]:
+                out.write(f"set  {r['tool']:<4} {r['days']} days  [{r['path']}]\n")
+            else:
+                out.write(f"FAIL {r['tool']:<4} {r['error']}\n")
+    for msg in failures:
+        err.write(f"pmsec: {msg}\n")
+    return 1 if failures else 0
 
 
-def _unset(args, targets, env, home, platform, out):
+def _unset(args, targets, env, home, platform, out, err):
     results = []
+    failures = []
     for t in targets:
-        r = t.unset(env, home, platform)
-        results.append({"tool": t.NAME, "path": r["path"], "removed": r["removed"]})
+        try:
+            r = t.unset(env, home, platform)
+            results.append({"tool": t.NAME, "path": r["path"], "removed": r["removed"], "ok": True})
+        except OSError as exc:
+            msg = _explain_fs_error(exc, t.NAME)
+            failures.append(msg)
+            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "removed": False, "ok": False, "error": msg})
     if args.json:
-        out.write(json.dumps({"results": results}, indent=2) + "\n")
+        out.write(json.dumps({"results": results, "ok": not failures}, indent=2) + "\n")
     else:
         for r in results:
-            tag = "rm  " if r["removed"] else "skip"
-            out.write(f"{tag} {r['tool']:<4} [{r['path']}]\n")
-    return 0
+            if not r["ok"]:
+                out.write(f"FAIL {r['tool']:<4} {r['error']}\n")
+            else:
+                tag = "rm  " if r["removed"] else "skip"
+                out.write(f"{tag} {r['tool']:<4} [{r['path']}]\n")
+    for msg in failures:
+        err.write(f"pmsec: {msg}\n")
+    return 1 if failures else 0
 
 
 def main(
@@ -154,5 +190,5 @@ def main(
     if args.command == "set":
         return _set(args, targets, env, home, platform, out, err)
     if args.command == "unset":
-        return _unset(args, targets, env, home, platform, out)
+        return _unset(args, targets, env, home, platform, out, err)
     return 2
