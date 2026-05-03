@@ -1,0 +1,33 @@
+name: pmsec release pypi
+
+on:
+  push:
+    tags:
+      - 'pmsec-py-v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/pmsec/
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Verify tag matches pyproject.toml version
+        run: |
+          tag_version="${GITHUB_REF_NAME#pmsec-py-v}"
+          pkg_version=$(awk -F\" '/^version *= */ {print $2; exit}' pyproject.toml)
+          [ "$tag_version" = "$pkg_version" ] || { echo "tag $tag_version != pyproject.toml $pkg_version" >&2; exit 1; }
+      - run: uv run --with pytest pytest -q
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist

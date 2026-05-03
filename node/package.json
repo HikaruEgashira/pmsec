@@ -1,0 +1,30 @@
+{
+  "name": "pmsec",
+  "version": "0.1.0",
+  "description": "Inspect and apply install-time cooldown (min-release-age / exclude-newer) for npm and uv.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "pmsec": "./bin/cli.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test 'test/**/*.test.mjs'"
+  },
+  "keywords": [
+    "supply-chain",
+    "cooldown",
+    "min-release-age",
+    "exclude-newer",
+    "npm",
+    "uv",
+    "pmsec"
+  ]
+}
