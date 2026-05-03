@@ -20,6 +20,24 @@ uvx pmsec set 7
 uvx pmsec unset
 ```
 
+```bash
+# Standalone install (Linux / macOS, requires Node >= 20)
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh
+# Pin a version
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh -s 0.2.4
+```
+
+```powershell
+# Standalone install (Windows, requires Node >= 20 and tar.exe)
+irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1 | iex
+# Pin a version
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1))) -Version 0.2.4
+```
+
+The standalone installer downloads the npm tarball directly from the registry,
+verifies its SHA-512 integrity, and drops a `pmsec` shim into
+`$HOME/.local/bin` (override with `PMSEC_HOME` / `PMSEC_BIN_DIR`).
+
 > Bootstrap: pmsec itself is subject to cooldown, so the very first install
 > may be filtered. Override just for that call
 >
