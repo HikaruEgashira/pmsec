@@ -21,7 +21,7 @@ uvx pmsec unset
 ```
 
 > Bootstrap: pmsec itself is subject to cooldown, so the very first install
-> may be filtered. Override just for that call:
+> may be filtered. Override just for that call
 >
 > ```bash
 > npx --registry=https://registry.npmjs.org/ --min-release-age=0 @hikae/pmsec check
