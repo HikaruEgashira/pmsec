@@ -23,6 +23,11 @@ export function yarnrcPath(env = process.env, home = homedir()) {
   return env.YARN_RC_FILENAME || join(home, ".yarnrc.yml");
 }
 
+export function cargoConfigPath(env = process.env, home = homedir()) {
+  if (env.CARGO_HOME) return join(env.CARGO_HOME, "config.toml");
+  return join(home, ".cargo", "config.toml");
+}
+
 export function miseConfigPath(env = process.env, home = homedir(), platform = process.platform) {
   if (env.MISE_GLOBAL_CONFIG_FILE) return env.MISE_GLOBAL_CONFIG_FILE;
   if (platform === "win32") {

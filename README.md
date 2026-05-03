@@ -1,6 +1,6 @@
 # pmsec
 
-`pmsec` は npm / pnpm / yarn / bun / mise / uv の **install-time cooldown**（新しく公開されたパッケージを一定期間インストールさせない設定）を一括で検査・適用する CLI です。
+`pmsec` は npm / pnpm / yarn / bun / cargo / mise / uv の **install-time cooldown**（新しく公開されたパッケージを一定期間インストールさせない設定）を一括で検査・適用する CLI です。
 
 供給チェーン攻撃の多くは公開後数時間〜数日で検出・撤去されるため、3〜7 日程度の cooldown を入れるだけで影響範囲を大きく削れます。
 
@@ -17,6 +17,7 @@
 | pnpm | `minimum-release-age` | minutes | `~/.npmrc` | 10.6 |
 | yarn (v4+) | `npmMinimalAgeGate` | duration `"7d"` | `~/.yarnrc.yml` | 4.10 |
 | bun | `[install].minimumReleaseAge` | seconds | `~/.bunfig.toml` | 1.3 |
+| cargo | `[install].minimum-release-age` | duration `"7d"` | `$CARGO_HOME/config.toml` / `~/.cargo/config.toml` | RFC #3801 |
 | mise | `[settings].minimum_release_age` | duration `"7d"` | `~/.config/mise/config.toml` / `%LOCALAPPDATA%\mise\config.toml` | latest |
 | uv | `exclude-newer` | duration `"7 days"` | `~/.config/uv/uv.toml` / `%APPDATA%\uv\uv.toml` | 0.9.17 |
 
@@ -41,14 +42,14 @@ uvx --from ./python pmsec unset
 ## レジストリ公開後の使い方
 
 ```bash
-npx pmsec check --min 7
-npx pmsec set 7
+npx -p @hikae/pmsec pmsec check --min 7
+npx -p @hikae/pmsec pmsec set 7
 
 uvx pmsec check --min 7
 uvx pmsec set 7
 ```
 
-公開状況: [npm](https://www.npmjs.com/package/pmsec) / [PyPI](https://pypi.org/project/pmsec/) — どちらもタグ push (`pmsec-node-vX.Y.Z` / `pmsec-py-vX.Y.Z`) で `.github/workflows/pmsec-release-*.yml` がトリガーする trusted publishing で配布します。
+公開状況: [npm `@hikae/pmsec`](https://www.npmjs.com/package/@hikae/pmsec) / [PyPI](https://pypi.org/project/pmsec/) — どちらもタグ push (`pmsec-node-vX.Y.Z` / `pmsec-py-vX.Y.Z`) で `.github/workflows/pmsec-release-*.yml` がトリガーする trusted publishing で配布します。
 
 ## コマンド
 
@@ -60,7 +61,7 @@ uvx pmsec set 7
 
 オプション:
 
-- `--tool npm,pnpm,yarn,bun,mise,uv` — 対象ツールを限定
+- `--tool npm,pnpm,yarn,bun,cargo,mise,uv` — 対象ツールを限定
 - `--json` — JSON 出力（CI 連携用）
 
 ## 環境変数による上書き
@@ -70,6 +71,7 @@ uvx pmsec set 7
 | `NPM_CONFIG_USERCONFIG` | npm / pnpm の config パス（`.npmrc`） |
 | `BUN_CONFIG_FILE` | bun の `.bunfig.toml` |
 | `YARN_RC_FILENAME` | yarn の `.yarnrc.yml` |
+| `CARGO_HOME` | cargo の `config.toml` |
 | `MISE_GLOBAL_CONFIG_FILE` | mise の `config.toml` |
 | `UV_CONFIG_FILE` | uv の `uv.toml` |
 | `XDG_CONFIG_HOME` / `APPDATA` / `LOCALAPPDATA` | 各 OS の標準ベースを上書き |
@@ -81,7 +83,7 @@ uvx pmsec set 7
 ## CI での使い方
 
 ```yaml
-- run: npx pmsec check --min 7
+- run: npx -p @hikae/pmsec pmsec check --min 7
 ```
 
 これだけで PR / CI で「cooldown が緩んでないか」を gate できます。

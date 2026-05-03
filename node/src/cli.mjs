@@ -3,10 +3,11 @@ import * as npm from "./tools/npm.mjs";
 import * as pnpm from "./tools/pnpm.mjs";
 import * as yarn from "./tools/yarn.mjs";
 import * as bun from "./tools/bun.mjs";
+import * as cargo from "./tools/cargo.mjs";
 import * as mise from "./tools/mise.mjs";
 import * as uv from "./tools/uv.mjs";
 
-const TOOLS = [npm, pnpm, yarn, bun, mise, uv];
+const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv];
 const DEFAULT_MIN = 7;
 
 const USAGE = `pmsec <command> [options]
@@ -17,7 +18,7 @@ Commands:
   unset                 Remove cooldown settings from selected tools
 
 Options:
-  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,mise,uv)
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --min DAYS            Minimum acceptable days for check (default ${DEFAULT_MIN})
   --json                Emit JSON output
   -h, --help            Show this help

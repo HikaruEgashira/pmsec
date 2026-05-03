@@ -22,6 +22,12 @@ def yarnrc_path(env: dict[str, str], home: Path) -> Path:
     return home / ".yarnrc.yml"
 
 
+def cargo_config_path(env: dict[str, str], home: Path) -> Path:
+    if "CARGO_HOME" in env:
+        return Path(env["CARGO_HOME"]) / "config.toml"
+    return home / ".cargo" / "config.toml"
+
+
 def mise_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     if "MISE_GLOBAL_CONFIG_FILE" in env:
         return Path(env["MISE_GLOBAL_CONFIG_FILE"])

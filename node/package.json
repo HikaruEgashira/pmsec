@@ -1,6 +1,9 @@
 {
-  "name": "pmsec",
+  "name": "@hikae/pmsec",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Inspect and apply install-time cooldown (min-release-age / exclude-newer) for npm and uv.",
   "type": "module",
   "license": "MIT",

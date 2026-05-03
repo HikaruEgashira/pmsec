@@ -46,7 +46,7 @@ def test_check_passes_after_set(tmp_path):
 def test_check_fails_when_missing(tmp_path):
     code, out, _ = run(["check"], tmp_path)
     assert code == 1
-    for tool in ("npm", "pnpm", "yarn", "bun", "mise", "uv"):
+    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"):
         assert f"MISSING {tool}" in out
 
 
@@ -96,8 +96,8 @@ def test_check_json(tmp_path):
     _, out, _ = run(["check", "--json"], tmp_path)
     data = json.loads(out)
     assert data["ok"] is False
-    assert len(data["rows"]) == 6
-    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "mise", "uv"]
+    assert len(data["rows"]) == 7
+    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]
 
 
 def test_set_rejects_zero(tmp_path):

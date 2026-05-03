@@ -109,8 +109,8 @@ test("--json emits parseable JSON for check", async () => {
   const { out } = await runCli(["check", "--json"], home);
   const data = JSON.parse(out);
   assert.equal(data.ok, false);
-  assert.equal(data.rows.length, 6);
-  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "mise", "uv"]);
+  assert.equal(data.rows.length, 7);
+  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]);
 });
 
 test("bun set inserts key inside existing [install] section", async () => {

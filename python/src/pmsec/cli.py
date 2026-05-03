@@ -5,10 +5,10 @@ import json
 import sys
 from pathlib import Path
 
-from pmsec.tools import bun, mise, npm, pnpm, uv, yarn
+from pmsec.tools import bun, cargo, mise, npm, pnpm, uv, yarn
 from pmsec.util.paths import current_platform
 
-TOOLS = [npm, pnpm, yarn, bun, mise, uv]
+TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv]
 DEFAULT_MIN = 7
 
 USAGE_EPILOG = """\
@@ -29,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,mise,uv)")
+    common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
     common.add_argument("--json", action="store_true", help="emit JSON output")
 
     c = sub.add_parser("check", parents=[common], help="inspect cooldown settings")
