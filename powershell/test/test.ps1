@@ -67,11 +67,17 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
     }
   }
   $errFile = [System.IO.Path]::GetTempFileName()
+  # On Windows PowerShell 5.1, native command stderr writes also surface as
+  # ErrorRecord under $ErrorActionPreference='Stop' and would abort the
+  # caller; relax that for the duration of the child invocation.
+  $oldEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   try {
     $stdout = (& $PwshExe -NoProfile -File $Pmsec @Argv 2>$errFile | Out-String)
     $code = $LASTEXITCODE
     $stderr = [System.IO.File]::ReadAllText($errFile)
   } finally {
+    $ErrorActionPreference = $oldEAP
     Remove-Item -Force -LiteralPath $errFile -ErrorAction Ignore
     foreach ($k in $envKeys) {
       [Environment]::SetEnvironmentVariable($k, $saved[$k], 'Process')

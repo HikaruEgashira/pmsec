@@ -436,8 +436,11 @@ function StdOut([string]$S) { [Console]::Out.WriteLine($S) }
 function StdOutNoNewline([string]$S) { [Console]::Out.Write($S) }
 function StdErr([string]$S) { [Console]::Error.WriteLine($S) }
 
-# Built dynamically because Windows PowerShell 5.1 does not parse `u{XXXX}.
+# Built dynamically because (a) Windows PowerShell 5.1 does not parse the
+# `u{XXXX} unicode escape, and (b) PS 5.1 reads .ps1 source as Windows-1252
+# by default — so a literal em-dash or ⚠ in source ends up mojibake.
 $script:WarnGlyph = [string][char]0x26A0
+$script:EmDash    = [string][char]0x2014
 
 function Pad4([string]$S) {
   if ($S.Length -ge 4) { return $S }
@@ -621,7 +624,7 @@ function CmdSet($Targets, [int]$Days, [bool]$Json) {
   }
   foreach ($f in $failures) { StdErr "pmsec: $f" }
   if ($warnCount -gt 0) {
-    StdErr ('pmsec: ' + $warnCount + ' tool(s) configured but runtime may silently ignore the cooldown — see ' + $script:WarnGlyph + ' above')
+    StdErr ('pmsec: ' + $warnCount + ' tool(s) configured but runtime may silently ignore the cooldown ' + $script:EmDash + ' see ' + $script:WarnGlyph + ' above')
   }
   if ($failures.Count -gt 0) { return 1 }
   return 0
