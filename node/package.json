@@ -1,10 +1,19 @@
 {
   "name": "@hikae/pmsec",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
   "description": "Inspect and apply install-time cooldown (min-release-age / exclude-newer) for npm and uv.",
+  "homepage": "https://github.com/HikaruEgashira/pmsec#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HikaruEgashira/pmsec.git",
+    "directory": "node"
+  },
+  "bugs": {
+    "url": "https://github.com/HikaruEgashira/pmsec/issues"
+  },
   "type": "module",
   "license": "MIT",
   "engines": {
