@@ -22,10 +22,10 @@ def preflight() -> dict:
         return {"ok": True, "version": v[3], "message": None}
     msg = (
         f"uv {v[3]} < {'.'.join(str(n) for n in MIN_BIN)}: writing "
-        f'exclude-newer = "N days" will break this uv. '
-        "Upgrade uv (uv self update) or rerun with --force."
+        f'exclude-newer = "N days" will break this uv until you `uv self update` '
+        "(file will fail to parse)."
     )
-    return {"ok": False, "version": v[3], "message": msg}
+    return {"ok": True, "warn": True, "version": v[3], "message": msg}
 
 _DURATION = re.compile(r'^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$', re.IGNORECASE)
 

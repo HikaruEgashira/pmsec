@@ -57,10 +57,16 @@ function selectTools(only) {
   return found;
 }
 
+function preflightWarn(t) {
+  if (typeof t.preflight !== "function") return null;
+  const pf = t.preflight();
+  return pf?.message ?? null;
+}
+
 async function gatherStatus(targets, env, home, platform) {
   return Promise.all(targets.map(async t => {
     const r = await t.read(env, home, platform);
-    return { tool: t.name, key: t.key, path: r.path, configured: r.configured, days: r.days };
+    return { tool: t.name, key: t.key, path: r.path, configured: r.configured, days: r.days, warn: preflightWarn(t) };
   }));
 }
 
@@ -69,7 +75,8 @@ function renderHuman(rows, min) {
   for (const r of rows) {
     const status = r.days === null ? "MISSING" : r.days < min ? "STALE  " : "OK     ";
     const value = r.configured ?? "(unset)";
-    lines.push(`${status} ${r.tool.padEnd(4)} ${r.key} = ${value}  [${r.path}]`);
+    const tail = r.warn ? `\n       ⚠ ${r.warn}` : "";
+    lines.push(`${status} ${r.tool.padEnd(4)} ${r.key} = ${value}  [${r.path}]${tail}`);
   }
   return lines.join("\n") + "\n";
 }
@@ -91,33 +98,33 @@ function explainFsError(e, tool) {
   return `${tool}: ${e?.message ?? e}`;
 }
 
-async function runSet(targets, days, json, force, env, home, platform, out, err) {
+async function runSet(targets, days, json, _force, env, home, platform, out, err) {
   if (!Number.isFinite(days) || days <= 0) throw new Error(`set requires DAYS > 0`);
-  for (const t of targets) {
-    if (typeof t.preflight !== "function") continue;
-    const pf = t.preflight();
-    if (pf.ok && pf.warn) err.write(`pmsec: ${t.name}: ${pf.message}\n`);
-    if (pf.ok) continue;
-    if (!force) throw new Error(`${t.name}: ${pf.message}`);
-    err.write(`pmsec: ${t.name}: ${pf.message} (continuing due to --force)\n`);
-  }
   const results = [];
   const failures = [];
+  const warnings = [];
   for (const t of targets) {
+    const warn = preflightWarn(t);
+    if (warn) warnings.push({ tool: t.name, warn });
     try {
       const r = await t.write(days, env, home, platform);
-      results.push({ tool: t.name, path: r.path, days, ok: true });
+      results.push({ tool: t.name, path: r.path, days, ok: true, warn });
     } catch (e) {
       failures.push({ tool: t.name, error: explainFsError(e, t.name) });
-      results.push({ tool: t.name, path: e?.path ?? null, days, ok: false, error: explainFsError(e, t.name) });
+      results.push({ tool: t.name, path: e?.path ?? null, days, ok: false, error: explainFsError(e, t.name), warn });
     }
   }
-  if (json) out.write(JSON.stringify({ set: days, results, ok: failures.length === 0 }, null, 2) + "\n");
+  if (json) out.write(JSON.stringify({ set: days, results, warnings, ok: failures.length === 0 }, null, 2) + "\n");
   else for (const r of results) {
-    if (r.ok) out.write(`set  ${r.tool.padEnd(4)} ${r.days} days  [${r.path}]\n`);
-    else out.write(`FAIL ${r.tool.padEnd(4)} ${r.error}\n`);
+    if (r.ok) {
+      const tail = r.warn ? `\n     ⚠ ${r.warn}` : "";
+      out.write(`set  ${r.tool.padEnd(4)} ${r.days} days  [${r.path}]${tail}\n`);
+    } else {
+      out.write(`FAIL ${r.tool.padEnd(4)} ${r.error}\n`);
+    }
   }
   for (const f of failures) err.write(`pmsec: ${f.error}\n`);
+  if (warnings.length) err.write(`pmsec: ${warnings.length} tool(s) configured but runtime may silently ignore the cooldown — see ⚠ above\n`);
   return failures.length ? 1 : 0;
 }
 

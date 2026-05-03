@@ -55,11 +55,19 @@ def _select(only: str | None) -> list:
     return found
 
 
+def _preflight_warn(t) -> str | None:
+    pf = getattr(t, "preflight", None)
+    if pf is None:
+        return None
+    result = pf()
+    return result.get("message")
+
+
 def _gather(targets, env, home, platform):
     rows = []
     for t in targets:
         r = t.read(env, home, platform)
-        rows.append({"tool": t.NAME, "key": t.KEY, **r})
+        rows.append({"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t), **r})
     return rows
 
 
@@ -73,6 +81,8 @@ def _render_human(rows, min_days):
         else:
             status = "OK     "
         out.append(f"{status} {r['tool']:<4} {r['key']} = {r['configured'] or '(unset)'}  [{r['path']}]")
+        if r.get("warn"):
+            out.append(f"       ⚠ {r['warn']}")
     return "\n".join(out) + "\n"
 
 
@@ -106,38 +116,34 @@ def _explain_fs_error(exc: BaseException, tool: str) -> str:
 def _set(args, targets, env, home, platform, out, err):
     if args.days <= 0:
         raise SystemExit("pmsec: set requires DAYS > 0")
-    for t in targets:
-        pf = getattr(t, "preflight", None)
-        if pf is None:
-            continue
-        result = pf()
-        if result["ok"] and result.get("warn"):
-            err.write(f"pmsec: {t.NAME}: {result['message']}\n")
-        if result["ok"]:
-            continue
-        if not args.force:
-            raise SystemExit(f"pmsec: {t.NAME}: {result['message']}")
-        err.write(f"pmsec: {t.NAME}: {result['message']} (continuing due to --force)\n")
     results = []
     failures = []
+    warnings = []
     for t in targets:
+        warn = _preflight_warn(t)
+        if warn:
+            warnings.append({"tool": t.NAME, "warn": warn})
         try:
             r = t.write(args.days, env, home, platform)
-            results.append({"tool": t.NAME, "path": r["path"], "days": args.days, "ok": True})
+            results.append({"tool": t.NAME, "path": r["path"], "days": args.days, "ok": True, "warn": warn})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)
             failures.append(msg)
-            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": args.days, "ok": False, "error": msg})
+            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": args.days, "ok": False, "error": msg, "warn": warn})
     if args.json:
-        out.write(json.dumps({"set": args.days, "results": results, "ok": not failures}, indent=2) + "\n")
+        out.write(json.dumps({"set": args.days, "results": results, "warnings": warnings, "ok": not failures}, indent=2) + "\n")
     else:
         for r in results:
             if r["ok"]:
                 out.write(f"set  {r['tool']:<4} {r['days']} days  [{r['path']}]\n")
+                if r.get("warn"):
+                    out.write(f"     ⚠ {r['warn']}\n")
             else:
                 out.write(f"FAIL {r['tool']:<4} {r['error']}\n")
     for msg in failures:
         err.write(f"pmsec: {msg}\n")
+    if warnings:
+        err.write(f"pmsec: {len(warnings)} tool(s) configured but runtime may silently ignore the cooldown — see ⚠ above\n")
     return 1 if failures else 0
 
 

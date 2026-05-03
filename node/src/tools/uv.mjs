@@ -14,7 +14,7 @@ export function preflight() {
   const v = detectVersion("uv");
   if (v === null) return { ok: true, message: null };
   if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
-  return { ok: false, version: v.raw, message: `uv ${v.raw} < ${minBin.join(".")}: writing exclude-newer = "N days" will break this uv. Upgrade uv (uv self update) or rerun with --force.` };
+  return { ok: true, warn: true, version: v.raw, message: `uv ${v.raw} < ${minBin.join(".")}: writing exclude-newer = "N days" will break this uv until you \`uv self update\` (file will fail to parse).` };
 }
 
 function parseDays(value) {
