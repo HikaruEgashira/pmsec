@@ -58,6 +58,9 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   [Environment]::SetEnvironmentVariable('USERPROFILE', $HomeDir, 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_HOME', $HomeDir, 'Process')
   [Environment]::SetEnvironmentVariable('XDG_CONFIG_HOME', (Join-Path $HomeDir '.config'), 'Process')
+  # Force the unix path layout for shape parity across runners; the
+  # Windows-specific layout is exercised by the dedicated APPDATA test.
+  [Environment]::SetEnvironmentVariable('PMSEC_PLATFORM', 'linux', 'Process')
   if ($Extra) {
     foreach ($k in $Extra.Keys) {
       [Environment]::SetEnvironmentVariable($k, $Extra[$k], 'Process')
