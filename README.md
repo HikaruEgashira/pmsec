@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a>
+  <a href="https://www.npmjs.com/package/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a> · <a href="bash/">bash</a>
 </p>
 
 ```bash
@@ -18,6 +18,13 @@ npx pmsec unset
 uvx pmsec check --min 7
 uvx pmsec set 7
 uvx pmsec unset
+```
+
+```bash
+# no npm/uv on the box? grab the bash port:
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
+  -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
+pmsec check --min 7
 ```
 
 > Bootstrap: pmsec itself is subject to cooldown, so the very first install

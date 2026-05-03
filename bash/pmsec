@@ -1,0 +1,729 @@
+#!/usr/bin/env bash
+# pmsec — install-time cooldown for npm / pnpm / yarn / bun / cargo / mise / uv.
+# Bash port. Works without npm/uv installed; only needs bash 3.2+ and coreutils.
+# License: MIT.
+set +u
+
+PMSEC_VERSION="0.3.0"
+DEFAULT_MIN=7
+TOOLS=(npm pnpm yarn bun cargo mise uv)
+
+# ---------- paths ----------
+
+path_npmrc() {
+  if [ -n "${NPM_CONFIG_USERCONFIG:-}" ]; then printf '%s' "$NPM_CONFIG_USERCONFIG"; return; fi
+  printf '%s/.npmrc' "$HOME"
+}
+path_uv() {
+  if [ -n "${UV_CONFIG_FILE:-}" ]; then printf '%s' "$UV_CONFIG_FILE"; return; fi
+  if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
+    printf '%s/uv/uv.toml' "${APPDATA:-$HOME/AppData/Roaming}"; return
+  fi
+  printf '%s/uv/uv.toml' "${XDG_CONFIG_HOME:-$HOME/.config}"
+}
+path_bun() {
+  if [ -n "${BUN_CONFIG_FILE:-}" ]; then printf '%s' "$BUN_CONFIG_FILE"; return; fi
+  printf '%s/.bunfig.toml' "$HOME"
+}
+path_yarn() {
+  if [ -n "${YARN_RC_FILENAME:-}" ]; then printf '%s' "$YARN_RC_FILENAME"; return; fi
+  printf '%s/.yarnrc.yml' "$HOME"
+}
+path_cargo() {
+  if [ -n "${CARGO_HOME:-}" ]; then printf '%s/config.toml' "$CARGO_HOME"; return; fi
+  printf '%s/.cargo/config.toml' "$HOME"
+}
+path_mise() {
+  if [ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]; then printf '%s' "$MISE_GLOBAL_CONFIG_FILE"; return; fi
+  if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
+    printf '%s/mise/config.toml' "${LOCALAPPDATA:-$HOME/AppData/Local}"; return
+  fi
+  printf '%s/mise/config.toml' "${XDG_CONFIG_HOME:-$HOME/.config}"
+}
+
+# ---------- line buffer ----------
+# Mirrors node/src/util/lines.mjs. Operates on global LINES_BUF, joined with '\n'
+# plus a trailing newline iff the resulting buffer is non-empty.
+LINES_BUF=()
+
+lines_load() {
+  local path="$1" line
+  LINES_BUF=()
+  [ -f "$path" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    LINES_BUF[${#LINES_BUF[@]}]="$line"
+  done < "$path"
+}
+
+lines_dump() {
+  local n=${#LINES_BUF[@]} i
+  if [ "$n" -eq 0 ]; then return 0; fi
+  for ((i=0; i<n; i++)); do printf '%s\n' "${LINES_BUF[i]}"; done
+}
+
+lines_is_section() {
+  [[ "$1" =~ ^[[:space:]]*\[[^]]+\][[:space:]]*$ ]]
+}
+
+# Print the key for "key=value" / "key: value", or empty.
+lines_entry_key() {
+  local line="$1" sep="$2"
+  if [ "$sep" = ":" ]; then
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*: ]] || return 1
+  else
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*= ]] || return 1
+  fi
+  printf '%s' "${BASH_REMATCH[1]}"
+}
+
+# Echo "start end" for the section's [start, end) range, or empty string if
+# the named section is missing. With section="", returns the head region
+# (lines before the first section header).
+lines_section_range() {
+  local section="$1" n=${#LINES_BUF[@]} i
+  if [ -z "$section" ]; then
+    for ((i=0; i<n; i++)); do
+      if lines_is_section "${LINES_BUF[i]}"; then printf '0 %d' "$i"; return 0; fi
+    done
+    printf '0 %d' "$n"; return 0
+  fi
+  local header="[$section]" trimmed start=-1 end=$n
+  for ((i=0; i<n; i++)); do
+    trimmed="${LINES_BUF[i]}"
+    trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    if [ "$trimmed" = "$header" ]; then start=$((i+1)); break; fi
+  done
+  if [ "$start" -lt 0 ]; then return 0; fi
+  for ((i=start; i<n; i++)); do
+    if lines_is_section "${LINES_BUF[i]}"; then end=$i; break; fi
+  done
+  printf '%d %d' "$start" "$end"
+}
+
+lines_index_of_key() {
+  local key="$1" sep="$2" start="$3" end="$4" i k
+  for ((i=start; i<end; i++)); do
+    k=$(lines_entry_key "${LINES_BUF[i]}" "$sep") || continue
+    if [ "$k" = "$key" ]; then printf '%d' "$i"; return 0; fi
+  done
+  printf '%d' "-1"
+}
+
+lines_first_section_idx() {
+  local n=${#LINES_BUF[@]} i
+  for ((i=0; i<n; i++)); do
+    if lines_is_section "${LINES_BUF[i]}"; then printf '%d' "$i"; return 0; fi
+  done
+  printf '%d' "-1"
+}
+
+# Print the value of $key inside the (optional) section. Return 1 if missing.
+lines_read_key() {
+  local key="$1" sep="${2:-=}" section="${3:-}" range start end idx line val
+  range=$(lines_section_range "$section")
+  [ -n "$range" ] || return 1
+  start="${range% *}"; end="${range#* }"
+  idx=$(lines_index_of_key "$key" "$sep" "$start" "$end")
+  [ "$idx" != "-1" ] || return 1
+  line="${LINES_BUF[idx]}"
+  if [ "$sep" = ":" ]; then
+    [[ "$line" =~ ^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*:[[:space:]]*(.*)$ ]] || return 1
+  else
+    [[ "$line" =~ ^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*=[[:space:]]*(.*)$ ]] || return 1
+  fi
+  val="${BASH_REMATCH[1]}"
+  val="${val%"${val##*[![:space:]]}"}"
+  printf '%s' "$val"
+}
+
+# Insert items from $@ at index $1, shifting the tail right.
+_lines_splice_in() {
+  local pos="$1"; shift
+  local n=${#LINES_BUF[@]} out=() i v
+  for ((i=0; i<pos; i++)); do out[${#out[@]}]="${LINES_BUF[i]}"; done
+  for v in "$@"; do out[${#out[@]}]="$v"; done
+  for ((i=pos; i<n; i++)); do out[${#out[@]}]="${LINES_BUF[i]}"; done
+  LINES_BUF=()
+  for ((i=0; i<${#out[@]}; i++)); do LINES_BUF[i]="${out[i]}"; done
+}
+
+_lines_splice_out() {
+  local pos="$1" len="$2" n=${#LINES_BUF[@]} out=() i
+  for ((i=0; i<pos; i++)); do out[${#out[@]}]="${LINES_BUF[i]}"; done
+  for ((i=pos+len; i<n; i++)); do out[${#out[@]}]="${LINES_BUF[i]}"; done
+  LINES_BUF=()
+  for ((i=0; i<${#out[@]}; i++)); do LINES_BUF[i]="${out[i]}"; done
+}
+
+# Set or replace a key=value (or key: value) line within an optional section.
+lines_set_key() {
+  local key="$1" value_line="$2" sep="${3:-=}" section="${4:-}"
+  local n=${#LINES_BUF[@]} range start end idx first_sec
+  range=$(lines_section_range "$section")
+  if [ -z "$range" ]; then
+    if [ "$n" -gt 0 ] && [ -n "${LINES_BUF[n-1]}" ]; then
+      LINES_BUF[$n]=""
+      n=$((n+1))
+    fi
+    LINES_BUF[$n]="[$section]"
+    LINES_BUF[$((n+1))]="$value_line"
+    return 0
+  fi
+  start="${range% *}"; end="${range#* }"
+  idx=$(lines_index_of_key "$key" "$sep" "$start" "$end")
+  if [ "$idx" != "-1" ]; then
+    LINES_BUF[idx]="$value_line"; return 0
+  fi
+  if [ -n "$section" ]; then
+    _lines_splice_in "$start" "$value_line"
+    return 0
+  fi
+  first_sec=$(lines_first_section_idx)
+  if [ "$first_sec" = "-1" ]; then
+    LINES_BUF[${#LINES_BUF[@]}]="$value_line"
+  else
+    _lines_splice_in "$first_sec" "$value_line" ""
+  fi
+}
+
+# Remove a key from a section. Also drops a single trailing blank line that
+# the key left behind, matching the node implementation.
+lines_remove_key() {
+  local key="$1" sep="${2:-=}" section="${3:-}" range start end idx n
+  range=$(lines_section_range "$section")
+  [ -n "$range" ] || return 1
+  start="${range% *}"; end="${range#* }"
+  idx=$(lines_index_of_key "$key" "$sep" "$start" "$end")
+  [ "$idx" != "-1" ] || return 1
+  _lines_splice_out "$idx" 1
+  n=${#LINES_BUF[@]}
+  if [ "$idx" -lt "$n" ] && [ -z "${LINES_BUF[idx]}" ]; then
+    _lines_splice_out "$idx" 1
+  fi
+  return 0
+}
+
+# ---------- atomic write ----------
+
+write_atomic() {
+  # write stdin to $1 atomically; create one-shot $1.bak from the existing file.
+  local path="$1" dir tmp bak
+  dir=$(dirname -- "$path")
+  mkdir -p -- "$dir"
+  if [ -L "$path" ]; then
+    printf 'pmsec: refusing to write through symlink %s\n' "$path" >&2
+    return 1
+  fi
+  bak="$path.bak"
+  if [ -e "$path" ] && [ ! -e "$bak" ]; then
+    cp -p -- "$path" "$bak"
+  fi
+  tmp=$(mktemp "$path.XXXXXX") || return 1
+  cat > "$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv -f -- "$tmp" "$path"
+}
+
+# ---------- version detection ----------
+
+# Echo "MAJOR MINOR PATCH RAW" (space separated). Return 1 if not detected.
+version_detect() {
+  local bin="$1" out
+  command -v "$bin" >/dev/null 2>&1 || return 1
+  out=$("$bin" --version 2>/dev/null) || return 1
+  if [[ "$out" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+    printf '%s %s %s %s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[0]}"
+    return 0
+  fi
+  return 1
+}
+
+# version_gte VA VB VC TA TB TC — return 0 if (VA,VB,VC) >= (TA,TB,TC).
+version_gte() {
+  if [ "$1" -ne "$4" ]; then [ "$1" -gt "$4" ]; return; fi
+  if [ "$2" -ne "$5" ]; then [ "$2" -gt "$5" ]; return; fi
+  [ "$3" -ge "$6" ]
+}
+
+# ---------- per-tool: metadata ----------
+
+tool_path() {
+  case "$1" in
+    npm)   path_npmrc ;;
+    pnpm)  path_npmrc ;;
+    yarn)  path_yarn ;;
+    bun)   path_bun ;;
+    cargo) path_cargo ;;
+    mise)  path_mise ;;
+    uv)    path_uv ;;
+    *) return 1 ;;
+  esac
+}
+
+tool_key() {
+  case "$1" in
+    npm)   printf 'min-release-age' ;;
+    pnpm)  printf 'minimum-release-age' ;;
+    yarn)  printf 'npmMinimalAgeGate' ;;
+    bun)   printf 'minimumReleaseAge' ;;
+    cargo) printf 'minimum-release-age' ;;
+    mise)  printf 'minimum_release_age' ;;
+    uv)    printf 'exclude-newer' ;;
+  esac
+}
+
+tool_section() {
+  case "$1" in
+    bun)   printf 'install' ;;
+    cargo) printf 'install' ;;
+    mise)  printf 'settings' ;;
+    *)     printf '' ;;
+  esac
+}
+
+tool_sep() {
+  case "$1" in
+    yarn) printf ':' ;;
+    *)    printf '=' ;;
+  esac
+}
+
+# ---------- per-tool: read (configured value + days) ----------
+# Echoes "configured|days" (configured may contain anything, days is integer or
+# empty when unparseable). Return 1 if the key is absent.
+
+# parse "Nd" / "Nw" / "Ndays" / "Nweeks" (optionally surrounded by quotes)
+parse_days_dw() {
+  local v="$1" n unit lc
+  v="${v#\"}"; v="${v%\"}"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  if [[ "$v" =~ ^([0-9]+)[[:space:]]*([A-Za-z]+)$ ]]; then
+    n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+    lc=$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')
+    case "$lc" in
+      d|day|days) printf '%d' "$n" ;;
+      w|week|weeks) printf '%d' "$((n*7))" ;;
+      *) return 1 ;;
+    esac
+    return 0
+  fi
+  return 1
+}
+
+# mise additionally accepts months/years.
+parse_days_mise() {
+  local v="$1" n unit lc
+  v="${v#\"}"; v="${v%\"}"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  if [[ "$v" =~ ^([0-9]+)[[:space:]]*([A-Za-z]+)$ ]]; then
+    n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+    lc=$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')
+    case "$lc" in
+      d|day|days) printf '%d' "$n" ;;
+      w|week|weeks) printf '%d' "$((n*7))" ;;
+      m|month|months) printf '%d' "$((n*30))" ;;
+      y|year|years) printf '%d' "$((n*365))" ;;
+      *) return 1 ;;
+    esac
+    return 0
+  fi
+  return 1
+}
+
+# uv requires the value to be a quoted string ending in days/weeks (the toml
+# parser does not accept duration suffixes outside quotes).
+parse_days_uv() {
+  local v="$1" n unit lc
+  if [[ "$v" =~ ^\"[[:space:]]*([0-9]+)[[:space:]]*(day|days|d|week|weeks|w)[[:space:]]*\"$ ]]; then
+    n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+    lc=$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')
+    case "$lc" in
+      week|weeks|w) printf '%d' "$((n*7))" ;;
+      *) printf '%d' "$n" ;;
+    esac
+    return 0
+  fi
+  return 1
+}
+
+tool_read() {
+  local tool="$1" key sep section path val days
+  key=$(tool_key "$tool"); sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
+  path=$(tool_path "$tool")
+  lines_load "$path"
+  if ! val=$(lines_read_key "$key" "$sep" "$section"); then
+    return 1
+  fi
+  case "$tool" in
+    npm)
+      if [[ "$val" =~ ^[0-9]+$ ]]; then days="$val"; else days=""; fi
+      ;;
+    pnpm)
+      if [[ "$val" =~ ^[0-9]+$ ]]; then days=$((val / 1440)); else days=""; fi
+      ;;
+    bun)
+      if [[ "$val" =~ ^[0-9]+$ ]]; then days=$((val / 86400)); else days=""; fi
+      ;;
+    yarn|cargo) days=$(parse_days_dw "$val") || days="" ;;
+    mise) days=$(parse_days_mise "$val") || days="" ;;
+    uv) days=$(parse_days_uv "$val") || days="" ;;
+    *) days="" ;;
+  esac
+  printf '%s|%s' "$val" "$days"
+}
+
+# ---------- per-tool: write ----------
+
+tool_write_value_line() {
+  local tool="$1" days="$2" key
+  key=$(tool_key "$tool")
+  case "$tool" in
+    npm)   printf '%s=%d' "$key" "$days" ;;
+    pnpm)  printf '%s=%d' "$key" "$((days * 1440))" ;;
+    yarn)  printf '%s: "%dd"' "$key" "$days" ;;
+    bun)   printf '%s = %d' "$key" "$((days * 86400))" ;;
+    cargo) printf '%s = "%dd"' "$key" "$days" ;;
+    mise)  printf '%s = "%dd"' "$key" "$days" ;;
+    uv)    printf '%s = "%d days"' "$key" "$days" ;;
+  esac
+}
+
+tool_write() {
+  local tool="$1" days="$2" path key sep section line
+  path=$(tool_path "$tool"); key=$(tool_key "$tool")
+  sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
+  line=$(tool_write_value_line "$tool" "$days")
+  lines_load "$path"
+  lines_set_key "$key" "$line" "$sep" "$section"
+  lines_dump | write_atomic "$path"
+}
+
+tool_unset() {
+  local tool="$1" path key sep section removed=0
+  path=$(tool_path "$tool"); key=$(tool_key "$tool")
+  sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
+  lines_load "$path"
+  if lines_remove_key "$key" "$sep" "$section"; then
+    removed=1
+    lines_dump | write_atomic "$path" || return 1
+  fi
+  printf '%d' "$removed"
+}
+
+# ---------- per-tool: preflight (silently-ignored cooldown warning) ----------
+
+tool_preflight() {
+  local tool="$1" v
+  case "$tool" in
+    cargo) return 0 ;;  # no min version gate, ships with rustup
+  esac
+  v=$(version_detect "$tool") || return 0
+  set -- $v
+  case "$tool" in
+    npm)
+      version_gte "$1" "$2" "$3" 11 10 0 || \
+        printf 'npm %s < 11.10.0: min-release-age is silently ignored. Upgrade npm to enforce the cooldown.' "$4"
+      ;;
+    pnpm)
+      version_gte "$1" "$2" "$3" 10 6 0 || \
+        printf 'pnpm %s < 10.6.0: minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.' "$4"
+      ;;
+    yarn)
+      version_gte "$1" "$2" "$3" 4 10 0 || \
+        printf 'yarn %s < 4.10.0: npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' "$4"
+      ;;
+    bun)
+      version_gte "$1" "$2" "$3" 1 3 0 || \
+        printf 'bun %s < 1.3.0: minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' "$4"
+      ;;
+    mise)
+      version_gte "$1" "$2" "$3" 2026 4 22 || \
+        printf 'mise %s < 2026.4.22: setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' "$4"
+      ;;
+    uv)
+      version_gte "$1" "$2" "$3" 0 9 17 || \
+        printf 'uv %s < 0.9.17: writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' "$4"
+      ;;
+  esac
+}
+
+# ---------- JSON helpers ----------
+
+json_escape() {
+  local s="$1" out="" i c
+  for ((i=0; i<${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      \\) out+='\\' ;;
+      \") out+='\"' ;;
+      $'\n') out+='\n' ;;
+      $'\r') out+='\r' ;;
+      $'\t') out+='\t' ;;
+      *) out+="$c" ;;
+    esac
+  done
+  printf '"%s"' "$out"
+}
+
+# json_value emits either `"…"` (escaped) or `null` if $2 == "1"
+json_str() { json_escape "$1"; }
+json_str_or_null() {
+  if [ "${2:-0}" = "1" ]; then printf 'null'; else json_escape "$1"; fi
+}
+json_int_or_null() {
+  if [ -z "$1" ]; then printf 'null'; else printf '%d' "$1"; fi
+}
+json_bool() { if [ "$1" = "1" ]; then printf 'true'; else printf 'false'; fi; }
+
+# ---------- CLI ----------
+
+USAGE() {
+  cat <<EOF
+pmsec <command> [options]
+
+Commands:
+  check                 Inspect cooldown settings (exit 1 if any tool below --min)
+  set <DAYS>            Apply DAYS-day cooldown to all selected tools
+  unset                 Remove cooldown settings from selected tools
+
+Options:
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
+  --min DAYS            Minimum acceptable days for check (default ${DEFAULT_MIN})
+  --json                Emit JSON output
+  -h, --help            Show this help
+
+Examples:
+  pmsec check --min 7
+  pmsec set 7
+  pmsec unset --tool npm
+EOF
+}
+
+# parse_args populates: CMD, CMD_DAYS, OPT_MIN, OPT_JSON, OPT_ONLY (csv), OPT_HELP.
+parse_args() {
+  CMD=""; CMD_DAYS=""; OPT_MIN=$DEFAULT_MIN; OPT_JSON=0; OPT_ONLY=""; OPT_HELP=0
+  POS=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help)   OPT_HELP=1 ;;
+      --json)      OPT_JSON=1 ;;
+      --min)       shift; OPT_MIN="$1" ;;
+      --min=*)     OPT_MIN="${1#--min=}" ;;
+      --tool)      shift; OPT_ONLY="$1" ;;
+      --tool=*)    OPT_ONLY="${1#--tool=}" ;;
+      --)          shift; while [ $# -gt 0 ]; do POS[${#POS[@]}]="$1"; shift; done; break ;;
+      -*)          printf 'pmsec: unknown flag: %s\n' "$1" >&2; return 2 ;;
+      *)           POS[${#POS[@]}]="$1" ;;
+    esac
+    shift
+  done
+  CMD="${POS[0]:-}"
+  if [ "$CMD" = "set" ]; then CMD_DAYS="${POS[1]:-}"; fi
+  return 0
+}
+
+# Resolve OPT_ONLY (csv or empty) → SELECTED array of tool names.
+select_tools() {
+  SELECTED=()
+  if [ -z "$OPT_ONLY" ]; then
+    SELECTED=("${TOOLS[@]}")
+    return 0
+  fi
+  local IFS=','
+  set -- $OPT_ONLY
+  unset IFS
+  local n missing=()
+  for n in "$@"; do
+    case " ${TOOLS[*]} " in
+      *" $n "*) SELECTED[${#SELECTED[@]}]="$n" ;;
+      *) missing[${#missing[@]}]="$n" ;;
+    esac
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    printf 'pmsec: unknown tool(s): %s\n' "$(IFS=','; printf '%s' "${missing[*]}")" >&2
+    return 2
+  fi
+}
+
+status_for() {
+  local days="$1" min="$2"
+  if [ -z "$days" ]; then printf 'MISSING'; return; fi
+  if [ "$days" -lt "$min" ]; then printf 'STALE  '; return; fi
+  printf 'OK     '
+}
+
+pad4() {
+  local s="$1"
+  case "${#s}" in
+    1) printf '%s   ' "$s" ;;
+    2) printf '%s  '  "$s" ;;
+    3) printf '%s '   "$s" ;;
+    *) printf '%s'    "$s" ;;
+  esac
+}
+
+cmd_check() {
+  local rows_json="" first=1 failing=0 tool path val days configured warn
+  for tool in "${SELECTED[@]}"; do
+    path=$(tool_path "$tool")
+    val=""; days=""
+    if r=$(tool_read "$tool"); then
+      val="${r%|*}"; days="${r##*|}"
+    fi
+    warn=$(tool_preflight "$tool")
+    if [ -z "$days" ] || [ "$days" -lt "$OPT_MIN" ]; then failing=$((failing+1)); fi
+    if [ "$OPT_JSON" = "1" ]; then
+      local cfg_json days_json warn_json missing=0
+      [ -z "$val" ] && [ -z "$days" ] && missing=1
+      if [ "$missing" = "1" ]; then cfg_json="null"; else cfg_json=$(json_str "$val"); fi
+      days_json=$(json_int_or_null "$days")
+      if [ -z "$warn" ]; then warn_json="null"; else warn_json=$(json_str "$warn"); fi
+      [ "$first" = "1" ] || rows_json+=','$'\n'
+      first=0
+      rows_json+=$'    {'
+      rows_json+="\"tool\": $(json_str "$tool"), "
+      rows_json+="\"key\": $(json_str "$(tool_key "$tool")"), "
+      rows_json+="\"path\": $(json_str "$path"), "
+      rows_json+="\"configured\": $cfg_json, "
+      rows_json+="\"days\": $days_json, "
+      rows_json+="\"warn\": $warn_json"
+      rows_json+='}'
+    else
+      local status display
+      status=$(status_for "$days" "$OPT_MIN")
+      if [ -z "$val" ]; then display="(unset)"; else display="$val"; fi
+      printf '%s %s %s = %s  [%s]\n' "$status" "$(pad4 "$tool")" "$(tool_key "$tool")" "$display" "$path"
+      if [ -n "$warn" ]; then printf '       \xe2\x9a\xa0 %s\n' "$warn"; fi
+    fi
+  done
+  if [ "$OPT_JSON" = "1" ]; then
+    local ok="true"
+    [ "$failing" -gt 0 ] && ok="false"
+    printf '{\n  "min": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_MIN" "$rows_json" "$ok"
+  fi
+  if [ "$failing" -gt 0 ]; then
+    printf 'pmsec: %d tool(s) below %d days\n' "$failing" "$OPT_MIN" >&2
+    return 1
+  fi
+  return 0
+}
+
+cmd_set() {
+  if ! [[ "$CMD_DAYS" =~ ^[0-9]+$ ]] || [ "$CMD_DAYS" -le 0 ]; then
+    printf 'pmsec: set requires integer DAYS > 0\n' >&2
+    return 2
+  fi
+  local results_json="" warns_json="" first_r=1 first_w=1 failures=0 warn_count=0
+  local tool path warn err
+  for tool in "${SELECTED[@]}"; do
+    path=$(tool_path "$tool")
+    warn=$(tool_preflight "$tool")
+    err=""
+    if ! out=$(tool_write "$tool" "$CMD_DAYS" 2>&1); then
+      err="$out"; failures=$((failures+1))
+    fi
+    if [ -n "$warn" ]; then warn_count=$((warn_count+1)); fi
+    if [ "$OPT_JSON" = "1" ]; then
+      local ok_json warn_json err_json
+      if [ -z "$err" ]; then ok_json="true"; else ok_json="false"; fi
+      if [ -z "$warn" ]; then warn_json="null"; else warn_json=$(json_str "$warn"); fi
+      [ "$first_r" = "1" ] || results_json+=','$'\n'
+      first_r=0
+      results_json+=$'    {'
+      results_json+="\"tool\": $(json_str "$tool"), "
+      results_json+="\"path\": $(json_str "$path"), "
+      results_json+="\"days\": $CMD_DAYS, "
+      results_json+="\"ok\": $ok_json, "
+      results_json+="\"warn\": $warn_json"
+      if [ -n "$err" ]; then
+        err_json=$(json_str "$err")
+        results_json+=", \"error\": $err_json"
+      fi
+      results_json+='}'
+      if [ -n "$warn" ]; then
+        [ "$first_w" = "1" ] || warns_json+=','$'\n'
+        first_w=0
+        warns_json+=$'    {'"\"tool\": $(json_str "$tool"), \"warn\": $(json_str "$warn")}"
+      fi
+    else
+      if [ -z "$err" ]; then
+        printf 'set  %s %d days  [%s]\n' "$(pad4 "$tool")" "$CMD_DAYS" "$path"
+        if [ -n "$warn" ]; then printf '     \xe2\x9a\xa0 %s\n' "$warn"; fi
+      else
+        printf 'FAIL %s %s\n' "$(pad4 "$tool")" "$err"
+      fi
+    fi
+    if [ -n "$err" ]; then printf 'pmsec: %s\n' "$err" >&2; fi
+  done
+  if [ "$OPT_JSON" = "1" ]; then
+    local ok="true"; [ "$failures" -gt 0 ] && ok="false"
+    printf '{\n  "set": %d,\n  "results": [\n%s\n  ],\n  "warnings": [' "$CMD_DAYS" "$results_json"
+    if [ -n "$warns_json" ]; then printf '\n%s\n  ' "$warns_json"; fi
+    printf '],\n  "ok": %s\n}\n' "$ok"
+  fi
+  if [ "$warn_count" -gt 0 ]; then
+    printf 'pmsec: %d tool(s) configured but runtime may silently ignore the cooldown — see ⚠ above\n' "$warn_count" >&2
+  fi
+  [ "$failures" -gt 0 ] && return 1
+  return 0
+}
+
+cmd_unset() {
+  local results_json="" first_r=1 failures=0 tool path err removed
+  for tool in "${SELECTED[@]}"; do
+    path=$(tool_path "$tool")
+    err=""; removed=0
+    if out=$(tool_unset "$tool" 2>&1); then
+      removed="$out"
+    else
+      err="$out"; failures=$((failures+1))
+    fi
+    if [ "$OPT_JSON" = "1" ]; then
+      local ok_json rm_json
+      if [ -z "$err" ]; then ok_json="true"; else ok_json="false"; fi
+      if [ "$removed" = "1" ]; then rm_json="true"; else rm_json="false"; fi
+      [ "$first_r" = "1" ] || results_json+=','$'\n'
+      first_r=0
+      results_json+=$'    {'
+      results_json+="\"tool\": $(json_str "$tool"), "
+      results_json+="\"path\": $(json_str "$path"), "
+      results_json+="\"removed\": $rm_json, "
+      results_json+="\"ok\": $ok_json"
+      if [ -n "$err" ]; then results_json+=", \"error\": $(json_str "$err")"; fi
+      results_json+='}'
+    else
+      if [ -n "$err" ]; then
+        printf 'FAIL %s %s\n' "$(pad4 "$tool")" "$err"
+      elif [ "$removed" = "1" ]; then
+        printf 'rm   %s [%s]\n' "$(pad4 "$tool")" "$path"
+      else
+        printf 'skip %s [%s]\n' "$(pad4 "$tool")" "$path"
+      fi
+    fi
+    [ -n "$err" ] && printf 'pmsec: %s\n' "$err" >&2
+  done
+  if [ "$OPT_JSON" = "1" ]; then
+    local ok="true"; [ "$failures" -gt 0 ] && ok="false"
+    printf '{\n  "results": [\n%s\n  ],\n  "ok": %s\n}\n' "$results_json" "$ok"
+  fi
+  [ "$failures" -gt 0 ] && return 1
+  return 0
+}
+
+main() {
+  parse_args "$@" || return $?
+  if [ "$OPT_HELP" = "1" ]; then USAGE; return 0; fi
+  if [ -z "$CMD" ]; then USAGE; return 2; fi
+  select_tools || return $?
+  case "$CMD" in
+    check) cmd_check ;;
+    set)   cmd_set ;;
+    unset) cmd_unset ;;
+    *)     printf 'pmsec: unknown command "%s"\n' "$CMD" >&2; return 2 ;;
+  esac
+}
+
+main "$@"

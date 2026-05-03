@@ -5,11 +5,13 @@ on:
     paths:
       - 'node/**'
       - 'python/**'
+      - 'bash/**'
       - '.github/workflows/pmsec-ci.yml'
   pull_request:
     paths:
       - 'node/**'
       - 'python/**'
+      - 'bash/**'
       - '.github/workflows/pmsec-ci.yml'
 permissions: {}
 jobs:
@@ -58,3 +60,24 @@ jobs:
         env:
           PY_VERSION: ${{ matrix.python }}
         run: uv run --python "$PY_VERSION" --with pytest pytest -q
+  bash:
+    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: bash --version
+        timeout-minutes: 1
+        run: bash --version
+      - name: test
+        timeout-minutes: 5
+        run: bash test/test.sh
