@@ -533,7 +533,9 @@ select_tools() {
     return 0
   fi
   local IFS=','
+  set -f
   set -- $OPT_ONLY
+  set +f
   unset IFS
   local n missing=()
   for n in "$@"; do
