@@ -63,13 +63,6 @@ CI:
 
 `pmsec` は **OS 非依存で `npx` / `uvx` 1 コマンド**にまとめ、ランタイム検出と権限自己復旧を備えるのが差分です。
 
-## 開発
-
-```bash
-cd node && node --test
-cd python && uv run --with pytest pytest -q
-```
-
 ## License
 
 [MIT](LICENSE)
