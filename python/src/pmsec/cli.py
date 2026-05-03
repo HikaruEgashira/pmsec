@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -101,10 +102,11 @@ def _check(args, targets, env, home, platform, out, err):
 def _explain_fs_error(exc: BaseException, tool: str) -> str:
     if isinstance(exc, PermissionError):
         path = getattr(exc, "filename", "") or ""
+        q = shlex.quote(path) if path else ""
         return (
             f"{tool}: cannot write {path} (PermissionError). "
-            f"Check file ownership: `ls -la {path}` — if owned by root, "
-            f"run `sudo chown $(id -u):$(id -g) {path}`."
+            f"Check file ownership: `ls -la {q}` — if owned by root, "
+            f"run `sudo chown -h $(id -u):$(id -g) {q}`."
         )
     if isinstance(exc, OSError) and exc.errno == 30:
         path = getattr(exc, "filename", "") or ""

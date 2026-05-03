@@ -89,16 +89,20 @@ async function runCheck(targets, { min, json }, env, home, platform, out, err) {
   return failing.length ? 1 : 0;
 }
 
+function shQuote(s) { return s ? `'${String(s).replace(/'/g, `'\\''`)}'` : ""; }
+
 function explainFsError(e, tool) {
   if (e?.code === "EACCES" || e?.code === "EPERM") {
-    return `${tool}: cannot write ${e.path ?? ""} (${e.code}). Check file ownership: \`ls -la ${e.path ?? ""}\` — if owned by root, run \`sudo chown $(id -u):$(id -g) ${e.path ?? ""}\`.`;
+    const p = e.path ?? "";
+    const q = shQuote(p);
+    return `${tool}: cannot write ${p} (${e.code}). Check file ownership: \`ls -la ${q}\` — if owned by root, run \`sudo chown -h $(id -u):$(id -g) ${q}\`.`;
   }
   if (e?.code === "EROFS") return `${tool}: ${e.path ?? ""} is on a read-only filesystem (EROFS).`;
   return `${tool}: ${e?.message ?? e}`;
 }
 
 async function runSet(targets, days, json, env, home, platform, out, err) {
-  if (!Number.isFinite(days) || days <= 0) throw new Error(`set requires DAYS > 0`);
+  if (!Number.isInteger(days) || days <= 0) throw new Error(`set requires integer DAYS > 0`);
   const results = [];
   const failures = [];
   const warnings = [];
