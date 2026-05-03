@@ -28,5 +28,3 @@ jobs:
           [ "$tag_version" = "$pkg_version" ] || { echo "tag $tag_version != package.json $pkg_version" >&2; exit 1; }
       - run: node --test
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
