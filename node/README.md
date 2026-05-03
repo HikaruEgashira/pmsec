@@ -14,6 +14,20 @@ npx @hikae/pmsec set 7
 npx @hikae/pmsec unset
 ```
 
+```bash
+uvx pmsec check --min 7
+uvx pmsec set 7
+uvx pmsec unset
+```
+
+If your environment already enforces cooldown (or routes through a proxy
+registry), bootstrap pmsec by overriding just for that call:
+
+```bash
+npx --registry=https://registry.npmjs.org/ --min-release-age=0 @hikae/pmsec check
+uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
+```
+
 Zero runtime dependencies, ESM, requires Node 20+.
 
 ## Commands
