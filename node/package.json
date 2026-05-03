@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "bin": {
     "pmsec": "./bin/cli.mjs"
@@ -16,7 +16,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test 'test/**/*.test.mjs'"
+    "test": "node --test"
   },
   "keywords": [
     "supply-chain",
