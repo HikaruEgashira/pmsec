@@ -2,7 +2,7 @@
 
 `pmsec` ships the same CLI from two implementations that must stay in lock-step:
 
-- `node/` — published as `@hikae/pmsec` on npm, ESM, zero runtime deps, Node ≥ 20.
+- `node/` — published as `pmsec` on npm, ESM, zero runtime deps, Node ≥ 20.
 - `python/` — published as `pmsec` on PyPI, hatchling build, Python ≥ 3.10.
 
 The public surface (`pmsec check | set <DAYS> | unset`, `--tool`, `--json`, `--min`, exit codes, output format) is **mirrored** between the two. When changing CLI behavior, update both implementations and both test suites in the same change.

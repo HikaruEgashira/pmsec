@@ -1,4 +1,4 @@
-# @hikae/pmsec (Node)
+# pmsec (Node)
 
 Cross-platform CLI that inspects and applies install-time cooldown settings
 (npm `min-release-age`, pnpm `minimum-release-age`, yarn `npmMinimalAgeGate`,
@@ -9,9 +9,9 @@ land in your machine within hours of upload.
 ## Install
 
 ```bash
-npx @hikae/pmsec check --min 7
-npx @hikae/pmsec set 7
-npx @hikae/pmsec unset
+npx pmsec check --min 7
+npx pmsec set 7
+npx pmsec unset
 ```
 
 ```bash
@@ -24,7 +24,7 @@ If your environment already enforces cooldown (or routes through a proxy
 registry), bootstrap pmsec by overriding just for that call:
 
 ```bash
-npx --registry=https://registry.npmjs.org/ --min-release-age=0 @hikae/pmsec check
+npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
 uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
 ```
 

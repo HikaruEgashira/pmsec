@@ -14,9 +14,9 @@ uvx pmsec unset
 ```
 
 ```bash
-npx @hikae/pmsec check --min 7
-npx @hikae/pmsec set 7
-npx @hikae/pmsec unset
+npx pmsec check --min 7
+npx pmsec set 7
+npx pmsec unset
 ```
 
 If your environment already enforces cooldown (or routes through a proxy
@@ -24,7 +24,7 @@ index), bootstrap pmsec by overriding just for that call:
 
 ```bash
 uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
-npx --registry=https://registry.npmjs.org/ --min-release-age=0 @hikae/pmsec check
+npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
 ```
 
 ## Supported tools
