@@ -3,7 +3,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh -s 0.2.4
+#   curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh -s 0.3.0
 #
 # Env overrides:
 #   PMSEC_HOME       install root         (default: $HOME/.pmsec)
@@ -12,7 +12,7 @@
 
 set -eu
 
-NPM_PKG="@hikae/pmsec"
+NPM_PKG="pmsec"
 REGISTRY="${PMSEC_REGISTRY:-https://registry.npmjs.org}"
 INSTALL_DIR="${PMSEC_HOME:-$HOME/.pmsec}"
 BIN_DIR="${PMSEC_BIN_DIR:-$HOME/.local/bin}"

@@ -2,7 +2,7 @@
 #
 # Usage:
 #   irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1 | iex
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1))) -Version 0.2.4
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1))) -Version 0.3.0
 #
 # Env overrides:
 #   $env:PMSEC_HOME       install root      (default: $HOME\.pmsec)
@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$NpmPkg     = '@hikae/pmsec'
+$NpmPkg     = 'pmsec'
 $Registry   = if ($env:PMSEC_REGISTRY) { $env:PMSEC_REGISTRY.TrimEnd('/') } else { 'https://registry.npmjs.org' }
 $InstallDir = if ($env:PMSEC_HOME)     { $env:PMSEC_HOME }    else { Join-Path $HOME '.pmsec' }
 $BinDir     = if ($env:PMSEC_BIN_DIR)  { $env:PMSEC_BIN_DIR } else { Join-Path $HOME '.local\bin' }

@@ -5,13 +5,13 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@hikae/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a>
+  <a href="https://www.npmjs.com/package/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a>
 </p>
 
 ```bash
-npx @hikae/pmsec check --min 7
-npx @hikae/pmsec set 7
-npx @hikae/pmsec unset
+npx pmsec check --min 7
+npx pmsec set 7
+npx pmsec unset
 ```
 
 ```bash
@@ -24,14 +24,14 @@ uvx pmsec unset
 # Standalone install (Linux / macOS, requires Node >= 20)
 curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh
 # Pin a version
-curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh -s 0.2.4
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.sh | sh -s 0.3.0
 ```
 
 ```powershell
 # Standalone install (Windows, requires Node >= 20 and tar.exe)
 irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1 | iex
 # Pin a version
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1))) -Version 0.2.4
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/install.ps1))) -Version 0.3.0
 ```
 
 The standalone installer downloads the npm tarball directly from the registry,
@@ -42,7 +42,7 @@ verifies its SHA-512 integrity, and drops a `pmsec` shim into
 > may be filtered. Override just for that call
 >
 > ```bash
-> npx --registry=https://registry.npmjs.org/ --min-release-age=0 @hikae/pmsec check
+> npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
 > uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
 > ```
 
