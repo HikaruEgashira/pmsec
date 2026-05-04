@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import * as npm from "./tools/npm.mjs";
 import * as pnpm from "./tools/pnpm.mjs";
 import * as yarn from "./tools/yarn.mjs";
@@ -9,6 +10,9 @@ import * as uv from "./tools/uv.mjs";
 
 const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv];
 const DEFAULT_MIN = 7;
+export const VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")
+).version;
 
 const USAGE = `pmsec <command> [options]
 
@@ -21,6 +25,7 @@ Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --min DAYS            Minimum acceptable days for check (default ${DEFAULT_MIN})
   --json                Emit JSON output
+  -V, --version         Show version
   -h, --help            Show this help
 
 Examples:
@@ -30,11 +35,12 @@ Examples:
 `;
 
 function parse(argv) {
-  const opts = { command: null, days: null, min: DEFAULT_MIN, json: false, only: null, help: false };
+  const opts = { command: null, days: null, min: DEFAULT_MIN, json: false, only: null, help: false, version: false };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") opts.help = true;
+    else if (a === "-V" || a === "--version") opts.version = true;
     else if (a === "--json") opts.json = true;
     else if (a === "--min") opts.min = Number(argv[++i]);
     else if (a.startsWith("--min=")) opts.min = Number(a.slice(6));
@@ -162,6 +168,7 @@ export async function run(argv, {
   let opts;
   try { opts = parse(argv); }
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
+  if (opts.version) { out.write(`pmsec ${VERSION}\n`); return 0; }
   if (opts.help || !opts.command) { out.write(USAGE); return opts.help ? 0 : 2; }
   let targets;
   try { targets = selectTools(opts.only); }

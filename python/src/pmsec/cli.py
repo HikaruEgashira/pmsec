@@ -6,6 +6,7 @@ import shlex
 import sys
 from pathlib import Path
 
+from pmsec import __version__
 from pmsec.tools import bun, cargo, mise, npm, pnpm, uv, yarn
 from pmsec.util.paths import current_platform
 
@@ -27,6 +28,7 @@ def _parser() -> argparse.ArgumentParser:
         epilog=USAGE_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument("-V", "--version", action="version", version=f"pmsec {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     common = argparse.ArgumentParser(add_help=False)

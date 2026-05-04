@@ -9,7 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.3.0'
+$script:PmsecVersion = '0.3.1'
 $script:DefaultMin = 7
 $script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
 
@@ -462,6 +462,7 @@ Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --min DAYS            Minimum acceptable days for check (default $($script:DefaultMin))
   --json                Emit JSON output
+  -V, --version         Show version
   -h, --help            Show this help
 
 Examples:
@@ -474,7 +475,7 @@ Examples:
 function ParseArgs($Argv) {
   $opts = @{
     Command = ''; Days = $null; Min = $script:DefaultMin
-    Json = $false; Only = $null; Help = $false
+    Json = $false; Only = $null; Help = $false; Version = $false
   }
   $positional = New-Object System.Collections.Generic.List[string]
   $i = 0
@@ -482,6 +483,7 @@ function ParseArgs($Argv) {
   while ($i -lt $n) {
     $a = $Argv[$i]
     if ($a -eq '-h' -or $a -eq '--help') { $opts.Help = $true }
+    elseif ($a -eq '-V' -or $a -eq '--version') { $opts.Version = $true }
     elseif ($a -eq '--json') { $opts.Json = $true }
     elseif ($a -eq '--min') { $i++; $opts.Min = [int]$Argv[$i] }
     elseif ($a -like '--min=*') { $opts.Min = [int]($a.Substring(6)) }
@@ -691,6 +693,7 @@ try {
   exit 2
 }
 
+if ($opts.Version) { Write-Output "pmsec $($script:PmsecVersion)"; exit 0 }
 if ($opts.Help) { PrintUsage; exit 0 }
 if ([string]::IsNullOrEmpty($opts.Command)) { PrintUsage; exit 2 }
 

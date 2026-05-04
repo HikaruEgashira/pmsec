@@ -274,6 +274,19 @@ T '.bak is created once and never overwritten' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+T '--version prints PmsecVersion' {
+  $h = NewHome
+  try {
+    $expected = (Select-String -Path $Pmsec -Pattern "PmsecVersion = '([^']+)'" | Select-Object -First 1).Matches[0].Groups[1].Value
+    foreach ($flag in @('--version', '-V')) {
+      $r = InvokePmsec $h $null @($flag)
+      if ($r.Code -ne 0) { $script:LastFail = "$flag exit $($r.Code)`n$($r.Out)"; return $false }
+      if ($r.Out.Trim() -ne "pmsec $expected") { $script:LastFail = "$flag out '$($r.Out.Trim())' != 'pmsec $expected'"; return $false }
+    }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
 # ---------- summary ----------
 
 Write-Host ""

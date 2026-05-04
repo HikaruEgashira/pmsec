@@ -154,3 +154,14 @@ test(".bak is created once and never overwritten", async () => {
   const bak = await readFile(join(home, ".npmrc.bak"), "utf8");
   assert.equal(bak, "registry=https://original/\n");
 });
+
+test("--version prints package.json version and exits 0", async () => {
+  const home = await setupHome();
+  const pkg = JSON.parse(await readFile(join(import.meta.dirname, "..", "package.json"), "utf8"));
+  for (const flag of ["--version", "-V"]) {
+    const { code, out, err } = await runCli([flag], home);
+    assert.equal(code, 0);
+    assert.equal(out, `pmsec ${pkg.version}\n`);
+    assert.equal(err, "");
+  }
+});

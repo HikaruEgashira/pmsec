@@ -233,6 +233,20 @@ t_bak_created_once() {
   rm -rf -- "$home"
 }
 
+t_version_flag() {
+  local expected
+  expected=$(grep -E '^PMSEC_VERSION=' "$PMSEC" | head -1 | sed -E 's/^PMSEC_VERSION="([^"]+)".*/\1/')
+  for flag in --version -V; do
+    local home out rc
+    home=$(setup_home)
+    out=$(run_pmsec "$home" -- "$flag" 2>&1)
+    rc=$?
+    rm -rf -- "$home"
+    assert_eq "$flag exit" "0" "$rc" || return 1
+    assert_eq "$flag out" "pmsec $expected" "$out" || return 1
+  done
+}
+
 T "set writes every supported tool config" t_set_writes_all
 T "check passes after set across all tools" t_check_passes_after_set
 T "check fails when missing or stale" t_check_fails_when_missing
@@ -246,6 +260,7 @@ T "bun set creates [install] section if missing" t_bun_creates_section_if_missin
 T "yarn check parses npmMinimalAgeGate days correctly" t_yarn_check_parses_days
 T "pnpm check normalizes minutes to days" t_pnpm_normalizes_minutes
 T ".bak is created once and never overwritten" t_bak_created_once
+T "--version prints PMSEC_VERSION" t_version_flag
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

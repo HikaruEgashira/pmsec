@@ -139,3 +139,13 @@ def test_bak_created_once(tmp_path):
     run(["set", "7", "--tool", "npm"], tmp_path)
     run(["set", "10", "--tool", "npm"], tmp_path)
     assert (tmp_path / ".npmrc.bak").read_text() == "registry=https://original/\n"
+
+
+@pytest.mark.parametrize("flag", ["--version", "-V"])
+def test_version_flag_prints_package_version(tmp_path, capsys, flag):
+    from pmsec import __version__
+    with pytest.raises(SystemExit) as exc:
+        run([flag], tmp_path)
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"pmsec {__version__}"

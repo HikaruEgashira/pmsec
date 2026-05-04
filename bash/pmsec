@@ -4,7 +4,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.3.0"
+PMSEC_VERSION="0.3.1"
 DEFAULT_MIN=7
 TOOLS=(npm pnpm yarn bun cargo mise uv)
 
@@ -493,6 +493,7 @@ Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --min DAYS            Minimum acceptable days for check (default ${DEFAULT_MIN})
   --json                Emit JSON output
+  -V, --version         Show version
   -h, --help            Show this help
 
 Examples:
@@ -502,21 +503,22 @@ Examples:
 EOF
 }
 
-# parse_args populates: CMD, CMD_DAYS, OPT_MIN, OPT_JSON, OPT_ONLY (csv), OPT_HELP.
+# parse_args populates: CMD, CMD_DAYS, OPT_MIN, OPT_JSON, OPT_ONLY (csv), OPT_HELP, OPT_VERSION.
 parse_args() {
-  CMD=""; CMD_DAYS=""; OPT_MIN=$DEFAULT_MIN; OPT_JSON=0; OPT_ONLY=""; OPT_HELP=0
+  CMD=""; CMD_DAYS=""; OPT_MIN=$DEFAULT_MIN; OPT_JSON=0; OPT_ONLY=""; OPT_HELP=0; OPT_VERSION=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help)   OPT_HELP=1 ;;
-      --json)      OPT_JSON=1 ;;
-      --min)       shift; OPT_MIN="$1" ;;
-      --min=*)     OPT_MIN="${1#--min=}" ;;
-      --tool)      shift; OPT_ONLY="$1" ;;
-      --tool=*)    OPT_ONLY="${1#--tool=}" ;;
-      --)          shift; while [ $# -gt 0 ]; do POS[${#POS[@]}]="$1"; shift; done; break ;;
-      -*)          printf 'pmsec: unknown flag: %s\n' "$1" >&2; return 2 ;;
-      *)           POS[${#POS[@]}]="$1" ;;
+      -h|--help)    OPT_HELP=1 ;;
+      -V|--version) OPT_VERSION=1 ;;
+      --json)       OPT_JSON=1 ;;
+      --min)        shift; OPT_MIN="$1" ;;
+      --min=*)      OPT_MIN="${1#--min=}" ;;
+      --tool)       shift; OPT_ONLY="$1" ;;
+      --tool=*)     OPT_ONLY="${1#--tool=}" ;;
+      --)           shift; while [ $# -gt 0 ]; do POS[${#POS[@]}]="$1"; shift; done; break ;;
+      -*)           printf 'pmsec: unknown flag: %s\n' "$1" >&2; return 2 ;;
+      *)            POS[${#POS[@]}]="$1" ;;
     esac
     shift
   done
@@ -717,6 +719,7 @@ cmd_unset() {
 
 main() {
   parse_args "$@" || return $?
+  if [ "$OPT_VERSION" = "1" ]; then printf 'pmsec %s\n' "$PMSEC_VERSION"; return 0; fi
   if [ "$OPT_HELP" = "1" ]; then USAGE; return 0; fi
   if [ -z "$CMD" ]; then USAGE; return 2; fi
   select_tools || return $?
