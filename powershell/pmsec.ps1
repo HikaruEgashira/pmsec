@@ -2,11 +2,13 @@
 # pmsec — install-time cooldown for npm / pnpm / yarn / bun / cargo / mise / uv.
 # PowerShell port. Targets Windows PowerShell 5.1 and PowerShell 7+.
 # License: MIT.
-[CmdletBinding(PositionalBinding=$false)]
-param(
-  [Parameter(ValueFromRemainingArguments=$true)]
-  [string[]]$Argv
-)
+# NOTE: deliberately no param() block. Adding [CmdletBinding] or any
+# [Parameter()] attribute makes this script an advanced function, which
+# silently exposes the common parameters (-Verbose, -Debug, ...). PowerShell
+# accepts unique prefixes, so `pmsec -V` would bind to `-Verbose` instead of
+# reaching us as the `--version` short flag. Reading $args directly bypasses
+# parameter binding entirely.
+$Argv = $args
 
 $ErrorActionPreference = 'Stop'
 $script:PmsecVersion = '0.3.1'
