@@ -118,7 +118,7 @@ t_check_fails_when_missing() {
   rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "1" "$rc" || return
-  for t in npm pnpm yarn bun mise uv; do
+  for t in npm pnpm yarn bun cargo mise uv; do
     assert_match "MISSING $t" "MISSING $t" "$out" || return
   done
 }

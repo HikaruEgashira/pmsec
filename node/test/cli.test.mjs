@@ -58,7 +58,7 @@ test("check fails when missing or stale", async () => {
   const home = await setupHome();
   const { code, out } = await runCli(["check"], home);
   assert.equal(code, 1);
-  for (const t of ["npm", "pnpm", "yarn", "bun", "mise", "uv"]) {
+  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]) {
     assert.match(out, new RegExp(`MISSING ${t}`));
   }
 });

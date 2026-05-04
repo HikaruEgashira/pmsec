@@ -155,7 +155,7 @@ T 'check fails when missing or stale' {
   try {
     $r = InvokePmsec $h $null @('check')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1, got $($r.Code)`n$($r.Out)"; return $false }
-    foreach ($t in 'npm','pnpm','yarn','bun','mise','uv') {
+    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv') {
       if (-not (AssertMatch "MISSING $t" "MISSING $t" $r.Out)) { return $false }
     }
     return $true
