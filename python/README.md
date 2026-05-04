@@ -36,8 +36,9 @@ npm, pnpm, yarn 4+, bun, cargo (RFC #3801), mise, uv
 | Command | Description |
 | --- | --- |
 | `pmsec check [--min N]` | Read each tool's config; exit 1 if any tool is below `N` days or unset |
-| `pmsec set <DAYS> [--force]` | Write `DAYS`-day cooldown to every selected tool |
+| `pmsec set <DAYS>` | Write `DAYS`-day cooldown to every selected tool |
 | `pmsec unset` | Remove only the cooldown key from each config (other keys preserved) |
+| `pmsec --version` | Print the installed pmsec version |
 
 Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--json`.
 

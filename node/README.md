@@ -37,13 +37,14 @@ Zero runtime dependencies, ESM, requires Node 20+.
 | `pmsec check [--min N]` | Read each tool's config; exit 1 if any tool is below `N` days or unset. |
 | `pmsec set <DAYS>` | Write `DAYS`-day cooldown to every selected tool. Always proceeds; if the runtime is too old to honor the key, prints a `⚠` line under the success line. |
 | `pmsec unset` | Remove only the cooldown key from each config (other keys preserved). |
+| `pmsec --version` | Print the installed pmsec version. |
 
 Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--json`.
 
 When the target file is owned by another user (typical: `~/.npmrc` left
-root-owned by an old `sudo npm config set`), pmsec auto-runs
-`sudo chown $(id -u):$(id -g) <path>` and retries the write. You'll be
-prompted for your password once; subsequent runs need no escalation.
+root-owned by an old `sudo npm config set`), the write fails with `EACCES`
+and pmsec prints the exact `chown` command needed to restore ownership —
+re-run after applying it. pmsec never escalates privileges itself.
 
 See the [project README](https://github.com/HikaruEgashira/pmsec) for the
 full table of keys, units, paths, and environment overrides.

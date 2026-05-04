@@ -22,6 +22,7 @@ The CLI surface is identical to the npm, PyPI, and bash distributions:
 pmsec check [--tool TOOL[,TOOL]] [--min DAYS] [--json]
 pmsec set <DAYS>  [--tool TOOL[,TOOL]] [--json]
 pmsec unset       [--tool TOOL[,TOOL]] [--json]
+pmsec --version
 ```
 
 Supported tools, files, and units match the root `README.md`.

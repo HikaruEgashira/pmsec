@@ -12,6 +12,7 @@
 npx pmsec check --min 7
 npx pmsec set 7
 npx pmsec unset
+npx pmsec --version
 ```
 
 ```bash
