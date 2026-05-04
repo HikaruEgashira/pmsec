@@ -79,12 +79,29 @@ def test_disable_preserves_other_keys(tmp_path):
     assert (tmp_path / ".yarnrc.yml").read_text() == 'npmRegistryServer: "https://r/"\n'
 
 
-def test_enable_replaces_existing_value(tmp_path):
-    (tmp_path / ".npmrc").write_text("min-release-age=99\nregistry=https://r/\n")
+def test_enable_upgrades_weak_existing_value(tmp_path):
+    (tmp_path / ".npmrc").write_text("min-release-age=1\nregistry=https://r/\n")
     run(["enable", "--tool", "npm"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
         "min-release-age=3\nregistry=https://r/\naudit-level=high\n"
     )
+
+
+def test_enable_preserves_stricter_existing_cooldown(tmp_path):
+    (tmp_path / ".npmrc").write_text("min-release-age=99\nregistry=https://r/\n")
+    code, out, _ = run(["enable", "--tool", "npm"], tmp_path)
+    assert code == 0
+    assert "keep" in out
+    assert (tmp_path / ".npmrc").read_text() == (
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\n"
+    )
+
+
+def test_enable_days_upgrades_when_request_exceeds_existing(tmp_path):
+    (tmp_path / ".npmrc").write_text("min-release-age=3\n")
+    run(["enable", "--tool", "npm", "--days", "14"], tmp_path)
+    text = (tmp_path / ".npmrc").read_text()
+    assert "min-release-age=14" in text
 
 
 def test_tool_filter(tmp_path):

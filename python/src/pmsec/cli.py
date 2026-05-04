@@ -148,24 +148,30 @@ def _enable(args, targets, env, home, platform, out, err):
     results = []
     failures = []
     warnings = []
-    days = args.days
+    requested = args.days
     for t in targets:
         warn = _preflight_warn(t)
         if warn:
             warnings.append({"tool": t.NAME, "warn": warn})
         try:
-            r = t.write(days, env, home, platform)
-            results.append({"tool": t.NAME, "path": r["path"], "days": days, "ok": True, "warn": warn})
+            current = t.read(env, home, platform)
+            current_days = current.get("days") or 0
+            effective = max(current_days, requested)
+            kept = current_days >= requested and current_days > 0
+            r = t.write(effective, env, home, platform)
+            results.append({"tool": t.NAME, "path": r["path"], "days": effective, "requested": requested, "kept": kept, "ok": True, "warn": warn})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)
             failures.append(msg)
-            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": days, "ok": False, "error": msg, "warn": warn})
+            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": requested, "requested": requested, "kept": False, "ok": False, "error": msg, "warn": warn})
     if args.json:
-        out.write(json.dumps({"enabled": True, "bundleDays": days, "results": results, "warnings": warnings, "ok": not failures}, indent=2) + "\n")
+        out.write(json.dumps({"enabled": True, "bundleDays": requested, "results": results, "warnings": warnings, "ok": not failures}, indent=2) + "\n")
     else:
         for r in results:
             if r["ok"]:
-                out.write(f"enable  {r['tool']:<4} [{r['path']}]\n")
+                action = "keep   " if r["kept"] else "enable "
+                note = f"  (kept existing {r['days']}d ≥ {r['requested']}d)" if r["kept"] else ""
+                out.write(f"{action} {r['tool']:<4} [{r['path']}]{note}\n")
                 if r.get("warn"):
                     out.write(f"     ⚠ {r['warn']}\n")
             else:

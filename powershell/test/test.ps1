@@ -178,12 +178,33 @@ T 'disable preserves unrelated keys per file' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
-T 'enable replaces existing values in place' {
+T 'enable upgrades values that are weaker than the request' {
+  $h = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=1`nregistry=https://r/`n")
+    [void](InvokePmsec $h $null @('enable','--tool','npm'))
+    return (AssertFileEq '.npmrc' "min-release-age=3`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'enable preserves stricter existing cooldowns' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`nregistry=https://r/`n")
-    [void](InvokePmsec $h $null @('enable','--tool','npm'))
-    return (AssertFileEq '.npmrc' "min-release-age=3`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
+    $r = InvokePmsec $h $null @('enable','--tool','npm')
+    if ($r.Out -notmatch '(?m)^keep ') { $script:LastFail = "expected keep line, got: $($r.Out)"; return $false }
+    return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'enable --days upgrades when request exceeds existing' {
+  $h = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`n")
+    [void](InvokePmsec $h $null @('enable','--tool','npm','--days','14'))
+    $body = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
+    if ($body -notmatch '(?m)^min-release-age=14$') { $script:LastFail = "expected min-release-age=14, got: $body"; return $false }
+    return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 

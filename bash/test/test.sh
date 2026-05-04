@@ -147,14 +147,35 @@ registry = "https://x/"
   rm -rf -- "$home"
 }
 
-t_enable_replaces_existing_value() {
+t_enable_upgrades_weak_existing_value() {
   local home; home=$(setup_home)
-  printf 'min-release-age=99\nregistry=https://r/\n' > "$home/.npmrc"
+  printf 'min-release-age=1\nregistry=https://r/\n' > "$home/.npmrc"
   run_pmsec "$home" -- enable --tool npm >/dev/null
   assert_file_eq "npmrc" 'min-release-age=3
 registry=https://r/
 audit-level=high
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
+  rm -rf -- "$home"
+}
+
+t_enable_preserves_stricter_existing_cooldown() {
+  local home; home=$(setup_home)
+  printf 'min-release-age=99\nregistry=https://r/\n' > "$home/.npmrc"
+  local out
+  out=$(run_pmsec "$home" -- enable --tool npm)
+  assert_match "keep line printed" '^keep ' "$out" || { rm -rf "$home"; return 1; }
+  assert_file_eq "npmrc preserves 99" 'min-release-age=99
+registry=https://r/
+audit-level=high
+' "$home/.npmrc" || { rm -rf "$home"; return 1; }
+  rm -rf -- "$home"
+}
+
+t_enable_days_upgrades_when_request_exceeds_existing() {
+  local home; home=$(setup_home)
+  printf 'min-release-age=3\n' > "$home/.npmrc"
+  run_pmsec "$home" -- enable --tool npm --days 14 >/dev/null
+  assert_match "upgraded to 14" '^min-release-age=14$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
@@ -319,7 +340,9 @@ T "enable writes the bundle for every tool" t_enable_writes_all
 T "check passes after enable across all tools" t_check_passes_after_enable
 T "check fails when bundle missing" t_check_fails_when_missing
 T "disable preserves unrelated keys per file" t_disable_preserves_unrelated_keys
-T "enable replaces existing values in place" t_enable_replaces_existing_value
+T "enable upgrades values that are weaker than the request" t_enable_upgrades_weak_existing_value
+T "enable preserves stricter existing cooldowns" t_enable_preserves_stricter_existing_cooldown
+T "enable --days upgrades when request exceeds existing" t_enable_days_upgrades_when_request_exceeds_existing
 T "--tool restricts which tools get written" t_tool_filter_restricts
 T "Windows uv path uses APPDATA" t_windows_uv_path
 T "--json emits parseable JSON for check" t_json_check

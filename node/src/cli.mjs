@@ -142,18 +142,24 @@ async function runEnable(targets, json, days, env, home, platform, out, err) {
     const warn = preflightWarn(t);
     if (warn) warnings.push({ tool: t.name, warn });
     try {
-      const r = await t.write(days, env, home, platform);
-      results.push({ tool: t.name, path: r.path, days, ok: true, warn });
+      const current = await t.read(env, home, platform);
+      const currentDays = current.days ?? 0;
+      const effective = Math.max(currentDays, days);
+      const kept = currentDays >= days && currentDays > 0;
+      const r = await t.write(effective, env, home, platform);
+      results.push({ tool: t.name, path: r.path, days: effective, requested: days, kept, ok: true, warn });
     } catch (e) {
       failures.push({ tool: t.name, error: explainFsError(e, t.name) });
-      results.push({ tool: t.name, path: e?.path ?? null, days, ok: false, error: explainFsError(e, t.name), warn });
+      results.push({ tool: t.name, path: e?.path ?? null, days, requested: days, kept: false, ok: false, error: explainFsError(e, t.name), warn });
     }
   }
   if (json) out.write(JSON.stringify({ enabled: true, bundleDays: days, results, warnings, ok: failures.length === 0 }, null, 2) + "\n");
   else for (const r of results) {
     if (r.ok) {
+      const action = r.kept ? "keep   " : "enable ";
+      const note = r.kept ? `  (kept existing ${r.days}d ≥ ${r.requested}d)` : "";
       const tail = r.warn ? `\n     ⚠ ${r.warn}` : "";
-      out.write(`enable  ${r.tool.padEnd(4)} [${r.path}]${tail}\n`);
+      out.write(`${action} ${r.tool.padEnd(4)} [${r.path}]${note}${tail}\n`);
     } else {
       out.write(`FAIL    ${r.tool.padEnd(4)} ${r.error}\n`);
     }

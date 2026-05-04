@@ -8,7 +8,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.5.0"
+PMSEC_VERSION="0.5.1"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=3
@@ -718,25 +718,38 @@ cmd_check() {
 
 cmd_enable() {
   local results_json="" warns_json="" first_r=1 first_w=1 failures=0 warn_count=0
-  local tool path warn err
+  local tool path warn err cur_days effective kept r
   for tool in "${SELECTED[@]}"; do
     path=$(tool_path "$tool")
     warn=$(tool_preflight "$tool")
     err=""
-    if ! out=$(tool_write "$tool" "$OPT_DAYS" 2>&1); then
+    cur_days=""
+    if r=$(tool_read "$tool"); then
+      cur_days="${r##*|}"
+    fi
+    [ -z "$cur_days" ] && cur_days=0
+    if [ "$cur_days" -ge "$OPT_DAYS" ] && [ "$cur_days" -gt 0 ]; then
+      effective="$cur_days"; kept=1
+    else
+      effective="$OPT_DAYS"; kept=0
+    fi
+    if ! out=$(tool_write "$tool" "$effective" 2>&1); then
       err="$out"; failures=$((failures+1))
     fi
     if [ -n "$warn" ]; then warn_count=$((warn_count+1)); fi
     if [ "$OPT_JSON" = "1" ]; then
-      local ok_json warn_json err_json
+      local ok_json warn_json err_json kept_json
       if [ -z "$err" ]; then ok_json="true"; else ok_json="false"; fi
       if [ -z "$warn" ]; then warn_json="null"; else warn_json=$(json_str "$warn"); fi
+      if [ "$kept" = "1" ]; then kept_json="true"; else kept_json="false"; fi
       [ "$first_r" = "1" ] || results_json+=','$'\n'
       first_r=0
       results_json+=$'    {'
       results_json+="\"tool\": $(json_str "$tool"), "
       results_json+="\"path\": $(json_str "$path"), "
-      results_json+="\"days\": $OPT_DAYS, "
+      results_json+="\"days\": $effective, "
+      results_json+="\"requested\": $OPT_DAYS, "
+      results_json+="\"kept\": $kept_json, "
       results_json+="\"ok\": $ok_json, "
       results_json+="\"warn\": $warn_json"
       if [ -n "$err" ]; then
@@ -751,7 +764,11 @@ cmd_enable() {
       fi
     else
       if [ -z "$err" ]; then
-        printf 'enable  %s [%s]\n' "$(pad4 "$tool")" "$path"
+        if [ "$kept" = "1" ]; then
+          printf 'keep    %s [%s]  (kept existing %dd ≥ %dd)\n' "$(pad4 "$tool")" "$path" "$effective" "$OPT_DAYS"
+        else
+          printf 'enable  %s [%s]\n' "$(pad4 "$tool")" "$path"
+        fi
         if [ -n "$warn" ]; then printf '     \xe2\x9a\xa0 %s\n' "$warn"; fi
       else
         printf 'FAIL    %s %s\n' "$(pad4 "$tool")" "$err"

@@ -81,14 +81,34 @@ test("disable preserves unrelated keys per file", async () => {
   assert.equal(await readFile(join(home, ".yarnrc.yml"), "utf8"), "npmRegistryServer: \"https://r/\"\n");
 });
 
-test("enable replaces existing values in place", async () => {
+test("enable upgrades values that are weaker than the request", async () => {
   const home = await setupHome();
-  await writeFile(join(home, ".npmrc"), "min-release-age=99\nregistry=https://r/\n");
+  await writeFile(join(home, ".npmrc"), "min-release-age=1\nregistry=https://r/\n");
   await runCli(["enable", "--tool", "npm"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
     "min-release-age=3\nregistry=https://r/\naudit-level=high\n"
   );
+});
+
+test("enable preserves stricter existing cooldowns", async () => {
+  const home = await setupHome();
+  await writeFile(join(home, ".npmrc"), "min-release-age=99\nregistry=https://r/\n");
+  const { code, out } = await runCli(["enable", "--tool", "npm"], home);
+  assert.equal(code, 0);
+  assert.match(out, /^keep\s+npm\s/m);
+  assert.equal(
+    await readFile(join(home, ".npmrc"), "utf8"),
+    "min-release-age=99\nregistry=https://r/\naudit-level=high\n"
+  );
+});
+
+test("enable --days upgrades when request exceeds existing", async () => {
+  const home = await setupHome();
+  await writeFile(join(home, ".npmrc"), "min-release-age=3\n");
+  await runCli(["enable", "--tool", "npm", "--days", "14"], home);
+  const text = await readFile(join(home, ".npmrc"), "utf8");
+  assert.match(text, /^min-release-age=14$/m);
 });
 
 test("--tool restricts which tools get written", async () => {

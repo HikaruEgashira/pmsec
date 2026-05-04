@@ -53,6 +53,8 @@ pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 
 Writes a fixed bundle of hardening keys to each tool's user-global config — a 3-day install cooldown plus every safe-by-default supply-chain knob the tool exposes. `disable` removes them; `check` exits non-zero if any row is missing or below the bundled value. The cooldown is opinionated but adjustable: pass `--days N` to `enable` / `check` to use a different threshold (e.g. `pmsec enable --days 7`). The extras have no knobs — pmsec is opinionated about what "hardened" means.
 
+`enable` is monotonic: it never weakens an existing stricter setting. If your `~/.npmrc` already has `min-release-age=14`, `pmsec enable` (default 3) keeps the 14 and prints `keep`. To raise a tool past the bundle default, pass `--days N` — `pmsec enable --days 30` will upgrade weaker tools to 30 and leave anything ≥ 30 as is. Use `pmsec disable` if you actually want to remove the cooldown.
+
 | tool  | config file                          | key                                | value          | what it does                                                                                                  | min version     |
 |-------|--------------------------------------|------------------------------------|----------------|---------------------------------------------------------------------------------------------------------------|-----------------|
 | npm   | `~/.npmrc`                           | `min-release-age`                  | `3`            | filters out package versions younger than 3 days at install time                                              | npm 11.10+      |

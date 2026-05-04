@@ -15,7 +15,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.5.0'
+$script:PmsecVersion = '0.5.1'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 3
@@ -652,15 +652,22 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days) {
     if ($warn) { $warnCount++ }
     $err = $null
     $path = ToolPath $t
+    $current = ToolRead $t
+    $curDays = if ($null -eq $current.Days) { 0 } else { [int]$current.Days }
+    if ($curDays -ge $Days -and $curDays -gt 0) {
+      $effective = $curDays; $kept = $true
+    } else {
+      $effective = $Days; $kept = $false
+    }
     try {
-      $w = ToolWrite $t $Days
+      $w = ToolWrite $t $effective
       $path = $w.Path
     } catch {
       $err = ExplainFsError $t $_
       $failures.Add($err)
     }
     $results.Add(@{
-      Tool = $t; Path = $path; Days = $Days
+      Tool = $t; Path = $path; Days = $effective; Requested = $Days; Kept = $kept
       Ok = ($null -eq $err); Warn = $warn; Error = $err
     })
   }
@@ -672,7 +679,7 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days) {
     [void]$sb.AppendLine('  "results": [')
     for ($i = 0; $i -lt $results.Count; $i++) {
       $r = $results[$i]
-      $entry = "    {""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
+      $entry = "    {""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""requested"": $($r.Requested), ""kept"": $(JsonBool $r.Kept), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
       if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
       $entry += '}'
       if ($i -lt $results.Count - 1) { $entry += ',' }
@@ -696,7 +703,11 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days) {
   } else {
     foreach ($r in $results) {
       if ($r.Ok) {
-        StdOut ('enable  {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
+        if ($r.Kept) {
+          StdOut ('keep    {0} [{1}]  (kept existing {2}d ' + [string][char]0x2265 + ' {3}d)' -f (Pad4 $r.Tool), $r.Path, $r.Days, $r.Requested)
+        } else {
+          StdOut ('enable  {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
+        }
         if ($r.Warn) { StdOut ('     ' + $script:WarnGlyph + ' ' + $r.Warn) }
       } else {
         StdOut ('FAIL    {0} {1}' -f (Pad4 $r.Tool), $r.Error)
