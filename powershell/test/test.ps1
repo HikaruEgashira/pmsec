@@ -213,7 +213,7 @@ T '--json emits parseable JSON for check' {
     $r = InvokePmsec $h $null @('check','--json')
     $data = $null
     try { $data = $r.Out | ConvertFrom-Json } catch { $script:LastFail = "json parse failed: $_`n$($r.Out)"; return $false }
-    if ($data.ok -ne $false) { $script:LastFail = "expected ok=false`n--- raw stdout (len=$($r.Out.Length)) ---`n$($r.Out)`n--- raw stderr ---`n$($r.Err)`n--- end ---"; return $false }
+    if ($data.ok -ne $false) { $script:LastFail = "expected ok=false, got $($data.ok)"; return $false }
     if ($data.bundleDays -ne 3) { $script:LastFail = "expected bundleDays=3, got $($data.bundleDays)"; return $false }
     if ($data.rows.Count -ne 7) { $script:LastFail = "expected 7 rows, got $($data.rows.Count)"; return $false }
     $names = ($data.rows | ForEach-Object { $_.tool }) -join ','

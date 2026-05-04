@@ -601,9 +601,9 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days) {
     [void]$sb.AppendLine('  "rows": [')
     for ($i = 0; $i -lt $rows.Count; $i++) {
       $r = $rows[$i]
-      $cfg  = JsonStrOrNull $r.Configured
-      $days = JsonIntOrNull $r.Days
-      $warn = JsonStrOrNull $r.Warn
+      $cfg     = JsonStrOrNull $r.Configured
+      $daysCol = JsonIntOrNull $r.Days
+      $warn    = JsonStrOrNull $r.Warn
       $extrasJson = '['
       $first = $true
       foreach ($e in $r.Extras) {
@@ -612,7 +612,7 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days) {
         $extrasJson += "{""key"": $(JsonString $e.Key), ""configured"": $(JsonStrOrNull $e.Configured), ""expected"": $(JsonString $e.Expected), ""ok"": $(JsonBool $e.Ok)}"
       }
       $extrasJson += ']'
-      $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $days, ""warn"": $warn, ""extras"": $extrasJson}"
+      $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
       if ($i -lt $rows.Count - 1) { $entry += ',' }
       [void]$sb.AppendLine($entry)
     }
