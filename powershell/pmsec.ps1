@@ -15,7 +15,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.5.1'
+$script:PmsecVersion = '0.5.2'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 3
@@ -518,6 +518,7 @@ Commands:
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 3)
+  --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
@@ -525,6 +526,7 @@ Options:
 Examples:
   pmsec enable
   pmsec enable --days 7
+  pmsec enable --days 1 --force
   pmsec check
   pmsec disable --tool npm
 "@
@@ -541,7 +543,7 @@ function ParseDays($Raw) {
 function ParseArgs($Argv) {
   $opts = @{
     Command = ''
-    Json = $false; Only = $null; Days = $script:BundleDays; Help = $false; Version = $false
+    Json = $false; Only = $null; Days = $script:BundleDays; Force = $false; Help = $false; Version = $false
   }
   $positional = New-Object System.Collections.Generic.List[string]
   $i = 0
@@ -551,6 +553,7 @@ function ParseArgs($Argv) {
     if ($a -eq '-h' -or $a -eq '--help') { $opts.Help = $true }
     elseif ($a -eq '-V' -or $a -eq '--version') { $opts.Version = $true }
     elseif ($a -eq '--json') { $opts.Json = $true }
+    elseif ($a -eq '--force') { $opts.Force = $true }
     elseif ($a -eq '--tool') { $i++; $opts.Only = $Argv[$i] -split ',' }
     elseif ($a -like '--tool=*') { $opts.Only = $a.Substring(7) -split ',' }
     elseif ($a -eq '--days') { $i++; $opts.Days = ParseDays $Argv[$i] }
@@ -643,7 +646,7 @@ function ExplainFsError([string]$Tool, $Err) {
   return ("$Tool" + ': ' + $Err.ToString())
 }
 
-function CmdEnable($Targets, [bool]$Json, [int]$Days) {
+function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force) {
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
   $warnCount = 0
@@ -652,12 +655,16 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days) {
     if ($warn) { $warnCount++ }
     $err = $null
     $path = ToolPath $t
-    $current = ToolRead $t
-    $curDays = if ($null -eq $current.Days) { 0 } else { [int]$current.Days }
-    if ($curDays -ge $Days -and $curDays -gt 0) {
-      $effective = $curDays; $kept = $true
-    } else {
+    if ($Force) {
       $effective = $Days; $kept = $false
+    } else {
+      $current = ToolRead $t
+      $curDays = if ($null -eq $current.Days) { 0 } else { [int]$current.Days }
+      if ($curDays -ge $Days -and $curDays -gt 0) {
+        $effective = $curDays; $kept = $true
+      } else {
+        $effective = $Days; $kept = $false
+      }
     }
     try {
       $w = ToolWrite $t $effective
@@ -797,7 +804,7 @@ try {
 try {
   switch ($opts.Command) {
     'check'   { exit (CmdCheck $targets $opts.Json $opts.Days) }
-    'enable'  { exit (CmdEnable $targets $opts.Json $opts.Days) }
+    'enable'  { exit (CmdEnable $targets $opts.Json $opts.Days $opts.Force) }
     'disable' { exit (CmdDisable $targets $opts.Json) }
     default   { StdErr ("pmsec: unknown command ""{0}""" -f $opts.Command); exit 2 }
   }

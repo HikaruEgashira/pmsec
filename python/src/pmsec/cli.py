@@ -19,6 +19,7 @@ USAGE_EPILOG = """\
 examples:
   uvx pmsec enable
   uvx pmsec enable --days 7
+  uvx pmsec enable --days 1 --force
   uvx pmsec check
   uvx pmsec disable --tool npm
 """
@@ -53,6 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
     common.add_argument("--json", action="store_true", help="emit JSON output")
     common.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
+    common.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns (otherwise enable is monotonic)")
 
     sub.add_parser("enable", parents=[common], help="apply the hardening bundle")
     sub.add_parser("disable", parents=[common], help="remove the hardening bundle")
@@ -149,21 +151,25 @@ def _enable(args, targets, env, home, platform, out, err):
     failures = []
     warnings = []
     requested = args.days
+    force = args.force
     for t in targets:
         warn = _preflight_warn(t)
         if warn:
             warnings.append({"tool": t.NAME, "warn": warn})
         try:
-            current = t.read(env, home, platform)
-            current_days = current.get("days") or 0
-            effective = max(current_days, requested)
-            kept = current_days >= requested and current_days > 0
+            if force:
+                effective, kept = requested, False
+            else:
+                current = t.read(env, home, platform)
+                current_days = current.get("days") or 0
+                effective = max(current_days, requested)
+                kept = current_days >= requested and current_days > 0
             r = t.write(effective, env, home, platform)
-            results.append({"tool": t.NAME, "path": r["path"], "days": effective, "requested": requested, "kept": kept, "ok": True, "warn": warn})
+            results.append({"tool": t.NAME, "path": r["path"], "days": effective, "requested": requested, "kept": kept, "forced": force, "ok": True, "warn": warn})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)
             failures.append(msg)
-            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": requested, "requested": requested, "kept": False, "ok": False, "error": msg, "warn": warn})
+            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": requested, "requested": requested, "kept": False, "forced": force, "ok": False, "error": msg, "warn": warn})
     if args.json:
         out.write(json.dumps({"enabled": True, "bundleDays": requested, "results": results, "warnings": warnings, "ok": not failures}, indent=2) + "\n")
     else:

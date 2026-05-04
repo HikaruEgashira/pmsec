@@ -171,6 +171,14 @@ audit-level=high
   rm -rf -- "$home"
 }
 
+t_enable_force_overwrites_stricter_existing() {
+  local home; home=$(setup_home)
+  printf 'min-release-age=99\n' > "$home/.npmrc"
+  run_pmsec "$home" -- enable --tool npm --days 1 --force >/dev/null
+  assert_match "force downgraded to 1" '^min-release-age=1$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  rm -rf -- "$home"
+}
+
 t_enable_days_upgrades_when_request_exceeds_existing() {
   local home; home=$(setup_home)
   printf 'min-release-age=3\n' > "$home/.npmrc"
@@ -343,6 +351,7 @@ T "disable preserves unrelated keys per file" t_disable_preserves_unrelated_keys
 T "enable upgrades values that are weaker than the request" t_enable_upgrades_weak_existing_value
 T "enable preserves stricter existing cooldowns" t_enable_preserves_stricter_existing_cooldown
 T "enable --days upgrades when request exceeds existing" t_enable_days_upgrades_when_request_exceeds_existing
+T "enable --force overwrites stricter existing values" t_enable_force_overwrites_stricter_existing
 T "--tool restricts which tools get written" t_tool_filter_restricts
 T "Windows uv path uses APPDATA" t_windows_uv_path
 T "--json emits parseable JSON for check" t_json_check

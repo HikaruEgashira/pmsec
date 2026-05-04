@@ -197,6 +197,17 @@ T 'enable preserves stricter existing cooldowns' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+T 'enable --force overwrites stricter existing values' {
+  $h = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`n")
+    [void](InvokePmsec $h $null @('enable','--tool','npm','--days','1','--force'))
+    $body = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
+    if ($body -notmatch '(?m)^min-release-age=1$') { $script:LastFail = "expected min-release-age=1, got: $body"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
 T 'enable --days upgrades when request exceeds existing' {
   $h = NewHome
   try {

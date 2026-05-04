@@ -103,6 +103,15 @@ test("enable preserves stricter existing cooldowns", async () => {
   );
 });
 
+test("enable --force overwrites stricter existing values", async () => {
+  const home = await setupHome();
+  await writeFile(join(home, ".npmrc"), "min-release-age=99\n");
+  const { code } = await runCli(["enable", "--tool", "npm", "--days", "1", "--force"], home);
+  assert.equal(code, 0);
+  const text = await readFile(join(home, ".npmrc"), "utf8");
+  assert.match(text, /^min-release-age=1$/m);
+});
+
 test("enable --days upgrades when request exceeds existing", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=3\n");

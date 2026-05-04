@@ -97,6 +97,14 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     )
 
 
+def test_enable_force_overwrites_stricter_existing(tmp_path):
+    (tmp_path / ".npmrc").write_text("min-release-age=99\n")
+    code, _, _ = run(["enable", "--tool", "npm", "--days", "1", "--force"], tmp_path)
+    assert code == 0
+    text = (tmp_path / ".npmrc").read_text()
+    assert "min-release-age=1" in text
+
+
 def test_enable_days_upgrades_when_request_exceeds_existing(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\n")
     run(["enable", "--tool", "npm", "--days", "14"], tmp_path)

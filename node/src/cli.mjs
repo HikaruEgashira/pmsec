@@ -31,6 +31,7 @@ Commands:
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 3)
+  --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
@@ -38,6 +39,7 @@ Options:
 Examples:
   npx pmsec enable
   npx pmsec enable --days 7
+  npx pmsec enable --days 1 --force
   npx pmsec check
   npx pmsec disable --tool npm
 `;
@@ -49,13 +51,14 @@ function parseDays(raw) {
 }
 
 function parse(argv) {
-  const opts = { command: null, json: false, only: null, days: BUNDLE_DAYS, help: false, version: false };
+  const opts = { command: null, json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") opts.help = true;
     else if (a === "-V" || a === "--version") opts.version = true;
     else if (a === "--json") opts.json = true;
+    else if (a === "--force") opts.force = true;
     else if (a === "--tool") opts.only = argv[++i].split(",");
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
     else if (a === "--days") opts.days = parseDays(argv[++i]);
@@ -134,7 +137,7 @@ function explainFsError(e, tool) {
   return `${tool}: ${e?.message ?? e}`;
 }
 
-async function runEnable(targets, json, days, env, home, platform, out, err) {
+async function runEnable(targets, json, days, force, env, home, platform, out, err) {
   const results = [];
   const failures = [];
   const warnings = [];
@@ -142,15 +145,19 @@ async function runEnable(targets, json, days, env, home, platform, out, err) {
     const warn = preflightWarn(t);
     if (warn) warnings.push({ tool: t.name, warn });
     try {
-      const current = await t.read(env, home, platform);
-      const currentDays = current.days ?? 0;
-      const effective = Math.max(currentDays, days);
-      const kept = currentDays >= days && currentDays > 0;
+      let effective = days;
+      let kept = false;
+      if (!force) {
+        const current = await t.read(env, home, platform);
+        const currentDays = current.days ?? 0;
+        effective = Math.max(currentDays, days);
+        kept = currentDays >= days && currentDays > 0;
+      }
       const r = await t.write(effective, env, home, platform);
-      results.push({ tool: t.name, path: r.path, days: effective, requested: days, kept, ok: true, warn });
+      results.push({ tool: t.name, path: r.path, days: effective, requested: days, kept, forced: force, ok: true, warn });
     } catch (e) {
       failures.push({ tool: t.name, error: explainFsError(e, t.name) });
-      results.push({ tool: t.name, path: e?.path ?? null, days, requested: days, kept: false, ok: false, error: explainFsError(e, t.name), warn });
+      results.push({ tool: t.name, path: e?.path ?? null, days, requested: days, kept: false, forced: force, ok: false, error: explainFsError(e, t.name), warn });
     }
   }
   if (json) out.write(JSON.stringify({ enabled: true, bundleDays: days, results, warnings, ok: failures.length === 0 }, null, 2) + "\n");
@@ -207,7 +214,7 @@ export async function run(argv, {
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
   try {
     if (opts.command === "check") return await runCheck(targets, opts, env, home, platform, out, err);
-    if (opts.command === "enable") return await runEnable(targets, opts.json, opts.days, env, home, platform, out, err);
+    if (opts.command === "enable") return await runEnable(targets, opts.json, opts.days, opts.force, env, home, platform, out, err);
     if (opts.command === "disable") return await runDisable(targets, opts.json, env, home, platform, out, err);
     err.write(`pmsec: unknown command "${opts.command}"\n`);
     return 2;

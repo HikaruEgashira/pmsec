@@ -40,7 +40,7 @@ npm, pnpm, yarn 4+, bun, cargo (RFC #3801), mise, uv
 | `pmsec disable` | Remove every key the bundle set; other keys in the file are preserved |
 | `pmsec --version` | Print the installed pmsec version |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--days N` (override the 3-day default), `--json`.
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--days N` (override the 3-day default), `--force` (overwrite stricter existing cooldowns; default is monotonic), `--json`.
 
 See the [project README](https://github.com/HikaruEgashira/pmsec) for the full
 table of keys, units, paths, and overrides.

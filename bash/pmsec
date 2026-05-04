@@ -8,7 +8,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.5.1"
+PMSEC_VERSION="0.5.2"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=3
@@ -553,6 +553,7 @@ Commands:
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 3)
+  --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
@@ -560,20 +561,22 @@ Options:
 Examples:
   pmsec enable
   pmsec enable --days 7
+  pmsec enable --days 1 --force
   pmsec check
   pmsec disable --tool npm
 EOF
 }
 
-# parse_args populates: CMD, OPT_JSON, OPT_ONLY (csv), OPT_DAYS, OPT_HELP, OPT_VERSION.
+# parse_args populates: CMD, OPT_JSON, OPT_ONLY (csv), OPT_DAYS, OPT_FORCE, OPT_HELP, OPT_VERSION.
 parse_args() {
-  CMD=""; OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_HELP=0; OPT_VERSION=0
+  CMD=""; OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
       -h|--help)    OPT_HELP=1 ;;
       -V|--version) OPT_VERSION=1 ;;
       --json)       OPT_JSON=1 ;;
+      --force)      OPT_FORCE=1 ;;
       --tool)       shift; OPT_ONLY="$1" ;;
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
       --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
@@ -723,15 +726,19 @@ cmd_enable() {
     path=$(tool_path "$tool")
     warn=$(tool_preflight "$tool")
     err=""
-    cur_days=""
-    if r=$(tool_read "$tool"); then
-      cur_days="${r##*|}"
-    fi
-    [ -z "$cur_days" ] && cur_days=0
-    if [ "$cur_days" -ge "$OPT_DAYS" ] && [ "$cur_days" -gt 0 ]; then
-      effective="$cur_days"; kept=1
-    else
+    if [ "$OPT_FORCE" = "1" ]; then
       effective="$OPT_DAYS"; kept=0
+    else
+      cur_days=""
+      if r=$(tool_read "$tool"); then
+        cur_days="${r##*|}"
+      fi
+      [ -z "$cur_days" ] && cur_days=0
+      if [ "$cur_days" -ge "$OPT_DAYS" ] && [ "$cur_days" -gt 0 ]; then
+        effective="$cur_days"; kept=1
+      else
+        effective="$OPT_DAYS"; kept=0
+      fi
     fi
     if ! out=$(tool_write "$tool" "$effective" 2>&1); then
       err="$out"; failures=$((failures+1))
