@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # pmsec — zero-config install-time supply-chain hardening for
-# npm / pnpm / yarn / bun / cargo / mise / uv. Each `set` writes the cooldown
+# npm / pnpm / yarn / bun / cargo / mise / uv. `enable` writes the cooldown
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
-# hardened mode, attestation re-verification, ...).
+# hardened mode, attestation re-verification, ...). `--days N` overrides the
+# default cooldown.
 # Bash port. Works without npm/uv installed; only needs bash 3.2+ and coreutils.
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.4.1"
-DEFAULT_MIN=7
+PMSEC_VERSION="0.5.0"
+# Default cooldown for the hardening bundle. Override per-invocation with
+# `--days N`; the default tracks the safest value we'd recommend.
+BUNDLE_DAYS=3
 TOOLS=(npm pnpm yarn bun cargo mise uv)
 
 # ---------- paths ----------
@@ -538,41 +541,43 @@ USAGE() {
 pmsec <command> [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. Each \`set\` writes the cooldown plus every safe-by-
-default key the tool exposes.
+bun, cargo, mise, uv. \`enable\` flips on every safe-by-default key each
+tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+attestation re-verification, ...). No knobs.
 
 Commands:
-  check                 Inspect hardening state (exit 1 if cooldown < --min or any extra unset)
-  set <DAYS>            Apply DAYS-day cooldown + the hardening bundle to all selected tools
-  unset                 Remove the cooldown + hardening bundle from selected tools
+  enable                Apply the hardening bundle to all selected tools
+  disable               Remove the hardening bundle from selected tools
+  check                 Verify the bundle is in place (exit 1 if anything missing)
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
-  --min DAYS            Minimum acceptable days for check (default ${DEFAULT_MIN})
+  --days N              Override cooldown days (default 3)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
 
 Examples:
-  pmsec check --min 7
-  pmsec set 7
-  pmsec unset --tool npm
+  pmsec enable
+  pmsec enable --days 7
+  pmsec check
+  pmsec disable --tool npm
 EOF
 }
 
-# parse_args populates: CMD, CMD_DAYS, OPT_MIN, OPT_JSON, OPT_ONLY (csv), OPT_HELP, OPT_VERSION.
+# parse_args populates: CMD, OPT_JSON, OPT_ONLY (csv), OPT_DAYS, OPT_HELP, OPT_VERSION.
 parse_args() {
-  CMD=""; CMD_DAYS=""; OPT_MIN=$DEFAULT_MIN; OPT_JSON=0; OPT_ONLY=""; OPT_HELP=0; OPT_VERSION=0
+  CMD=""; OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_HELP=0; OPT_VERSION=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
       -h|--help)    OPT_HELP=1 ;;
       -V|--version) OPT_VERSION=1 ;;
       --json)       OPT_JSON=1 ;;
-      --min)        shift; OPT_MIN="$1" ;;
-      --min=*)      OPT_MIN="${1#--min=}" ;;
       --tool)       shift; OPT_ONLY="$1" ;;
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
+      --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
+      --days=*)     OPT_DAYS="${1#--days=}"; _validate_days "$OPT_DAYS" || return 2 ;;
       --)           shift; while [ $# -gt 0 ]; do POS[${#POS[@]}]="$1"; shift; done; break ;;
       -*)           printf 'pmsec: unknown flag: %s\n' "$1" >&2; return 2 ;;
       *)            POS[${#POS[@]}]="$1" ;;
@@ -580,7 +585,18 @@ parse_args() {
     shift
   done
   CMD="${POS[0]:-}"
-  if [ "$CMD" = "set" ]; then CMD_DAYS="${POS[1]:-}"; fi
+  if [ "${#POS[@]}" -gt 1 ]; then
+    printf 'pmsec: unexpected argument: %s\n' "${POS[1]}" >&2
+    return 2
+  fi
+  return 0
+}
+
+_validate_days() {
+  case "$1" in
+    ''|*[!0-9]*) printf 'pmsec: --days must be a positive integer (got "%s")\n' "$1" >&2; return 1 ;;
+  esac
+  [ "$1" -ge 1 ] || { printf 'pmsec: --days must be a positive integer (got "%s")\n' "$1" >&2; return 1; }
   return 0
 }
 
@@ -635,7 +651,7 @@ cmd_check() {
       val="${r%|*}"; days="${r##*|}"
     fi
     warn=$(tool_preflight "$tool")
-    if [ -z "$days" ] || [ "$days" -lt "$OPT_MIN" ]; then failing=$((failing+1)); fi
+    if [ -z "$days" ] || [ "$days" -lt "$OPT_DAYS" ]; then failing=$((failing+1)); fi
 
     # Collect extras for this tool into parallel arrays.
     local extras_keys=() extras_cur=() extras_exp=() extras_ok=() ek ec ee eo
@@ -672,8 +688,8 @@ cmd_check() {
       rows_json+=']}'
     else
       local status display
-      status=$(status_for "$days" "$OPT_MIN")
       if [ -z "$val" ]; then display="(unset)"; else display="$val"; fi
+      status=$(status_for "$days" "$OPT_DAYS")
       printf '%s %s %s = %s  [%s]\n' "$status" "$(pad4 "$tool")" "$(tool_key "$tool")" "$display" "$path"
       if [ -n "$warn" ]; then printf '       \xe2\x9a\xa0 %s\n' "$warn"; fi
       local ei ex_status ex_display
@@ -692,26 +708,22 @@ cmd_check() {
   if [ "$OPT_JSON" = "1" ]; then
     local ok="true"
     { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && ok="false"
-    printf '{\n  "min": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_MIN" "$rows_json" "$ok"
+    printf '{\n  "bundleDays": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_DAYS" "$rows_json" "$ok"
   fi
-  [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days\n' "$failing" "$OPT_MIN" >&2
-  [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value\n' "$failing_extras" >&2
+  [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec enable`\n' "$failing" "$OPT_DAYS" >&2
+  [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec enable`\n' "$failing_extras" >&2
   { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
   return 0
 }
 
-cmd_set() {
-  if ! [[ "$CMD_DAYS" =~ ^[0-9]+$ ]] || [ "$CMD_DAYS" -le 0 ]; then
-    printf 'pmsec: set requires integer DAYS > 0\n' >&2
-    return 2
-  fi
+cmd_enable() {
   local results_json="" warns_json="" first_r=1 first_w=1 failures=0 warn_count=0
   local tool path warn err
   for tool in "${SELECTED[@]}"; do
     path=$(tool_path "$tool")
     warn=$(tool_preflight "$tool")
     err=""
-    if ! out=$(tool_write "$tool" "$CMD_DAYS" 2>&1); then
+    if ! out=$(tool_write "$tool" "$OPT_DAYS" 2>&1); then
       err="$out"; failures=$((failures+1))
     fi
     if [ -n "$warn" ]; then warn_count=$((warn_count+1)); fi
@@ -724,7 +736,7 @@ cmd_set() {
       results_json+=$'    {'
       results_json+="\"tool\": $(json_str "$tool"), "
       results_json+="\"path\": $(json_str "$path"), "
-      results_json+="\"days\": $CMD_DAYS, "
+      results_json+="\"days\": $OPT_DAYS, "
       results_json+="\"ok\": $ok_json, "
       results_json+="\"warn\": $warn_json"
       if [ -n "$err" ]; then
@@ -739,17 +751,17 @@ cmd_set() {
       fi
     else
       if [ -z "$err" ]; then
-        printf 'set  %s %d days  [%s]\n' "$(pad4 "$tool")" "$CMD_DAYS" "$path"
+        printf 'enable  %s [%s]\n' "$(pad4 "$tool")" "$path"
         if [ -n "$warn" ]; then printf '     \xe2\x9a\xa0 %s\n' "$warn"; fi
       else
-        printf 'FAIL %s %s\n' "$(pad4 "$tool")" "$err"
+        printf 'FAIL    %s %s\n' "$(pad4 "$tool")" "$err"
       fi
     fi
     if [ -n "$err" ]; then printf 'pmsec: %s\n' "$err" >&2; fi
   done
   if [ "$OPT_JSON" = "1" ]; then
     local ok="true"; [ "$failures" -gt 0 ] && ok="false"
-    printf '{\n  "set": %d,\n  "results": [\n%s\n  ],\n  "warnings": [' "$CMD_DAYS" "$results_json"
+    printf '{\n  "enabled": true,\n  "bundleDays": %d,\n  "results": [\n%s\n  ],\n  "warnings": [' "$OPT_DAYS" "$results_json"
     if [ -n "$warns_json" ]; then printf '\n%s\n  ' "$warns_json"; fi
     printf '],\n  "ok": %s\n}\n' "$ok"
   fi
@@ -760,7 +772,7 @@ cmd_set() {
   return 0
 }
 
-cmd_unset() {
+cmd_disable() {
   local results_json="" first_r=1 failures=0 tool path err removed
   for tool in "${SELECTED[@]}"; do
     path=$(tool_path "$tool")
@@ -785,11 +797,11 @@ cmd_unset() {
       results_json+='}'
     else
       if [ -n "$err" ]; then
-        printf 'FAIL %s %s\n' "$(pad4 "$tool")" "$err"
+        printf 'FAIL    %s %s\n' "$(pad4 "$tool")" "$err"
       elif [ "$removed" = "1" ]; then
-        printf 'rm   %s [%s]\n' "$(pad4 "$tool")" "$path"
+        printf 'disable %s [%s]\n' "$(pad4 "$tool")" "$path"
       else
-        printf 'skip %s [%s]\n' "$(pad4 "$tool")" "$path"
+        printf 'skip    %s [%s]\n' "$(pad4 "$tool")" "$path"
       fi
     fi
     [ -n "$err" ] && printf 'pmsec: %s\n' "$err" >&2
@@ -809,10 +821,10 @@ main() {
   if [ -z "$CMD" ]; then USAGE; return 2; fi
   select_tools || return $?
   case "$CMD" in
-    check) cmd_check ;;
-    set)   cmd_set ;;
-    unset) cmd_unset ;;
-    *)     printf 'pmsec: unknown command "%s"\n' "$CMD" >&2; return 2 ;;
+    check)   cmd_check ;;
+    enable)  cmd_enable ;;
+    disable) cmd_disable ;;
+    *)       printf 'pmsec: unknown command "%s"\n' "$CMD" >&2; return 2 ;;
   esac
 }
 

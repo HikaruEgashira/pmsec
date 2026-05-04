@@ -11,14 +11,27 @@ from pmsec.tools import bun, cargo, mise, npm, pnpm, uv, yarn
 from pmsec.util.paths import current_platform
 
 TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv]
-DEFAULT_MIN = 7
+# Default cooldown for the hardening bundle. Override per-invocation with
+# `--days N`; the default tracks the safest value we'd recommend.
+BUNDLE_DAYS = 3
 
 USAGE_EPILOG = """\
 examples:
-  uvx pmsec check --min 7
-  uvx pmsec set 7
-  uvx pmsec unset --tool npm
+  uvx pmsec enable
+  uvx pmsec enable --days 7
+  uvx pmsec check
+  uvx pmsec disable --tool npm
 """
+
+
+def _positive_int(raw: str) -> int:
+    try:
+        n = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"--days must be a positive integer (got {raw!r})") from exc
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--days must be a positive integer (got {raw!r})")
+    return n
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -26,8 +39,9 @@ def _parser() -> argparse.ArgumentParser:
         prog="pmsec",
         description=(
             "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, "
-            "bun, cargo, mise, and uv. Each `set` writes the cooldown plus every "
-            "safe-by-default key the tool exposes."
+            "bun, cargo, mise, and uv. `enable` flips on every safe-by-default key "
+            "each tool exposes (cooldown, audit-level, trust-policy, hardened mode, "
+            "attestation re-verification, ...). No knobs."
         ),
         epilog=USAGE_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -38,14 +52,11 @@ def _parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
     common.add_argument("--json", action="store_true", help="emit JSON output")
+    common.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
 
-    c = sub.add_parser("check", parents=[common], help="inspect hardening state (cooldown + extras)")
-    c.add_argument("--min", type=int, default=DEFAULT_MIN, help=f"minimum days (default {DEFAULT_MIN})")
-
-    s = sub.add_parser("set", parents=[common], help="apply DAYS-day cooldown + hardening bundle")
-    s.add_argument("days", type=int, help="cooldown in days (must be > 0)")
-
-    sub.add_parser("unset", parents=[common], help="remove cooldown + hardening bundle")
+    sub.add_parser("enable", parents=[common], help="apply the hardening bundle")
+    sub.add_parser("disable", parents=[common], help="remove the hardening bundle")
+    sub.add_parser("check", parents=[common], help="verify the hardening bundle is in place")
 
     return p
 
@@ -104,17 +115,17 @@ def _render_human(rows, min_days):
 
 def _check(args, targets, env, home, platform, out, err):
     rows = _gather(targets, env, home, platform)
-    failing_primary = [r for r in rows if r["days"] is None or r["days"] < args.min]
+    failing_primary = [r for r in rows if r["days"] is None or r["days"] < args.days]
     failing_extras = [e for r in rows for e in r.get("extras", []) if not e["ok"]]
     ok = not failing_primary and not failing_extras
     if args.json:
-        out.write(json.dumps({"min": args.min, "rows": rows, "ok": ok}, indent=2) + "\n")
+        out.write(json.dumps({"bundleDays": args.days, "rows": rows, "ok": ok}, indent=2) + "\n")
     else:
-        out.write(_render_human(rows, args.min))
+        out.write(_render_human(rows, args.days))
     if failing_primary:
-        err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.min} days\n")
+        err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.days} days — run `pmsec enable`\n")
     if failing_extras:
-        err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value\n")
+        err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value — run `pmsec enable`\n")
     return 0 if ok else 1
 
 
@@ -133,34 +144,32 @@ def _explain_fs_error(exc: BaseException, tool: str) -> str:
     return f"{tool}: {exc}"
 
 
-def _set(args, targets, env, home, platform, out, err):
-    if args.days <= 0:
-        err.write("pmsec: set requires integer DAYS > 0\n")
-        return 2
+def _enable(args, targets, env, home, platform, out, err):
     results = []
     failures = []
     warnings = []
+    days = args.days
     for t in targets:
         warn = _preflight_warn(t)
         if warn:
             warnings.append({"tool": t.NAME, "warn": warn})
         try:
-            r = t.write(args.days, env, home, platform)
-            results.append({"tool": t.NAME, "path": r["path"], "days": args.days, "ok": True, "warn": warn})
+            r = t.write(days, env, home, platform)
+            results.append({"tool": t.NAME, "path": r["path"], "days": days, "ok": True, "warn": warn})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)
             failures.append(msg)
-            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": args.days, "ok": False, "error": msg, "warn": warn})
+            results.append({"tool": t.NAME, "path": getattr(exc, "filename", None), "days": days, "ok": False, "error": msg, "warn": warn})
     if args.json:
-        out.write(json.dumps({"set": args.days, "results": results, "warnings": warnings, "ok": not failures}, indent=2) + "\n")
+        out.write(json.dumps({"enabled": True, "bundleDays": days, "results": results, "warnings": warnings, "ok": not failures}, indent=2) + "\n")
     else:
         for r in results:
             if r["ok"]:
-                out.write(f"set  {r['tool']:<4} {r['days']} days  [{r['path']}]\n")
+                out.write(f"enable  {r['tool']:<4} [{r['path']}]\n")
                 if r.get("warn"):
                     out.write(f"     ⚠ {r['warn']}\n")
             else:
-                out.write(f"FAIL {r['tool']:<4} {r['error']}\n")
+                out.write(f"FAIL    {r['tool']:<4} {r['error']}\n")
     for msg in failures:
         err.write(f"pmsec: {msg}\n")
     if warnings:
@@ -168,7 +177,7 @@ def _set(args, targets, env, home, platform, out, err):
     return 1 if failures else 0
 
 
-def _unset(args, targets, env, home, platform, out, err):
+def _disable(args, targets, env, home, platform, out, err):
     results = []
     failures = []
     for t in targets:
@@ -184,9 +193,9 @@ def _unset(args, targets, env, home, platform, out, err):
     else:
         for r in results:
             if not r["ok"]:
-                out.write(f"FAIL {r['tool']:<4} {r['error']}\n")
+                out.write(f"FAIL    {r['tool']:<4} {r['error']}\n")
             else:
-                tag = "rm  " if r["removed"] else "skip"
+                tag = "disable " if r["removed"] else "skip    "
                 out.write(f"{tag} {r['tool']:<4} [{r['path']}]\n")
     for msg in failures:
         err.write(f"pmsec: {msg}\n")
@@ -214,8 +223,8 @@ def main(
     targets = _select(args.tool)
     if args.command == "check":
         return _check(args, targets, env, home, platform, out, err)
-    if args.command == "set":
-        return _set(args, targets, env, home, platform, out, err)
-    if args.command == "unset":
-        return _unset(args, targets, env, home, platform, out, err)
+    if args.command == "enable":
+        return _enable(args, targets, env, home, platform, out, err)
+    if args.command == "disable":
+        return _disable(args, targets, env, home, platform, out, err)
     return 2

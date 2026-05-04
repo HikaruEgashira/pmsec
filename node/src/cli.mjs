@@ -9,7 +9,9 @@ import * as mise from "./tools/mise.mjs";
 import * as uv from "./tools/uv.mjs";
 
 const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv];
-const DEFAULT_MIN = 7;
+// Default cooldown for the hardening bundle. Override per-invocation with
+// `--days N`; the default tracks the safest value we'd recommend.
+const BUNDLE_DAYS = 3;
 export const VERSION = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version;
@@ -17,45 +19,52 @@ export const VERSION = JSON.parse(
 const USAGE = `pmsec <command> [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. Each \`set\` writes the cooldown plus every safe-by-
-default key the tool exposes (audit-level, trust-policy, hardened mode,
-attestation re-verification, ...).
+bun, cargo, mise, uv. \`set\` flips on every safe-by-default key each
+tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+attestation re-verification, ...). No knobs.
 
 Commands:
-  check                 Inspect hardening state (exit 1 if cooldown < --min or any extra unset)
-  set <DAYS>            Apply DAYS-day cooldown + the hardening bundle to all selected tools
-  unset                 Remove the cooldown + hardening bundle from selected tools
+  enable                Apply the hardening bundle to all selected tools
+  disable               Remove the hardening bundle from selected tools
+  check                 Verify the bundle is in place (exit 1 if anything missing)
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
-  --min DAYS            Minimum acceptable days for check (default ${DEFAULT_MIN})
+  --days N              Override cooldown days (default 3)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
 
 Examples:
-  npx pmsec check --min 7
-  npx pmsec set 7
-  npx pmsec unset --tool npm
+  npx pmsec enable
+  npx pmsec enable --days 7
+  npx pmsec check
+  npx pmsec disable --tool npm
 `;
 
+function parseDays(raw) {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`--days must be a positive integer (got "${raw}")`);
+  return n;
+}
+
 function parse(argv) {
-  const opts = { command: null, days: null, min: DEFAULT_MIN, json: false, only: null, help: false, version: false };
+  const opts = { command: null, json: false, only: null, days: BUNDLE_DAYS, help: false, version: false };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") opts.help = true;
     else if (a === "-V" || a === "--version") opts.version = true;
     else if (a === "--json") opts.json = true;
-    else if (a === "--min") opts.min = Number(argv[++i]);
-    else if (a.startsWith("--min=")) opts.min = Number(a.slice(6));
     else if (a === "--tool") opts.only = argv[++i].split(",");
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
+    else if (a === "--days") opts.days = parseDays(argv[++i]);
+    else if (a.startsWith("--days=")) opts.days = parseDays(a.slice(7));
     else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
     else positional.push(a);
   }
   opts.command = positional[0] ?? null;
-  if (opts.command === "set") opts.days = Number(positional[1]);
+  if (positional.length > 1) throw new Error(`unexpected argument: ${positional[1]}`);
   return opts;
 }
 
@@ -101,15 +110,15 @@ function renderHuman(rows, min) {
   return lines.join("\n") + "\n";
 }
 
-async function runCheck(targets, { min, json }, env, home, platform, out, err) {
+async function runCheck(targets, { json, days }, env, home, platform, out, err) {
   const rows = await gatherStatus(targets, env, home, platform);
-  const failingPrimary = rows.filter(r => r.days === null || r.days < min);
+  const failingPrimary = rows.filter(r => r.days === null || r.days < days);
   const failingExtras = rows.flatMap(r => r.extras.filter(e => !e.ok));
   const ok = failingPrimary.length === 0 && failingExtras.length === 0;
-  if (json) out.write(JSON.stringify({ min, rows, ok }, null, 2) + "\n");
-  else out.write(renderHuman(rows, min));
-  if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${min} days\n`);
-  if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value\n`);
+  if (json) out.write(JSON.stringify({ bundleDays: days, rows, ok }, null, 2) + "\n");
+  else out.write(renderHuman(rows, days));
+  if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec enable\`\n`);
+  if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec enable\`\n`);
   return ok ? 0 : 1;
 }
 
@@ -125,11 +134,7 @@ function explainFsError(e, tool) {
   return `${tool}: ${e?.message ?? e}`;
 }
 
-async function runSet(targets, days, json, env, home, platform, out, err) {
-  if (!Number.isInteger(days) || days <= 0) {
-    err.write(`pmsec: set requires integer DAYS > 0\n`);
-    return 2;
-  }
+async function runEnable(targets, json, days, env, home, platform, out, err) {
   const results = [];
   const failures = [];
   const warnings = [];
@@ -144,13 +149,13 @@ async function runSet(targets, days, json, env, home, platform, out, err) {
       results.push({ tool: t.name, path: e?.path ?? null, days, ok: false, error: explainFsError(e, t.name), warn });
     }
   }
-  if (json) out.write(JSON.stringify({ set: days, results, warnings, ok: failures.length === 0 }, null, 2) + "\n");
+  if (json) out.write(JSON.stringify({ enabled: true, bundleDays: days, results, warnings, ok: failures.length === 0 }, null, 2) + "\n");
   else for (const r of results) {
     if (r.ok) {
       const tail = r.warn ? `\n     ⚠ ${r.warn}` : "";
-      out.write(`set  ${r.tool.padEnd(4)} ${r.days} days  [${r.path}]${tail}\n`);
+      out.write(`enable  ${r.tool.padEnd(4)} [${r.path}]${tail}\n`);
     } else {
-      out.write(`FAIL ${r.tool.padEnd(4)} ${r.error}\n`);
+      out.write(`FAIL    ${r.tool.padEnd(4)} ${r.error}\n`);
     }
   }
   for (const f of failures) err.write(`pmsec: ${f.error}\n`);
@@ -158,7 +163,7 @@ async function runSet(targets, days, json, env, home, platform, out, err) {
   return failures.length ? 1 : 0;
 }
 
-async function runUnset(targets, json, env, home, platform, out, err) {
+async function runDisable(targets, json, env, home, platform, out, err) {
   const results = [];
   const failures = [];
   for (const t of targets) {
@@ -172,8 +177,8 @@ async function runUnset(targets, json, env, home, platform, out, err) {
   }
   if (json) out.write(JSON.stringify({ results, ok: failures.length === 0 }, null, 2) + "\n");
   else for (const r of results) {
-    if (!r.ok) out.write(`FAIL ${r.tool.padEnd(4)} ${r.error}\n`);
-    else out.write(`${r.removed ? "rm  " : "skip"} ${r.tool.padEnd(4)} [${r.path}]\n`);
+    if (!r.ok) out.write(`FAIL    ${r.tool.padEnd(4)} ${r.error}\n`);
+    else out.write(`${r.removed ? "disable " : "skip    "} ${r.tool.padEnd(4)} [${r.path}]\n`);
   }
   for (const f of failures) err.write(`pmsec: ${f.error}\n`);
   return failures.length ? 1 : 0;
@@ -196,8 +201,8 @@ export async function run(argv, {
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
   try {
     if (opts.command === "check") return await runCheck(targets, opts, env, home, platform, out, err);
-    if (opts.command === "set") return await runSet(targets, opts.days, opts.json, env, home, platform, out, err);
-    if (opts.command === "unset") return await runUnset(targets, opts.json, env, home, platform, out, err);
+    if (opts.command === "enable") return await runEnable(targets, opts.json, opts.days, env, home, platform, out, err);
+    if (opts.command === "disable") return await runDisable(targets, opts.json, env, home, platform, out, err);
     err.write(`pmsec: unknown command "${opts.command}"\n`);
     return 2;
   } catch (e) {

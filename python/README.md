@@ -1,22 +1,22 @@
 # pmsec (Python)
 
-`pmsec` is a cross-platform CLI that inspects and applies install-time cooldown
-settings (e.g. npm `min-release-age`, uv `exclude-newer`) to mitigate
-supply-chain attacks where malicious packages are typically detected and
-removed within hours to days of publication.
+Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun,
+cargo, mise, and uv. One command flips on every safe-by-default knob each
+package manager exposes — install cooldown, signature trust policy, lockfile
+re-verification, build-script attestation, and more.
 
 ## Install
 
 ```bash
-uvx pmsec check --min 7
-uvx pmsec set 7
-uvx pmsec unset
+uvx pmsec enable
+uvx pmsec check
+uvx pmsec disable
 ```
 
 ```bash
-npx pmsec check --min 7
-npx pmsec set 7
-npx pmsec unset
+npx pmsec enable
+npx pmsec check
+npx pmsec disable
 ```
 
 If your environment already enforces cooldown (or routes through a proxy
@@ -35,12 +35,12 @@ npm, pnpm, yarn 4+, bun, cargo (RFC #3801), mise, uv
 
 | Command | Description |
 | --- | --- |
-| `pmsec check [--min N]` | Read each tool's config; exit 1 if any tool is below `N` days or unset |
-| `pmsec set <DAYS>` | Write `DAYS`-day cooldown to every selected tool |
-| `pmsec unset` | Remove only the cooldown key from each config (other keys preserved) |
+| `pmsec enable` | Write the hardening bundle (3-day cooldown + per-tool extras) to every selected tool's user config |
+| `pmsec check` | Read each tool's config; exit 1 if any row is missing or below the bundled value |
+| `pmsec disable` | Remove every key the bundle set; other keys in the file are preserved |
 | `pmsec --version` | Print the installed pmsec version |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--json`.
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--days N` (override the 3-day default), `--json`.
 
 See the [project README](https://github.com/HikaruEgashira/pmsec) for the full
 table of keys, units, paths, and overrides.

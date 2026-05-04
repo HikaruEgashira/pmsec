@@ -1,8 +1,9 @@
 #!/usr/bin/env pwsh
 # pmsec — zero-config install-time supply-chain hardening for
-# npm / pnpm / yarn / bun / cargo / mise / uv. Each `set` writes the cooldown
+# npm / pnpm / yarn / bun / cargo / mise / uv. `enable` writes the cooldown
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
-# hardened mode, attestation re-verification, ...).
+# hardened mode, attestation re-verification, ...). `--days N` overrides the
+# default cooldown.
 # PowerShell port. Targets Windows PowerShell 5.1 and PowerShell 7+.
 # License: MIT.
 # NOTE: deliberately no param() block. Adding [CmdletBinding] or any
@@ -14,8 +15,10 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.4.1'
-$script:DefaultMin = 7
+$script:PmsecVersion = '0.5.0'
+# Default cooldown for the hardening bundle. Override per-invocation with
+# `--days N`; the default tracks the safest value we'd recommend.
+$script:BundleDays = 3
 $script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
 
 # ---------- platform / paths ----------
@@ -286,7 +289,7 @@ function ToolSep([string]$Tool) {
 }
 
 # Per-tool hardening extras: emit array of hashtables describing fixed-value
-# keys to write alongside the cooldown on `set`, remove on `unset`, and
+# keys to write alongside the cooldown on `enable`, remove on `disable`, and
 # validate on `check`. Each entry: Key, Expected, Line, Sep, Section.
 function ToolExtras([string]$Tool) {
   switch ($Tool) {
@@ -503,32 +506,42 @@ function PrintUsage {
 pmsec <command> [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. Each ``set`` writes the cooldown plus every safe-by-
-default key the tool exposes.
+bun, cargo, mise, uv. ``enable`` flips on every safe-by-default key each
+tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+attestation re-verification, ...). No knobs.
 
 Commands:
-  check                 Inspect hardening state (exit 1 if cooldown < --min or any extra unset)
-  set <DAYS>            Apply DAYS-day cooldown + the hardening bundle to all selected tools
-  unset                 Remove the cooldown + hardening bundle from selected tools
+  enable                Apply the hardening bundle to all selected tools
+  disable               Remove the hardening bundle from selected tools
+  check                 Verify the bundle is in place (exit 1 if anything missing)
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
-  --min DAYS            Minimum acceptable days for check (default $($script:DefaultMin))
+  --days N              Override cooldown days (default 3)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
 
 Examples:
-  pmsec check --min 7
-  pmsec set 7
-  pmsec unset --tool npm
+  pmsec enable
+  pmsec enable --days 7
+  pmsec check
+  pmsec disable --tool npm
 "@
+}
+
+function ParseDays($Raw) {
+  $n = 0
+  if (-not [int]::TryParse([string]$Raw, [ref]$n) -or $n -lt 1) {
+    throw "--days must be a positive integer (got ""$Raw"")"
+  }
+  return $n
 }
 
 function ParseArgs($Argv) {
   $opts = @{
-    Command = ''; Days = $null; Min = $script:DefaultMin
-    Json = $false; Only = $null; Help = $false; Version = $false
+    Command = ''
+    Json = $false; Only = $null; Days = $script:BundleDays; Help = $false; Version = $false
   }
   $positional = New-Object System.Collections.Generic.List[string]
   $i = 0
@@ -538,18 +551,16 @@ function ParseArgs($Argv) {
     if ($a -eq '-h' -or $a -eq '--help') { $opts.Help = $true }
     elseif ($a -eq '-V' -or $a -eq '--version') { $opts.Version = $true }
     elseif ($a -eq '--json') { $opts.Json = $true }
-    elseif ($a -eq '--min') { $i++; $opts.Min = [int]$Argv[$i] }
-    elseif ($a -like '--min=*') { $opts.Min = [int]($a.Substring(6)) }
     elseif ($a -eq '--tool') { $i++; $opts.Only = $Argv[$i] -split ',' }
     elseif ($a -like '--tool=*') { $opts.Only = $a.Substring(7) -split ',' }
+    elseif ($a -eq '--days') { $i++; $opts.Days = ParseDays $Argv[$i] }
+    elseif ($a -like '--days=*') { $opts.Days = ParseDays $a.Substring(7) }
     elseif ($a.StartsWith('-')) { throw "unknown flag: $a" }
     else { $positional.Add($a) }
     $i++
   }
   if ($positional.Count -gt 0) { $opts.Command = $positional[0] }
-  if ($opts.Command -eq 'set' -and $positional.Count -gt 1) {
-    $opts.Days = [int]$positional[1]
-  }
+  if ($positional.Count -gt 1) { throw "unexpected argument: $($positional[1])" }
   return $opts
 }
 
@@ -568,14 +579,14 @@ function SelectTools($Only) {
   return $found.ToArray()
 }
 
-function CmdCheck($Targets, [int]$Min, [bool]$Json) {
+function CmdCheck($Targets, [bool]$Json, [int]$Days) {
   $rows = New-Object System.Collections.Generic.List[hashtable]
   $failing = 0
   $failingExtras = 0
   foreach ($t in $Targets) {
     $r = ToolRead $t
     $warn = ToolPreflight $t
-    if ($null -eq $r.Days -or $r.Days -lt $Min) { $failing++ }
+    if ($null -eq $r.Days -or $r.Days -lt $Days) { $failing++ }
     foreach ($e in $r.Extras) { if (-not $e.Ok) { $failingExtras++ } }
     $rows.Add(@{
       Tool = $t; Key = (ToolKey $t); Path = $r.Path
@@ -586,7 +597,7 @@ function CmdCheck($Targets, [int]$Min, [bool]$Json) {
   if ($Json) {
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine('{')
-    [void]$sb.AppendLine("  ""min"": $Min,")
+    [void]$sb.AppendLine("  ""bundleDays"": $Days,")
     [void]$sb.AppendLine('  "rows": [')
     for ($i = 0; $i -lt $rows.Count; $i++) {
       $r = $rows[$i]
@@ -611,7 +622,7 @@ function CmdCheck($Targets, [int]$Min, [bool]$Json) {
     StdOut $sb.ToString()
   } else {
     foreach ($r in $rows) {
-      $status = if ($null -eq $r.Days) { 'MISSING' } elseif ($r.Days -lt $Min) { 'STALE  ' } else { 'OK     ' }
+      $status = if ($null -eq $r.Days) { 'MISSING' } elseif ($r.Days -lt $Days) { 'STALE  ' } else { 'OK     ' }
       $disp = if ($null -eq $r.Configured) { '(unset)' } else { $r.Configured }
       StdOut ('{0} {1} {2} = {3}  [{4}]' -f $status, (Pad4 $r.Tool), $r.Key, $disp, $r.Path)
       if ($r.Warn) { StdOut ('       ' + $script:WarnGlyph + ' ' + $r.Warn) }
@@ -622,8 +633,8 @@ function CmdCheck($Targets, [int]$Min, [bool]$Json) {
       }
     }
   }
-  if ($failing -gt 0) { StdErr ("pmsec: $failing tool(s) below $Min days") }
-  if ($failingExtras -gt 0) { StdErr ("pmsec: $failingExtras hardening setting(s) not at safe value") }
+  if ($failing -gt 0) { StdErr ("pmsec: $failing tool(s) below $Days days " + $script:EmDash + " run ``pmsec enable``") }
+  if ($failingExtras -gt 0) { StdErr ("pmsec: $failingExtras hardening setting(s) not at safe value " + $script:EmDash + " run ``pmsec enable``") }
   if ($failing -gt 0 -or $failingExtras -gt 0) { return 1 }
   return 0
 }
@@ -632,7 +643,7 @@ function ExplainFsError([string]$Tool, $Err) {
   return ("$Tool" + ': ' + $Err.ToString())
 }
 
-function CmdSet($Targets, [int]$Days, [bool]$Json) {
+function CmdEnable($Targets, [bool]$Json, [int]$Days) {
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
   $warnCount = 0
@@ -656,7 +667,8 @@ function CmdSet($Targets, [int]$Days, [bool]$Json) {
   if ($Json) {
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine('{')
-    [void]$sb.AppendLine("  ""set"": $Days,")
+    [void]$sb.AppendLine('  "enabled": true,')
+    [void]$sb.AppendLine("  ""bundleDays"": $Days,")
     [void]$sb.AppendLine('  "results": [')
     for ($i = 0; $i -lt $results.Count; $i++) {
       $r = $results[$i]
@@ -684,10 +696,10 @@ function CmdSet($Targets, [int]$Days, [bool]$Json) {
   } else {
     foreach ($r in $results) {
       if ($r.Ok) {
-        StdOut ('set  {0} {1} days  [{2}]' -f (Pad4 $r.Tool), $r.Days, $r.Path)
+        StdOut ('enable  {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
         if ($r.Warn) { StdOut ('     ' + $script:WarnGlyph + ' ' + $r.Warn) }
       } else {
-        StdOut ('FAIL {0} {1}' -f (Pad4 $r.Tool), $r.Error)
+        StdOut ('FAIL    {0} {1}' -f (Pad4 $r.Tool), $r.Error)
       }
     }
   }
@@ -699,7 +711,7 @@ function CmdSet($Targets, [int]$Days, [bool]$Json) {
   return 0
 }
 
-function CmdUnset($Targets, [bool]$Json) {
+function CmdDisable($Targets, [bool]$Json) {
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
   foreach ($t in $Targets) {
@@ -738,11 +750,11 @@ function CmdUnset($Targets, [bool]$Json) {
   } else {
     foreach ($r in $results) {
       if (-not $r.Ok) {
-        StdOut ('FAIL {0} {1}' -f (Pad4 $r.Tool), $r.Error)
+        StdOut ('FAIL    {0} {1}' -f (Pad4 $r.Tool), $r.Error)
       } elseif ($r.Removed) {
-        StdOut ('rm   {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
+        StdOut ('disable {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
       } else {
-        StdOut ('skip {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
+        StdOut ('skip    {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
       }
     }
   }
@@ -773,16 +785,10 @@ try {
 
 try {
   switch ($opts.Command) {
-    'check' { exit (CmdCheck $targets $opts.Min $opts.Json) }
-    'set'   {
-      if ($null -eq $opts.Days -or $opts.Days -le 0) {
-        StdErr 'pmsec: set requires integer DAYS > 0'
-        exit 2
-      }
-      exit (CmdSet $targets $opts.Days $opts.Json)
-    }
-    'unset' { exit (CmdUnset $targets $opts.Json) }
-    default { StdErr ("pmsec: unknown command ""{0}""" -f $opts.Command); exit 2 }
+    'check'   { exit (CmdCheck $targets $opts.Json $opts.Days) }
+    'enable'  { exit (CmdEnable $targets $opts.Json $opts.Days) }
+    'disable' { exit (CmdDisable $targets $opts.Json) }
+    default   { StdErr ("pmsec: unknown command ""{0}""" -f $opts.Command); exit 2 }
   }
 } catch {
   StdErr "pmsec: $_"

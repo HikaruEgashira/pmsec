@@ -2,12 +2,12 @@
 
 `pmsec` ships the same CLI from four implementations that must stay in lock-step:
 
-- `node/` — published as `pmsec` on npm, ESM, zero runtime deps, Node ≥ 20.
+- `node/` — published as `pmsec` on npm, ESM, zero runtime deps, Node ≥ 22.
 - `python/` — published as `pmsec` on PyPI, hatchling build, Python ≥ 3.10.
 - `bash/` — single-file `pmsec` script for unix-like environments without npm/uv/python; bash 3.2+ and coreutils only. Distributed by raw download.
 - `powershell/` — single-file `pmsec.ps1` script for Windows hosts. Targets Windows PowerShell 5.1 and PowerShell 7+. Distributed by raw download.
 
-The public surface (`pmsec check | set <DAYS> | unset`, `--tool`, `--json`, `--min`, exit codes, output format) is **mirrored** across all four. When changing CLI behavior, update every implementation and every test suite in the same change.
+The public surface (`pmsec enable | check | disable`, `--tool`, `--days N`, `--json`, exit codes, output format) is **mirrored** across all four. When changing CLI behavior, update every implementation and every test suite in the same change.
 
 ## Release workflow
 
