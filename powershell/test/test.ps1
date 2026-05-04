@@ -274,6 +274,15 @@ T '.bak is created once and never overwritten' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+T 'set 0 exits 2 with usage error' {
+  $h = NewHome
+  try {
+    $r = InvokePmsec $h $null @('set','0')
+    if ($r.Code -ne 2) { $script:LastFail = "expected exit 2, got $($r.Code)`nstderr: $($r.Err)"; return $false }
+    return ($r.Err -match 'set requires integer DAYS > 0')
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
 T '--version prints PmsecVersion' {
   $h = NewHome
   try {

@@ -155,6 +155,13 @@ test(".bak is created once and never overwritten", async () => {
   assert.equal(bak, "registry=https://original/\n");
 });
 
+test("set rejects non-positive DAYS with exit 2", async () => {
+  const home = await setupHome();
+  const { code, err } = await runCli(["set", "0"], home);
+  assert.equal(code, 2);
+  assert.match(err, /pmsec: set requires integer DAYS > 0/);
+});
+
 test("--version prints package.json version and exits 0", async () => {
   const home = await setupHome();
   const pkg = JSON.parse(await readFile(join(import.meta.dirname, "..", "package.json"), "utf8"));

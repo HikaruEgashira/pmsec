@@ -108,7 +108,10 @@ function explainFsError(e, tool) {
 }
 
 async function runSet(targets, days, json, env, home, platform, out, err) {
-  if (!Number.isInteger(days) || days <= 0) throw new Error(`set requires integer DAYS > 0`);
+  if (!Number.isInteger(days) || days <= 0) {
+    err.write(`pmsec: set requires integer DAYS > 0\n`);
+    return 2;
+  }
   const results = [];
   const failures = [];
   const warnings = [];

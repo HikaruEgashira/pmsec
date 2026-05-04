@@ -233,6 +233,16 @@ t_bak_created_once() {
   rm -rf -- "$home"
 }
 
+t_set_zero_days_exits_2() {
+  local home; home=$(setup_home)
+  local err rc
+  err=$(run_pmsec "$home" -- set 0 2>&1 1>/dev/null)
+  rc=$?
+  rm -rf -- "$home"
+  assert_eq "exit code" "2" "$rc" || return 1
+  assert_match "msg" "set requires integer DAYS > 0" "$err"
+}
+
 t_version_flag() {
   local expected
   expected=$(grep -E '^PMSEC_VERSION=' "$PMSEC" | head -1 | sed -E 's/^PMSEC_VERSION="([^"]+)".*/\1/')
@@ -260,6 +270,7 @@ T "bun set creates [install] section if missing" t_bun_creates_section_if_missin
 T "yarn check parses npmMinimalAgeGate days correctly" t_yarn_check_parses_days
 T "pnpm check normalizes minutes to days" t_pnpm_normalizes_minutes
 T ".bak is created once and never overwritten" t_bak_created_once
+T "set 0 exits 2 with usage error" t_set_zero_days_exits_2
 T "--version prints PMSEC_VERSION" t_version_flag
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"

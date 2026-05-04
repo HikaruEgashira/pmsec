@@ -118,7 +118,8 @@ def _explain_fs_error(exc: BaseException, tool: str) -> str:
 
 def _set(args, targets, env, home, platform, out, err):
     if args.days <= 0:
-        raise SystemExit("pmsec: set requires DAYS > 0")
+        err.write("pmsec: set requires integer DAYS > 0\n")
+        return 2
     results = []
     failures = []
     warnings = []

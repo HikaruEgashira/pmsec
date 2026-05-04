@@ -101,8 +101,9 @@ def test_check_json(tmp_path):
 
 
 def test_set_rejects_zero(tmp_path):
-    with pytest.raises(SystemExit):
-        run(["set", "0"], tmp_path)
+    code, _, err = run(["set", "0"], tmp_path)
+    assert code == 2
+    assert "set requires integer DAYS > 0" in err
 
 
 def test_bun_section_insert(tmp_path):

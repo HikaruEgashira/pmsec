@@ -565,7 +565,6 @@ function ExplainFsError([string]$Tool, $Err) {
 }
 
 function CmdSet($Targets, [int]$Days, [bool]$Json) {
-  if ($Days -le 0) { throw 'set requires DAYS > 0' }
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
   $warnCount = 0
@@ -708,7 +707,10 @@ try {
   switch ($opts.Command) {
     'check' { exit (CmdCheck $targets $opts.Min $opts.Json) }
     'set'   {
-      if ($null -eq $opts.Days) { StdErr 'pmsec: set requires DAYS'; exit 2 }
+      if ($null -eq $opts.Days -or $opts.Days -le 0) {
+        StdErr 'pmsec: set requires integer DAYS > 0'
+        exit 2
+      }
       exit (CmdSet $targets $opts.Days $opts.Json)
     }
     'unset' { exit (CmdUnset $targets $opts.Json) }
