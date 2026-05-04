@@ -1,12 +1,16 @@
 import { miseConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
+import { readExtras, applyExtras, removeExtras } from "../util/extras.mjs";
 import { detectVersion, gte } from "../util/version.mjs";
 export const name = "mise";
 export const key = "minimum_release_age";
 export const section = "settings";
 export const docs = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age";
 export const minBin = [2026, 4, 22];
+export const extras = [
+  { key: "paranoid", expected: "true", line: "paranoid = true", section }
+];
 
 export function path(env, home, platform) { return miseConfigPath(env, home, platform); }
 
@@ -33,13 +37,17 @@ export async function read(env, home, platform) {
   const p = path(env, home, platform);
   const raw = await readSafe(p);
   const value = readKey(raw, key, { section });
-  return { path: p, configured: value, days: parseDays(value) };
+  return {
+    path: p, configured: value, days: parseDays(value),
+    extras: readExtras(raw, extras)
+  };
 }
 
 export async function write(days, env, home, platform) {
   const p = path(env, home, platform);
   const before = await readSafe(p);
-  const after = setKey(before, key, `${key} = "${days}d"`, { section });
+  let after = setKey(before, key, `${key} = "${days}d"`, { section });
+  after = applyExtras(after, extras);
   await writeAtomic(p, after);
   return { path: p, before, after };
 }
@@ -47,7 +55,9 @@ export async function write(days, env, home, platform) {
 export async function unset(env, home, platform) {
   const p = path(env, home, platform);
   const before = await readSafe(p);
-  const { text: after, removed } = removeKey(before, key, { section });
-  if (removed) await writeAtomic(p, after);
+  const cooldown = removeKey(before, key, { section });
+  const ex = removeExtras(cooldown.text, extras);
+  const removed = cooldown.removed || ex.removed;
+  if (removed) await writeAtomic(p, ex.text);
   return { path: p, removed };
 }

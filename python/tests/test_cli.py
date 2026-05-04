@@ -35,6 +35,12 @@ def test_set_writes_every_supported_tool_config(tmp_path):
     mise = (tmp_path / ".config" / "mise" / "config.toml").read_text()
     assert "[settings]" in mise
     assert 'minimum_release_age = "7d"' in mise
+    assert "paranoid = true" in mise
+    npmrc = (tmp_path / ".npmrc").read_text()
+    assert "audit-level=high" in npmrc
+    assert "trust-policy=no-downgrade" in npmrc
+    assert "block-exotic-subdeps=true" in npmrc
+    assert "enableHardenedMode: true" in (tmp_path / ".yarnrc.yml").read_text()
 
 
 def test_check_passes_after_set(tmp_path):
@@ -75,7 +81,9 @@ def test_unset_preserves_other_keys(tmp_path):
 def test_set_replaces_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["set", "10", "--tool", "npm"], tmp_path)
-    assert (tmp_path / ".npmrc").read_text() == "min-release-age=10\nregistry=https://r/\n"
+    assert (tmp_path / ".npmrc").read_text() == (
+        "min-release-age=10\nregistry=https://r/\naudit-level=high\n"
+    )
 
 
 def test_tool_filter(tmp_path):
@@ -121,7 +129,9 @@ def test_bun_creates_section_if_missing(tmp_path):
 
 
 def test_yarn_check_parses_days(tmp_path):
-    (tmp_path / ".yarnrc.yml").write_text('npmMinimalAgeGate: "14d"\n')
+    (tmp_path / ".yarnrc.yml").write_text(
+        'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\n'
+    )
     _, out, _ = run(["check", "--json", "--tool", "yarn", "--min", "7"], tmp_path)
     data = json.loads(out)
     assert data["ok"] is True
@@ -140,6 +150,30 @@ def test_bak_created_once(tmp_path):
     run(["set", "7", "--tool", "npm"], tmp_path)
     run(["set", "10", "--tool", "npm"], tmp_path)
     assert (tmp_path / ".npmrc.bak").read_text() == "registry=https://original/\n"
+
+
+def test_hardening_extras_roundtrip(tmp_path):
+    (tmp_path / ".npmrc").write_text("minimum-release-age=20160\n")
+    code, out, _ = run(["check", "--json", "--tool", "pnpm", "--min", "7"], tmp_path)
+    data = json.loads(out)
+    assert code == 1
+    assert len(data["rows"][0]["extras"]) == 2
+    assert all(not e["ok"] for e in data["rows"][0]["extras"])
+
+    run(["set", "14", "--tool", "pnpm"], tmp_path)
+    npmrc = (tmp_path / ".npmrc").read_text()
+    assert "trust-policy=no-downgrade" in npmrc
+    assert "block-exotic-subdeps=true" in npmrc
+
+    code, out, _ = run(["check", "--json", "--tool", "pnpm", "--min", "7"], tmp_path)
+    assert code == 0
+    assert json.loads(out)["ok"] is True
+
+    run(["unset", "--tool", "pnpm"], tmp_path)
+    after = (tmp_path / ".npmrc").read_text()
+    assert "trust-policy" not in after
+    assert "block-exotic-subdeps" not in after
+    assert "minimum-release-age" not in after
 
 
 @pytest.mark.parametrize("flag", ["--version", "-V"])

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import npmrc_path
@@ -11,6 +12,9 @@ NAME = "npm"
 KEY = "min-release-age"
 DOCS = "https://docs.npmjs.com/cli/v11/using-npm/config#min-release-age"
 MIN_BIN = (11, 10, 0)
+EXTRAS = [
+    {"key": "audit-level", "expected": "high", "line": "audit-level=high"},
+]
 
 
 def preflight() -> dict:
@@ -35,13 +39,14 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
     raw = p.read_text("utf-8") if p.exists() else ""
     value = read_key(raw, KEY)
     days = None if value is None else int(value)
-    return {"path": str(p), "configured": value, "days": days}
+    return {"path": str(p), "configured": value, "days": days, "extras": read_extras(raw, EXTRAS)}
 
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:
     p = path(env, home, platform)
     before = p.read_text("utf-8") if p.exists() else ""
     after = set_key(before, KEY, f"{KEY}={days}")
+    after = apply_extras(after, EXTRAS)
     write_atomic(p, after)
     return {"path": str(p), "before": before, "after": after}
 
@@ -51,7 +56,9 @@ def unset(env: dict[str, str], home: Path, platform: str) -> dict:
     if not p.exists():
         return {"path": str(p), "removed": False}
     before = p.read_text("utf-8")
-    after, removed = remove_key(before, KEY)
+    after, removed_cooldown = remove_key(before, KEY)
+    after, removed_extras = remove_extras(after, EXTRAS)
+    removed = removed_cooldown or removed_extras
     if removed:
         write_atomic(p, after)
     return {"path": str(p), "removed": removed}

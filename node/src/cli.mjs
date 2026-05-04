@@ -71,7 +71,12 @@ function preflightWarn(t) {
 async function gatherStatus(targets, env, home, platform) {
   return Promise.all(targets.map(async t => {
     const r = await t.read(env, home, platform);
-    return { tool: t.name, key: t.key, path: r.path, configured: r.configured, days: r.days, warn: preflightWarn(t) };
+    return {
+      tool: t.name, key: t.key, path: r.path,
+      configured: r.configured, days: r.days,
+      extras: r.extras ?? [],
+      warn: preflightWarn(t)
+    };
   }));
 }
 
@@ -82,17 +87,25 @@ function renderHuman(rows, min) {
     const value = r.configured ?? "(unset)";
     const tail = r.warn ? `\n       ⚠ ${r.warn}` : "";
     lines.push(`${status} ${r.tool.padEnd(4)} ${r.key} = ${value}  [${r.path}]${tail}`);
+    for (const e of r.extras) {
+      const exStatus = e.configured === null ? "MISSING" : e.ok ? "OK     " : "STALE  ";
+      const exValue = e.configured ?? "(unset)";
+      lines.push(`${exStatus} ${r.tool.padEnd(4)} ${e.key} = ${exValue}  [${r.path}]`);
+    }
   }
   return lines.join("\n") + "\n";
 }
 
 async function runCheck(targets, { min, json }, env, home, platform, out, err) {
   const rows = await gatherStatus(targets, env, home, platform);
-  const failing = rows.filter(r => r.days === null || r.days < min);
-  if (json) out.write(JSON.stringify({ min, rows, ok: failing.length === 0 }, null, 2) + "\n");
+  const failingPrimary = rows.filter(r => r.days === null || r.days < min);
+  const failingExtras = rows.flatMap(r => r.extras.filter(e => !e.ok));
+  const ok = failingPrimary.length === 0 && failingExtras.length === 0;
+  if (json) out.write(JSON.stringify({ min, rows, ok }, null, 2) + "\n");
   else out.write(renderHuman(rows, min));
-  if (failing.length) err.write(`pmsec: ${failing.length} tool(s) below ${min} days\n`);
-  return failing.length ? 1 : 0;
+  if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${min} days\n`);
+  if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value\n`);
+  return ok ? 0 : 1;
 }
 
 function shQuote(s) { return s ? `'${String(s).replace(/'/g, `'\\''`)}'` : ""; }

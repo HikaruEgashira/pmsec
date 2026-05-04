@@ -12,6 +12,7 @@ NAME = "uv"
 KEY = "exclude-newer"
 DOCS = "https://docs.astral.sh/uv/reference/settings/#exclude-newer"
 MIN_BIN = (0, 9, 17)
+EXTRAS: list[dict] = []
 
 
 def preflight() -> dict:
@@ -48,7 +49,7 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
     p = path(env, home, platform)
     raw = p.read_text("utf-8") if p.exists() else ""
     value = read_key(raw, KEY)
-    return {"path": str(p), "configured": value, "days": _parse_days(value)}
+    return {"path": str(p), "configured": value, "days": _parse_days(value), "extras": []}
 
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:

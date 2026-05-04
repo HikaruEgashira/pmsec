@@ -99,6 +99,11 @@ t_set_writes_all() {
   assert_match "uv key" '^exclude-newer = "7 days"$' "$uvtoml" || return
   assert_match "mise section" '^\[settings\]$' "$mise" || return
   assert_match "mise key" '^minimum_release_age = "7d"$' "$mise" || return
+  assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
+  assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
+  assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$npmrc" || return
+  assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$npmrc" || return
+  assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   rm -rf -- "$home"
 }
 
@@ -149,6 +154,7 @@ t_set_replaces_existing_value() {
   run_pmsec "$home" -- set 10 --tool npm >/dev/null
   assert_file_eq "npmrc" 'min-release-age=10
 registry=https://r/
+audit-level=high
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -206,7 +212,7 @@ minimumReleaseAge = 604800
 
 t_yarn_check_parses_days() {
   local home; home=$(setup_home)
-  printf 'npmMinimalAgeGate: "14d"\n' > "$home/.yarnrc.yml"
+  printf 'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\n' > "$home/.yarnrc.yml"
   local out
   out=$(run_pmsec "$home" -- check --json --tool yarn --min 7)
   rm -rf -- "$home"
@@ -257,6 +263,26 @@ t_version_flag() {
   done
 }
 
+t_hardening_extras_roundtrip() {
+  local home; home=$(setup_home)
+  printf 'minimum-release-age=20160\n' > "$home/.npmrc"
+  local out rc
+  out=$(run_pmsec "$home" -- check --json --tool pnpm --min 7 2>/dev/null); rc=$?
+  assert_eq "extras-missing exit" "1" "$rc" || { rm -rf "$home"; return 1; }
+  assert_match "extras-missing ok=false" '"ok": false' "$out" || { rm -rf "$home"; return 1; }
+  run_pmsec "$home" -- set 14 --tool pnpm >/dev/null
+  assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  out=$(run_pmsec "$home" -- check --json --tool pnpm --min 7); rc=$?
+  assert_eq "after-set exit" "0" "$rc" || { rm -rf "$home"; return 1; }
+  assert_match "after-set ok=true" '"ok": true' "$out" || { rm -rf "$home"; return 1; }
+  run_pmsec "$home" -- unset --tool pnpm >/dev/null
+  local after; after=$(cat "$home/.npmrc")
+  ! printf '%s' "$after" | grep -q 'trust-policy' || { LAST_FAIL="trust-policy not removed"; rm -rf "$home"; return 1; }
+  ! printf '%s' "$after" | grep -q 'block-exotic-subdeps' || { LAST_FAIL="block-exotic-subdeps not removed"; rm -rf "$home"; return 1; }
+  rm -rf -- "$home"
+}
+
 T "set writes every supported tool config" t_set_writes_all
 T "check passes after set across all tools" t_check_passes_after_set
 T "check fails when missing or stale" t_check_fails_when_missing
@@ -272,6 +298,7 @@ T "pnpm check normalizes minutes to days" t_pnpm_normalizes_minutes
 T ".bak is created once and never overwritten" t_bak_created_once
 T "set 0 exits 2 with usage error" t_set_zero_days_exits_2
 T "--version prints PMSEC_VERSION" t_version_flag
+T "hardening extras roundtrip (check / set / unset)" t_hardening_extras_roundtrip
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

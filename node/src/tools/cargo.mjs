@@ -6,6 +6,7 @@ export const name = "cargo";
 export const key = "minimum-release-age";
 export const section = "install";
 export const docs = "https://rust-lang.github.io/rfcs/3801-package-cooldown.html";
+export const extras = [];
 
 export function path(env, home) { return cargoConfigPath(env, home); }
 
@@ -21,7 +22,7 @@ export async function read(env, home) {
   const p = path(env, home);
   const raw = await readSafe(p);
   const value = readKey(raw, key, { section });
-  return { path: p, configured: value, days: parseDays(value) };
+  return { path: p, configured: value, days: parseDays(value), extras: [] };
 }
 
 export async function write(days, env, home) {

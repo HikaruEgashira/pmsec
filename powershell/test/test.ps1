@@ -136,6 +136,11 @@ T 'set writes every supported tool config' {
     $ok = $ok -and (AssertMatch 'uv key' '(?m)^exclude-newer = "7 days"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
     $ok = $ok -and (AssertMatch 'mise section' '(?m)^\[settings\]$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'mise key' '(?m)^minimum_release_age = "7d"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
+    $ok = $ok -and (AssertMatch 'mise paranoid extra' '(?m)^paranoid = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
+    $ok = $ok -and (AssertMatch 'npm audit-level extra' '(?m)^audit-level=high$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'pnpm trust-policy extra' '(?m)^trust-policy=no-downgrade$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'pnpm block-exotic-subdeps extra' '(?m)^block-exotic-subdeps=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'yarn enableHardenedMode extra' '(?m)^enableHardenedMode: true$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     return $ok
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -185,7 +190,7 @@ T 'set replaces existing values in place' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`nregistry=https://r/`n")
     [void](InvokePmsec $h $null @('set','10','--tool','npm'))
-    return (AssertFileEq '.npmrc' "min-release-age=10`nregistry=https://r/`n" (Join-Path $h '.npmrc'))
+    return (AssertFileEq '.npmrc' "min-release-age=10`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -244,7 +249,7 @@ T 'bun set creates [install] section if missing' {
 T 'yarn check parses npmMinimalAgeGate days correctly' {
   $h = NewHome
   try {
-    [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`n")
+    [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`n")
     $r = InvokePmsec $h $null @('check','--json','--tool','yarn','--min','7')
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $true) { $script:LastFail = "expected ok=true"; return $false }
@@ -280,6 +285,30 @@ T 'set 0 exits 2 with usage error' {
     $r = InvokePmsec $h $null @('set','0')
     if ($r.Code -ne 2) { $script:LastFail = "expected exit 2, got $($r.Code)`nstderr: $($r.Err)"; return $false }
     return ($r.Err -match 'set requires integer DAYS > 0')
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'hardening extras roundtrip (check / set / unset)' {
+  $h = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "minimum-release-age=20160`n")
+    $r = InvokePmsec $h $null @('check','--json','--tool','pnpm','--min','7')
+    if ($r.Code -ne 1) { $script:LastFail = "extras-missing exit $($r.Code)"; return $false }
+    $data = $r.Out | ConvertFrom-Json
+    if ($data.ok -ne $false) { $script:LastFail = "extras-missing ok != false"; return $false }
+    if ($data.rows[0].extras.Count -ne 2) { $script:LastFail = "expected 2 extras, got $($data.rows[0].extras.Count)"; return $false }
+    [void](InvokePmsec $h $null @('set','14','--tool','pnpm'))
+    $body = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
+    if ($body -notmatch '(?m)^trust-policy=no-downgrade$') { $script:LastFail = "trust-policy not written: $body"; return $false }
+    if ($body -notmatch '(?m)^block-exotic-subdeps=true$') { $script:LastFail = "block-exotic-subdeps not written: $body"; return $false }
+    $r2 = InvokePmsec $h $null @('check','--json','--tool','pnpm','--min','7')
+    if ($r2.Code -ne 0) { $script:LastFail = "after-set exit $($r2.Code)"; return $false }
+    if (($r2.Out | ConvertFrom-Json).ok -ne $true) { $script:LastFail = "after-set ok != true"; return $false }
+    [void](InvokePmsec $h $null @('unset','--tool','pnpm'))
+    $after = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
+    if ($after -match 'trust-policy') { $script:LastFail = "trust-policy not removed: $after"; return $false }
+    if ($after -match 'block-exotic-subdeps') { $script:LastFail = "block-exotic-subdeps not removed: $after"; return $false }
+    return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 

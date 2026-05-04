@@ -45,6 +45,11 @@ test("set writes every supported tool config", async () => {
   const mise = await readFile(join(home, ".config", "mise", "config.toml"), "utf8");
   assert.match(mise, /^\[settings\]$/m);
   assert.match(mise, /^minimum_release_age = "7d"$/m);
+  assert.match(mise, /^paranoid = true$/m);
+  assert.match(npmrc, /^audit-level=high$/m);
+  assert.match(npmrc, /^trust-policy=no-downgrade$/m);
+  assert.match(npmrc, /^block-exotic-subdeps=true$/m);
+  assert.match(yarnrc, /^enableHardenedMode: true$/m);
 });
 
 test("check passes after set across all tools", async () => {
@@ -82,7 +87,10 @@ test("set replaces existing values in place", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=3\nregistry=https://r/\n");
   await runCli(["set", "10", "--tool", "npm"], home);
-  assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "min-release-age=10\nregistry=https://r/\n");
+  assert.equal(
+    await readFile(join(home, ".npmrc"), "utf8"),
+    "min-release-age=10\nregistry=https://r/\naudit-level=high\n"
+  );
 });
 
 test("--tool restricts which tools get written", async () => {
@@ -131,7 +139,7 @@ test("bun set creates [install] section if missing", async () => {
 
 test("yarn check parses npmMinimalAgeGate days correctly", async () => {
   const home = await setupHome();
-  await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"14d\"\n");
+  await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"14d\"\nenableHardenedMode: true\n");
   const { out } = await runCli(["check", "--json", "--tool", "yarn", "--min", "7"], home);
   const data = JSON.parse(out);
   assert.equal(data.ok, true);
@@ -160,6 +168,32 @@ test("set rejects non-positive DAYS with exit 2", async () => {
   const { code, err } = await runCli(["set", "0"], home);
   assert.equal(code, 2);
   assert.match(err, /pmsec: set requires integer DAYS > 0/);
+});
+
+test("hardening extras: check fails when extras missing, set fixes them, unset removes them", async () => {
+  const home = await setupHome();
+  // Seed pnpm cooldown only — trust-policy & block-exotic-subdeps absent.
+  await writeFile(join(home, ".npmrc"), "minimum-release-age=20160\n");
+  const r1 = await runCli(["check", "--json", "--tool", "pnpm", "--min", "7"], home);
+  const d1 = JSON.parse(r1.out);
+  assert.equal(r1.code, 1, "extras missing should fail check");
+  assert.equal(d1.rows[0].extras.length, 2);
+  assert.equal(d1.rows[0].extras.every(e => !e.ok), true);
+
+  await runCli(["set", "14", "--tool", "pnpm"], home);
+  const npmrc = await readFile(join(home, ".npmrc"), "utf8");
+  assert.match(npmrc, /^trust-policy=no-downgrade$/m);
+  assert.match(npmrc, /^block-exotic-subdeps=true$/m);
+
+  const r2 = await runCli(["check", "--json", "--tool", "pnpm", "--min", "7"], home);
+  assert.equal(r2.code, 0);
+  assert.equal(JSON.parse(r2.out).ok, true);
+
+  await runCli(["unset", "--tool", "pnpm"], home);
+  const after = await readFile(join(home, ".npmrc"), "utf8");
+  assert.doesNotMatch(after, /trust-policy/);
+  assert.doesNotMatch(after, /block-exotic-subdeps/);
+  assert.doesNotMatch(after, /minimum-release-age/);
 });
 
 test("--version prints package.json version and exits 0", async () => {

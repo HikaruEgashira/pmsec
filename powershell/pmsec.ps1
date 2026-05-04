@@ -11,7 +11,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.3.1'
+$script:PmsecVersion = '0.4.0'
 $script:DefaultMin = 7
 $script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
 
@@ -282,6 +282,36 @@ function ToolSep([string]$Tool) {
   return '='
 }
 
+# Per-tool hardening extras: emit array of hashtables describing fixed-value
+# keys to write alongside the cooldown on `set`, remove on `unset`, and
+# validate on `check`. Each entry: Key, Expected, Line, Sep, Section.
+function ToolExtras([string]$Tool) {
+  switch ($Tool) {
+    'npm' {
+      return ,@(
+        @{ Key = 'audit-level'; Expected = 'high'; Line = 'audit-level=high'; Sep = '='; Section = '' }
+      )
+    }
+    'pnpm' {
+      return ,@(
+        @{ Key = 'trust-policy'; Expected = 'no-downgrade'; Line = 'trust-policy=no-downgrade'; Sep = '='; Section = '' },
+        @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = '' }
+      )
+    }
+    'yarn' {
+      return ,@(
+        @{ Key = 'enableHardenedMode'; Expected = 'true'; Line = 'enableHardenedMode: true'; Sep = ':'; Section = '' }
+      )
+    }
+    'mise' {
+      return ,@(
+        @{ Key = 'paranoid'; Expected = 'true'; Line = 'paranoid = true'; Sep = '='; Section = 'settings' }
+      )
+    }
+    default { return ,@() }
+  }
+}
+
 # ---------- per-tool: read / write / unset ----------
 
 function ParseDaysDw([string]$Value) {
@@ -337,7 +367,15 @@ function ToolRead([string]$Tool) {
       'uv'    { $days = ParseDaysUv $val }
     }
   }
-  return @{ Path = $path; Configured = $val; Days = $days }
+  $extras = New-Object System.Collections.Generic.List[hashtable]
+  foreach ($e in (ToolExtras $Tool)) {
+    $cur = LinesReadKey $e.Key $e.Sep $e.Section
+    $extras.Add(@{
+      Key = $e.Key; Configured = $cur; Expected = $e.Expected
+      Ok = ($null -ne $cur -and $cur -eq $e.Expected)
+    })
+  }
+  return @{ Path = $path; Configured = $val; Days = $days; Extras = $extras }
 }
 
 function ToolWriteValueLine([string]$Tool, [int]$Days) {
@@ -358,6 +396,9 @@ function ToolWrite([string]$Tool, [int]$Days) {
   $line = ToolWriteValueLine $Tool $Days
   LinesLoad $path
   LinesSetKey (ToolKey $Tool) $line (ToolSep $Tool) (ToolSection $Tool)
+  foreach ($e in (ToolExtras $Tool)) {
+    LinesSetKey $e.Key $e.Line $e.Sep $e.Section
+  }
   WriteAtomic $path (LinesDump)
   return @{ Path = $path }
 }
@@ -365,7 +406,10 @@ function ToolWrite([string]$Tool, [int]$Days) {
 function ToolUnset([string]$Tool) {
   $path = ToolPath $Tool
   LinesLoad $path
-  $removed = LinesRemoveKey (ToolKey $Tool) (ToolSep $Tool) (ToolSection $Tool)
+  $removed = [bool](LinesRemoveKey (ToolKey $Tool) (ToolSep $Tool) (ToolSection $Tool))
+  foreach ($e in (ToolExtras $Tool)) {
+    if (LinesRemoveKey $e.Key $e.Sep $e.Section) { $removed = $true }
+  }
   if ($removed) { WriteAtomic $path (LinesDump) }
   return @{ Path = $path; Removed = $removed }
 }
@@ -520,13 +564,16 @@ function SelectTools($Only) {
 function CmdCheck($Targets, [int]$Min, [bool]$Json) {
   $rows = New-Object System.Collections.Generic.List[hashtable]
   $failing = 0
+  $failingExtras = 0
   foreach ($t in $Targets) {
     $r = ToolRead $t
     $warn = ToolPreflight $t
     if ($null -eq $r.Days -or $r.Days -lt $Min) { $failing++ }
+    foreach ($e in $r.Extras) { if (-not $e.Ok) { $failingExtras++ } }
     $rows.Add(@{
       Tool = $t; Key = (ToolKey $t); Path = $r.Path
       Configured = $r.Configured; Days = $r.Days; Warn = $warn
+      Extras = $r.Extras
     })
   }
   if ($Json) {
@@ -539,12 +586,20 @@ function CmdCheck($Targets, [int]$Min, [bool]$Json) {
       $cfg  = JsonStrOrNull $r.Configured
       $days = JsonIntOrNull $r.Days
       $warn = JsonStrOrNull $r.Warn
-      $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $days, ""warn"": $warn}"
+      $extrasJson = '['
+      $first = $true
+      foreach ($e in $r.Extras) {
+        if (-not $first) { $extrasJson += ', ' }
+        $first = $false
+        $extrasJson += "{""key"": $(JsonString $e.Key), ""configured"": $(JsonStrOrNull $e.Configured), ""expected"": $(JsonString $e.Expected), ""ok"": $(JsonBool $e.Ok)}"
+      }
+      $extrasJson += ']'
+      $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $days, ""warn"": $warn, ""extras"": $extrasJson}"
       if ($i -lt $rows.Count - 1) { $entry += ',' }
       [void]$sb.AppendLine($entry)
     }
     [void]$sb.AppendLine('  ],')
-    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failing -eq 0))")
+    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failing -eq 0 -and $failingExtras -eq 0))")
     [void]$sb.Append('}')
     StdOut $sb.ToString()
   } else {
@@ -553,12 +608,16 @@ function CmdCheck($Targets, [int]$Min, [bool]$Json) {
       $disp = if ($null -eq $r.Configured) { '(unset)' } else { $r.Configured }
       StdOut ('{0} {1} {2} = {3}  [{4}]' -f $status, (Pad4 $r.Tool), $r.Key, $disp, $r.Path)
       if ($r.Warn) { StdOut ('       ' + $script:WarnGlyph + ' ' + $r.Warn) }
+      foreach ($e in $r.Extras) {
+        $exStatus = if ($null -eq $e.Configured) { 'MISSING' } elseif ($e.Ok) { 'OK     ' } else { 'STALE  ' }
+        $exDisp = if ($null -eq $e.Configured) { '(unset)' } else { $e.Configured }
+        StdOut ('{0} {1} {2} = {3}  [{4}]' -f $exStatus, (Pad4 $r.Tool), $e.Key, $exDisp, $r.Path)
+      }
     }
   }
-  if ($failing -gt 0) {
-    StdErr ("pmsec: $failing tool(s) below $Min days")
-    return 1
-  }
+  if ($failing -gt 0) { StdErr ("pmsec: $failing tool(s) below $Min days") }
+  if ($failingExtras -gt 0) { StdErr ("pmsec: $failingExtras hardening setting(s) not at safe value") }
+  if ($failing -gt 0 -or $failingExtras -gt 0) { return 1 }
   return 0
 }
 

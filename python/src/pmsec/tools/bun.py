@@ -12,6 +12,7 @@ KEY = "minimumReleaseAge"
 SECTION = "install"
 DOCS = "https://bun.com/docs/runtime/bunfig#install"
 MIN_BIN = (1, 3, 0)
+EXTRAS: list[dict] = []
 
 
 def path(env: dict[str, str], home: Path, platform: str) -> Path:
@@ -42,7 +43,7 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
         except ValueError:
             seconds = None
     days = None if seconds is None else seconds // 86400
-    return {"path": str(p), "configured": value, "days": days}
+    return {"path": str(p), "configured": value, "days": days, "extras": []}
 
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:

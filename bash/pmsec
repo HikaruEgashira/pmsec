@@ -4,7 +4,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.3.1"
+PMSEC_VERSION="0.4.0"
 DEFAULT_MIN=7
 TOOLS=(npm pnpm yarn bun cargo mise uv)
 
@@ -289,6 +289,28 @@ tool_sep() {
   esac
 }
 
+# Per-tool hardening extras: emit one extra per line, pipe-delimited as
+# key|expected|full-line|sep|section. Pipe (not tab) so adjacent empty fields
+# survive `read` (whitespace IFS collapses runs of separators).
+tool_extras() {
+  case "$1" in
+    npm)
+      printf 'audit-level|high|audit-level=high|=|\n'
+      ;;
+    pnpm)
+      printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
+      printf 'block-exotic-subdeps|true|block-exotic-subdeps=true|=|\n'
+      ;;
+    yarn)
+      printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
+      ;;
+    mise)
+      printf 'paranoid|true|paranoid = true|=|settings\n'
+      ;;
+    *) ;;
+  esac
+}
+
 # ---------- per-tool: read (configured value + days) ----------
 # Echoes "configured|days" (configured may contain anything, days is integer or
 # empty when unparseable). Return 1 if the key is absent.
@@ -398,6 +420,11 @@ tool_write() {
   line=$(tool_write_value_line "$tool" "$days")
   lines_load "$path"
   lines_set_key "$key" "$line" "$sep" "$section"
+  local ek ev el es esec
+  while IFS='|' read -r ek ev el es esec; do
+    [ -z "$ek" ] && continue
+    lines_set_key "$ek" "$el" "$es" "$esec"
+  done < <(tool_extras "$tool")
   lines_dump | write_atomic "$path"
 }
 
@@ -406,11 +433,34 @@ tool_unset() {
   path=$(tool_path "$tool"); key=$(tool_key "$tool")
   sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
   lines_load "$path"
-  if lines_remove_key "$key" "$sep" "$section"; then
-    removed=1
+  if lines_remove_key "$key" "$sep" "$section"; then removed=1; fi
+  local ek ev el es esec
+  while IFS='|' read -r ek ev el es esec; do
+    [ -z "$ek" ] && continue
+    if lines_remove_key "$ek" "$es" "$esec"; then removed=1; fi
+  done < <(tool_extras "$tool")
+  if [ "$removed" = "1" ]; then
     lines_dump | write_atomic "$path" || return 1
   fi
   printf '%d' "$removed"
+}
+
+# Emit per-extra state for $1 as: key<TAB>configured<TAB>expected<TAB>ok
+# where ok is 1 if configured matches expected, 0 otherwise; configured is
+# empty string when missing.
+tool_read_extras() {
+  local tool="$1" path ek ev el es esec cur ok
+  path=$(tool_path "$tool")
+  lines_load "$path"
+  while IFS='|' read -r ek ev el es esec; do
+    [ -z "$ek" ] && continue
+    if cur=$(lines_read_key "$ek" "$es" "$esec"); then
+      if [ "$cur" = "$ev" ]; then ok=1; else ok=0; fi
+    else
+      cur=""; ok=0
+    fi
+    printf '%s|%s|%s|%s\n' "$ek" "$cur" "$ev" "$ok"
+  done < <(tool_extras "$tool")
 }
 
 # ---------- per-tool: preflight (silently-ignored cooldown warning) ----------
@@ -570,7 +620,7 @@ pad4() {
 }
 
 cmd_check() {
-  local rows_json="" first=1 failing=0 tool path val days configured warn
+  local rows_json="" first=1 failing=0 failing_extras=0 tool path val days warn
   for tool in "${SELECTED[@]}"; do
     path=$(tool_path "$tool")
     val=""; days=""
@@ -579,6 +629,15 @@ cmd_check() {
     fi
     warn=$(tool_preflight "$tool")
     if [ -z "$days" ] || [ "$days" -lt "$OPT_MIN" ]; then failing=$((failing+1)); fi
+
+    # Collect extras for this tool into parallel arrays.
+    local extras_keys=() extras_cur=() extras_exp=() extras_ok=() ek ec ee eo
+    while IFS='|' read -r ek ec ee eo; do
+      [ -z "$ek" ] && continue
+      extras_keys+=("$ek"); extras_cur+=("$ec"); extras_exp+=("$ee"); extras_ok+=("$eo")
+      [ "$eo" = "0" ] && failing_extras=$((failing_extras+1))
+    done < <(tool_read_extras "$tool")
+
     if [ "$OPT_JSON" = "1" ]; then
       local cfg_json days_json warn_json missing=0
       [ -z "$val" ] && [ -z "$days" ] && missing=1
@@ -593,25 +652,44 @@ cmd_check() {
       rows_json+="\"path\": $(json_str "$path"), "
       rows_json+="\"configured\": $cfg_json, "
       rows_json+="\"days\": $days_json, "
-      rows_json+="\"warn\": $warn_json"
-      rows_json+='}'
+      rows_json+="\"warn\": $warn_json, "
+      rows_json+='"extras": ['
+      local ei
+      for ((ei=0; ei<${#extras_keys[@]}; ei++)); do
+        [ "$ei" -gt 0 ] && rows_json+=", "
+        local ec_json ok_json
+        if [ -z "${extras_cur[ei]}" ]; then ec_json="null"; else ec_json=$(json_str "${extras_cur[ei]}"); fi
+        if [ "${extras_ok[ei]}" = "1" ]; then ok_json="true"; else ok_json="false"; fi
+        rows_json+="{\"key\": $(json_str "${extras_keys[ei]}"), \"configured\": $ec_json, \"expected\": $(json_str "${extras_exp[ei]}"), \"ok\": $ok_json}"
+      done
+      rows_json+=']}'
     else
       local status display
       status=$(status_for "$days" "$OPT_MIN")
       if [ -z "$val" ]; then display="(unset)"; else display="$val"; fi
       printf '%s %s %s = %s  [%s]\n' "$status" "$(pad4 "$tool")" "$(tool_key "$tool")" "$display" "$path"
       if [ -n "$warn" ]; then printf '       \xe2\x9a\xa0 %s\n' "$warn"; fi
+      local ei ex_status ex_display
+      for ((ei=0; ei<${#extras_keys[@]}; ei++)); do
+        if [ -z "${extras_cur[ei]}" ]; then
+          ex_status="MISSING"; ex_display="(unset)"
+        elif [ "${extras_ok[ei]}" = "1" ]; then
+          ex_status="OK     "; ex_display="${extras_cur[ei]}"
+        else
+          ex_status="STALE  "; ex_display="${extras_cur[ei]}"
+        fi
+        printf '%s %s %s = %s  [%s]\n' "$ex_status" "$(pad4 "$tool")" "${extras_keys[ei]}" "$ex_display" "$path"
+      done
     fi
   done
   if [ "$OPT_JSON" = "1" ]; then
     local ok="true"
-    [ "$failing" -gt 0 ] && ok="false"
+    { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && ok="false"
     printf '{\n  "min": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_MIN" "$rows_json" "$ok"
   fi
-  if [ "$failing" -gt 0 ]; then
-    printf 'pmsec: %d tool(s) below %d days\n' "$failing" "$OPT_MIN" >&2
-    return 1
-  fi
+  [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days\n' "$failing" "$OPT_MIN" >&2
+  [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value\n' "$failing_extras" >&2
+  { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
   return 0
 }
 

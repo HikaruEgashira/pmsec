@@ -69,7 +69,9 @@ def _gather(targets, env, home, platform):
     rows = []
     for t in targets:
         r = t.read(env, home, platform)
-        rows.append({"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t), **r})
+        row = {"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t), **r}
+        row.setdefault("extras", [])
+        rows.append(row)
     return rows
 
 
@@ -85,20 +87,31 @@ def _render_human(rows, min_days):
         out.append(f"{status} {r['tool']:<4} {r['key']} = {r['configured'] or '(unset)'}  [{r['path']}]")
         if r.get("warn"):
             out.append(f"       ⚠ {r['warn']}")
+        for e in r.get("extras", []):
+            if e["configured"] is None:
+                ex_status = "MISSING"
+            elif e["ok"]:
+                ex_status = "OK     "
+            else:
+                ex_status = "STALE  "
+            out.append(f"{ex_status} {r['tool']:<4} {e['key']} = {e['configured'] or '(unset)'}  [{r['path']}]")
     return "\n".join(out) + "\n"
 
 
 def _check(args, targets, env, home, platform, out, err):
     rows = _gather(targets, env, home, platform)
-    failing = [r for r in rows if r["days"] is None or r["days"] < args.min]
+    failing_primary = [r for r in rows if r["days"] is None or r["days"] < args.min]
+    failing_extras = [e for r in rows for e in r.get("extras", []) if not e["ok"]]
+    ok = not failing_primary and not failing_extras
     if args.json:
-        out.write(json.dumps({"min": args.min, "rows": rows, "ok": not failing}, indent=2) + "\n")
+        out.write(json.dumps({"min": args.min, "rows": rows, "ok": ok}, indent=2) + "\n")
     else:
         out.write(_render_human(rows, args.min))
-    if failing:
-        err.write(f"pmsec: {len(failing)} tool(s) below {args.min} days\n")
-        return 1
-    return 0
+    if failing_primary:
+        err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.min} days\n")
+    if failing_extras:
+        err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value\n")
+    return 0 if ok else 1
 
 
 def _explain_fs_error(exc: BaseException, tool: str) -> str:

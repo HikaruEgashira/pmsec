@@ -8,6 +8,7 @@ export const key = "minimumReleaseAge";
 export const section = "install";
 export const docs = "https://bun.com/docs/runtime/bunfig#install";
 export const minBin = [1, 3, 0];
+export const extras = [];
 
 export function path(env, home) { return bunConfigPath(env, home); }
 
@@ -23,7 +24,7 @@ export async function read(env, home) {
   const raw = await readSafe(p);
   const value = readKey(raw, key, { section });
   const seconds = value === null ? null : Number(value);
-  return { path: p, configured: value, days: seconds === null || Number.isNaN(seconds) ? null : Math.floor(seconds / 86400) };
+  return { path: p, configured: value, days: seconds === null || Number.isNaN(seconds) ? null : Math.floor(seconds / 86400), extras: [] };
 }
 
 export async function write(days, env, home) {

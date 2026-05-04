@@ -7,6 +7,7 @@ export const name = "uv";
 export const key = "exclude-newer";
 export const docs = "https://docs.astral.sh/uv/reference/settings/#exclude-newer";
 export const minBin = [0, 9, 17];
+export const extras = [];
 
 export function path(env, home, platform) { return uvConfigPath(env, home, platform); }
 
@@ -29,7 +30,7 @@ export async function read(env, home, platform) {
   const p = path(env, home, platform);
   const raw = await readSafe(p);
   const value = readKey(raw, key);
-  return { path: p, configured: value, days: parseDays(value) };
+  return { path: p, configured: value, days: parseDays(value), extras: [] };
 }
 
 export async function write(days, env, home, platform) {

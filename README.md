@@ -54,4 +54,14 @@ supported tools
 - mise `~/.config/mise/config.toml` `[settings].minimum_release_age` (mise 2026.4.22+)
 - uv `~/.config/uv/uv.toml` `exclude-newer` (uv 0.9.17+)
 
+zero-config hardening (applied alongside the cooldown on `set`, removed on `unset`, validated on `check`)
+
+- npm `audit-level=high` — fail audit on high-severity advisories
+- pnpm `trust-policy=no-downgrade` (pnpm 10.21+) — refuse installs whose trust evidence regressed
+- pnpm `block-exotic-subdeps=true` (pnpm 10.26+) — disallow git/tarball transitive deps
+- yarn `enableHardenedMode: true` — re-verify lockfile entries against the registry
+- mise `[settings].paranoid=true` — re-verify SLSA / cosign / minisign attestations
+
+bun, cargo, and uv ship with safe-enough defaults; `pmsec` writes nothing extra for them.
+
 [MIT](LICENSE)

@@ -1,6 +1,7 @@
 import { yarnrcPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
+import { readExtras, applyExtras, removeExtras } from "../util/extras.mjs";
 import { detectVersion, gte } from "../util/version.mjs";
 
 export const name = "yarn";
@@ -8,6 +9,9 @@ export const key = "npmMinimalAgeGate";
 export const docs = "https://yarnpkg.com/configuration/yarnrc#npmMinimalAgeGate";
 export const minBin = [4, 10, 0];
 const SEP = ":";
+export const extras = [
+  { key: "enableHardenedMode", expected: "true", line: "enableHardenedMode: true", sep: SEP }
+];
 
 export function path(env, home) { return yarnrcPath(env, home); }
 
@@ -30,13 +34,17 @@ export async function read(env, home) {
   const p = path(env, home);
   const raw = await readSafe(p);
   const value = readKey(raw, key, { sep: SEP });
-  return { path: p, configured: value, days: parseDays(value) };
+  return {
+    path: p, configured: value, days: parseDays(value),
+    extras: readExtras(raw, extras)
+  };
 }
 
 export async function write(days, env, home) {
   const p = path(env, home);
   const before = await readSafe(p);
-  const after = setKey(before, key, `${key}: "${days}d"`, { sep: SEP });
+  let after = setKey(before, key, `${key}: "${days}d"`, { sep: SEP });
+  after = applyExtras(after, extras);
   await writeAtomic(p, after);
   return { path: p, before, after };
 }
@@ -44,7 +52,9 @@ export async function write(days, env, home) {
 export async function unset(env, home) {
   const p = path(env, home);
   const before = await readSafe(p);
-  const { text: after, removed } = removeKey(before, key, { sep: SEP });
-  if (removed) await writeAtomic(p, after);
+  const cooldown = removeKey(before, key, { sep: SEP });
+  const ex = removeExtras(cooldown.text, extras);
+  const removed = cooldown.removed || ex.removed;
+  if (removed) await writeAtomic(p, ex.text);
   return { path: p, removed };
 }
