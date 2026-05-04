@@ -1,5 +1,8 @@
 #!/usr/bin/env pwsh
-# pmsec — install-time cooldown for npm / pnpm / yarn / bun / cargo / mise / uv.
+# pmsec — zero-config install-time supply-chain hardening for
+# npm / pnpm / yarn / bun / cargo / mise / uv. Each `set` writes the cooldown
+# plus every safe-by-default key the tool exposes (audit-level, trust-policy,
+# hardened mode, attestation re-verification, ...).
 # PowerShell port. Targets Windows PowerShell 5.1 and PowerShell 7+.
 # License: MIT.
 # NOTE: deliberately no param() block. Adding [CmdletBinding] or any
@@ -11,7 +14,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.4.0'
+$script:PmsecVersion = '0.4.1'
 $script:DefaultMin = 7
 $script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
 
@@ -499,10 +502,14 @@ function PrintUsage {
 @"
 pmsec <command> [options]
 
+Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
+bun, cargo, mise, uv. Each ``set`` writes the cooldown plus every safe-by-
+default key the tool exposes.
+
 Commands:
-  check                 Inspect cooldown settings (exit 1 if any tool below --min)
-  set <DAYS>            Apply DAYS-day cooldown to all selected tools
-  unset                 Remove cooldown settings from selected tools
+  check                 Inspect hardening state (exit 1 if cooldown < --min or any extra unset)
+  set <DAYS>            Apply DAYS-day cooldown + the hardening bundle to all selected tools
+  unset                 Remove the cooldown + hardening bundle from selected tools
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)

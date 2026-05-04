@@ -1,7 +1,12 @@
 <h1 align="center">pmsec</h1>
 
 <p align="center">
-  Install-time cooldown for npm / pnpm / yarn / bun / cargo / mise / uv.
+  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv.
+</p>
+
+<p align="center">
+  One command flips on every safe-by-default supply-chain knob each package manager exposes:
+  install cooldown, signature trust policy, lockfile re-verification, build-script attestation, and more.
 </p>
 
 <p align="center">
@@ -36,40 +41,33 @@ Invoke-WebRequest `
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 check --min 7
 ```
 
-> Bootstrap: pmsec itself is subject to cooldown, so the very first install
-> may be filtered. Override just for that call
+> Bootstrap: pmsec eats its own dog food — once a cooldown is in place,
+> the very first install may be filtered out. Override just for that call:
 >
 > ```bash
 > npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
 > uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
 > ```
 
-## supported tools
+## what `pmsec set <DAYS>` does
 
-The cooldown key — what `pmsec set <DAYS>` writes and what `--min DAYS` checks against.
+The cooldown column (`set <DAYS>` parameter) and the extra hardening keys are written together. `unset` removes both; `check` exits non-zero if any row is missing or below the expected value. There is no flag or command for "just the cooldown" or "just the extras" — pmsec is opinionated about what "hardened" means.
 
-| tool  | config file                          | key                                     | min version    |
-|-------|--------------------------------------|-----------------------------------------|----------------|
-| npm   | `~/.npmrc`                           | `min-release-age`                       | npm 11.10+     |
-| pnpm  | `~/.npmrc`                           | `minimum-release-age`                   | pnpm 10.6+     |
-| yarn  | `~/.yarnrc.yml`                      | `npmMinimalAgeGate`                     | yarn 4.10+     |
-| bun   | `~/.bunfig.toml`                     | `[install].minimumReleaseAge`           | bun 1.3+       |
-| cargo | `$CARGO_HOME/config.toml`            | `[install].minimum-release-age`         | —              |
-| mise  | `~/.config/mise/config.toml`         | `[settings].minimum_release_age`        | mise 2026.4.22+|
-| uv    | `~/.config/uv/uv.toml`               | `exclude-newer`                         | uv 0.9.17+     |
+| tool  | config file                          | key                                                | value (`set 7`) | what it does                                                                                                  | min version     |
+|-------|--------------------------------------|----------------------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------------|-----------------|
+| npm   | `~/.npmrc`                           | `min-release-age`                                  | `7`             | filters out package versions younger than 7 days at install time                                              | npm 11.10+      |
+| npm   | `~/.npmrc`                           | `audit-level` *(extra)*                            | `high`          | `npm install` / `npm audit` exit non-zero on high+critical advisories. Install behavior unchanged.            | npm 6+          |
+| pnpm  | `~/.npmrc`                           | `minimum-release-age`                              | `10080` (min)   | filters out package versions younger than 7 days                                                              | pnpm 10.6+      |
+| pnpm  | `~/.npmrc`                           | `trust-policy` *(extra)*                           | `no-downgrade`  | refuses installs whose signature / provenance evidence is weaker than the previously installed version        | pnpm 10.21+     |
+| pnpm  | `~/.npmrc`                           | `block-exotic-subdeps` *(extra)*                   | `true`          | rejects transitive deps resolved from git/tarball URLs (direct git deps still work)                           | pnpm 10.26+     |
+| yarn  | `~/.yarnrc.yml`                      | `npmMinimalAgeGate`                                | `"7d"`          | filters out package versions younger than 7 days                                                              | yarn 4.10+      |
+| yarn  | `~/.yarnrc.yml`                      | `enableHardenedMode` *(extra)*                     | `true`          | re-queries the registry on install to confirm lockfile resolutions still match remote (anti-lockfile-poisoning)| yarn 4+         |
+| bun   | `~/.bunfig.toml`                     | `[install].minimumReleaseAge`                      | `604800` (sec)  | filters out package versions younger than 7 days                                                              | bun 1.3+        |
+| cargo | `$CARGO_HOME/config.toml`            | `[install].minimum-release-age`                    | `"7d"`          | filters out crate versions younger than 7 days                                                                | —               |
+| mise  | `~/.config/mise/config.toml`         | `[settings].minimum_release_age`                   | `"7d"`          | filters out tool versions younger than 7 days                                                                 | mise 2026.4.22+ |
+| mise  | `~/.config/mise/config.toml`         | `[settings].paranoid` *(extra)*                    | `true`          | re-verifies SLSA / cosign / minisign / GitHub attestations even when lockfile checksums match                 | mise (recent)   |
+| uv    | `~/.config/uv/uv.toml`               | `exclude-newer`                                    | `"7 days"`      | filters out package versions published after `now − 7 days`                                                   | uv 0.9.17+      |
 
-## zero-config hardening
-
-Applied alongside the cooldown on `set`, removed on `unset`, validated on `check`. No new flag, no new command — flipping the cooldown opts you into the rest of the bundle.
-
-| tool | key                       | value          | what it does                                                                                          | min version    |
-|------|---------------------------|----------------|-------------------------------------------------------------------------------------------------------|----------------|
-| npm  | `audit-level`             | `high`         | makes `npm install` / `npm audit` exit non-zero on high or critical advisories. Install behavior is unchanged. | npm 6+         |
-| pnpm | `trust-policy`            | `no-downgrade` | refuses to install a package whose signature/provenance evidence is weaker than the previously installed version. Fails closed only on regression. | pnpm 10.21+    |
-| pnpm | `block-exotic-subdeps`    | `true`         | rejects transitive dependencies resolved from git or tarball URLs. Direct git/tarball deps still work — only sub-deps are restricted, closing a known supply-chain vector. | pnpm 10.26+    |
-| yarn | `enableHardenedMode`      | `true`         | re-queries the registry on every install to confirm lockfile resolutions and checksums still match remote. Defends against lockfile poisoning. | yarn 4+        |
-| mise | `[settings].paranoid`     | `true`         | re-verifies SLSA provenance, cosign / minisign signatures, and GitHub artifact attestations even when lockfile checksums match. Tools whose backends lack attestations fail closed. | mise (recent) |
-
-bun, cargo, and uv have no globally-flippable safe-by-default key worth flipping today; `pmsec` writes nothing extra for them. (bun's script-execution defense lives in per-project `package.json`; cargo's build scripts cannot be disabled at config-file level; uv's `index-strategy=first-index` and friends are already the safe defaults.)
+bun, cargo, and uv have no extras: bun's script-execution defense lives in per-project `package.json`, cargo build scripts can't be disabled at config level, and uv's defaults (`index-strategy=first-index`, `keyring-provider=disabled`, `allow-insecure-host=[]`) are already safe.
 
 [MIT](LICENSE)

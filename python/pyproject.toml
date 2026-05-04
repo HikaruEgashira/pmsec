@@ -1,7 +1,7 @@
 [project]
 name = "pmsec"
-version = "0.4.0"
-description = "Inspect and apply install-time cooldown for npm, pnpm, yarn, bun, cargo, mise, and uv."
+version = "0.4.1"
+description = "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun, cargo, mise, and uv."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

@@ -16,10 +16,15 @@ export const VERSION = JSON.parse(
 
 const USAGE = `pmsec <command> [options]
 
+Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
+bun, cargo, mise, uv. Each \`set\` writes the cooldown plus every safe-by-
+default key the tool exposes (audit-level, trust-policy, hardened mode,
+attestation re-verification, ...).
+
 Commands:
-  check                 Inspect cooldown settings (exit 1 if any tool below --min)
-  set <DAYS>            Apply DAYS-day cooldown to all selected tools
-  unset                 Remove cooldown settings from selected tools
+  check                 Inspect hardening state (exit 1 if cooldown < --min or any extra unset)
+  set <DAYS>            Apply DAYS-day cooldown + the hardening bundle to all selected tools
+  unset                 Remove the cooldown + hardening bundle from selected tools
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)

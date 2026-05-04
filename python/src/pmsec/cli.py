@@ -24,7 +24,11 @@ examples:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pmsec",
-        description="Inspect and apply install-time cooldown for npm, pnpm, yarn, bun, cargo, mise, and uv.",
+        description=(
+            "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, "
+            "bun, cargo, mise, and uv. Each `set` writes the cooldown plus every "
+            "safe-by-default key the tool exposes."
+        ),
         epilog=USAGE_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -35,13 +39,13 @@ def _parser() -> argparse.ArgumentParser:
     common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
     common.add_argument("--json", action="store_true", help="emit JSON output")
 
-    c = sub.add_parser("check", parents=[common], help="inspect cooldown settings")
+    c = sub.add_parser("check", parents=[common], help="inspect hardening state (cooldown + extras)")
     c.add_argument("--min", type=int, default=DEFAULT_MIN, help=f"minimum days (default {DEFAULT_MIN})")
 
-    s = sub.add_parser("set", parents=[common], help="apply cooldown")
+    s = sub.add_parser("set", parents=[common], help="apply DAYS-day cooldown + hardening bundle")
     s.add_argument("days", type=int, help="cooldown in days (must be > 0)")
 
-    sub.add_parser("unset", parents=[common], help="remove cooldown")
+    sub.add_parser("unset", parents=[common], help="remove cooldown + hardening bundle")
 
     return p
 

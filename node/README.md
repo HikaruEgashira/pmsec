@@ -28,7 +28,7 @@ npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
 uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
 ```
 
-Zero runtime dependencies, ESM, requires Node 22+.
+Zero-config install-time supply-chain hardening (cooldown + audit-level + trust-policy + …) across npm, pnpm, yarn, bun, cargo, mise, uv. Zero runtime dependencies, ESM, requires Node 22+.
 
 ## Commands
 
