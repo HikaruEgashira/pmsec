@@ -14,16 +14,13 @@
 </p>
 
 ```bash
-npx pmsec enable
 npx pmsec check
-npx pmsec disable
-npx pmsec --version
+npx pmsec enable
 ```
 
 ```bash
-uvx pmsec enable
 uvx pmsec check
-uvx pmsec disable
+uvx pmsec enable
 ```
 
 ```bash
@@ -49,7 +46,7 @@ pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 > uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
 > ```
 
-## what `pmsec enable` does
+## Supported Package Managers
 
 Writes a fixed bundle of hardening keys to each tool's user-global config — a 3-day install cooldown plus every safe-by-default supply-chain knob the tool exposes. `disable` removes them; `check` exits non-zero if any row is missing or below the bundled value. The cooldown is opinionated but adjustable: pass `--days N` to `enable` / `check` to use a different threshold (e.g. `pmsec enable --days 7`). The extras have no knobs — pmsec is opinionated about what "hardened" means.
 
