@@ -17,7 +17,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "pmsec": "./bin/cli.mjs"
