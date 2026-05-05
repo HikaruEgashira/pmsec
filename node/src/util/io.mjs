@@ -23,7 +23,7 @@ function underHome(p, home) {
   return r === h || r.startsWith(h + sep);
 }
 
-function shellQuote(s) { return `'${String(s).replace(/'/g, `'\\''`)}'`; }
+export function shellQuote(s) { return `'${String(s).replace(/'/g, `'\\''`)}'`; }
 
 async function reclaim(path, home, err) {
   if (process.platform === "win32" || typeof process.getuid !== "function") return false;

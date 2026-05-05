@@ -6,7 +6,7 @@ from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import npmrc_path
-from pmsec.util.version import detect_version, gte
+from pmsec.util.version import build_preflight
 
 NAME = "npm"
 KEY = "min-release-age"
@@ -16,18 +16,10 @@ EXTRAS = [
     {"key": "audit-level", "expected": "high", "line": "audit-level=high"},
 ]
 
-
-def preflight() -> dict:
-    v = detect_version("npm")
-    if v is None:
-        return {"ok": True, "message": None}
-    if gte(v, MIN_BIN):
-        return {"ok": True, "version": v[3], "message": None}
-    msg = (
-        f"npm {v[3]} < {'.'.join(str(n) for n in MIN_BIN)}: "
-        "min-release-age is silently ignored. Upgrade npm to enforce the cooldown."
-    )
-    return {"ok": True, "warn": True, "version": v[3], "message": msg}
+preflight = build_preflight(
+    NAME, MIN_BIN,
+    "min-release-age is silently ignored. Upgrade npm to enforce the cooldown.",
+)
 
 
 def path(env: dict[str, str], home: Path, platform: str) -> Path:
@@ -44,11 +36,10 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:
     p = path(env, home, platform)
-    before = p.read_text("utf-8") if p.exists() else ""
-    after = set_key(before, KEY, f"{KEY}={days}")
-    after = apply_extras(after, EXTRAS)
-    write_atomic(p, after)
-    return {"path": str(p), "before": before, "after": after}
+    raw = p.read_text("utf-8") if p.exists() else ""
+    text = apply_extras(set_key(raw, KEY, f"{KEY}={days}"), EXTRAS)
+    write_atomic(p, text)
+    return {"path": str(p)}
 
 
 def unset(env: dict[str, str], home: Path, platform: str) -> dict:

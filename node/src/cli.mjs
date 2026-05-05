@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
+import { shellQuote } from "./util/io.mjs";
 import * as npm from "./tools/npm.mjs";
 import * as pnpm from "./tools/pnpm.mjs";
 import * as yarn from "./tools/yarn.mjs";
@@ -125,12 +126,10 @@ async function runCheck(targets, { json, days }, env, home, platform, out, err) 
   return ok ? 0 : 1;
 }
 
-function shQuote(s) { return s ? `'${String(s).replace(/'/g, `'\\''`)}'` : ""; }
-
 function explainFsError(e, tool) {
   if (e?.code === "EACCES" || e?.code === "EPERM") {
     const p = e.path ?? "";
-    const q = shQuote(p);
+    const q = p ? shellQuote(p) : "";
     return `${tool}: cannot write ${p} (${e.code}). Check file ownership: \`ls -la ${q}\` — if owned by root, run \`sudo chown -h $(id -u):$(id -g) ${q}\`.`;
   }
   if (e?.code === "EROFS") return `${tool}: ${e.path ?? ""} is on a read-only filesystem (EROFS).`;

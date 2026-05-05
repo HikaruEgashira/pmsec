@@ -86,9 +86,7 @@ def _gather(targets, env, home, platform):
     rows = []
     for t in targets:
         r = t.read(env, home, platform)
-        row = {"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t), **r}
-        row.setdefault("extras", [])
-        rows.append(row)
+        rows.append({"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t), **r})
     return rows
 
 

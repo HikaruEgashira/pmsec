@@ -324,8 +324,13 @@ function WriteAtomic([string]$Path, [string]$Content) {
   }
   $tmp = "$Path." + [guid]::NewGuid().ToString('N').Substring(0,8) + '.tmp'
   $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($tmp, $Content, $utf8NoBom)
-  Move-Item -LiteralPath $tmp -Destination $Path -Force
+  try {
+    [System.IO.File]::WriteAllText($tmp, $Content, $utf8NoBom)
+    Move-Item -LiteralPath $tmp -Destination $Path -Force
+  } catch {
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction Ignore
+    throw
+  }
 }
 
 # ---------- version detection ----------
@@ -442,29 +447,22 @@ function ToolExtras([string]$Tool) {
 
 # ---------- per-tool: read / write / unset ----------
 
-function ParseDaysDw([string]$Value) {
+function ParseDaysDw([string]$Value, [bool]$ExtraUnits = $false) {
   $v = $Value.Trim('"').Trim()
   if ($v -match '^(\d+)\s*([A-Za-z]+)$') {
     $n = [int]$Matches[1]
     $u = $Matches[2].ToLower()
     if (@('d','day','days') -contains $u) { return $n }
     if (@('w','week','weeks') -contains $u) { return $n * 7 }
+    if ($ExtraUnits) {
+      if (@('m','month','months') -contains $u) { return $n * 30 }
+      if (@('y','year','years') -contains $u) { return $n * 365 }
+    }
   }
   return $null
 }
 
-function ParseDaysMise([string]$Value) {
-  $v = $Value.Trim('"').Trim()
-  if ($v -match '^(\d+)\s*([A-Za-z]+)$') {
-    $n = [int]$Matches[1]
-    $u = $Matches[2].ToLower()
-    if (@('d','day','days') -contains $u) { return $n }
-    if (@('w','week','weeks') -contains $u) { return $n * 7 }
-    if (@('m','month','months') -contains $u) { return $n * 30 }
-    if (@('y','year','years') -contains $u) { return $n * 365 }
-  }
-  return $null
-}
+function ParseDaysMise([string]$Value) { ParseDaysDw $Value $true }
 
 function ParseDaysUv([string]$Value) {
   if ($Value -match '^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$') {
@@ -555,46 +553,24 @@ function ToolUnset([string]$Tool) {
 }
 
 function ToolPreflight([string]$Tool) {
-  if ($Tool -eq 'cargo') { return $null }
   # Preflight runs the binary on the local PATH. That maps to a Windows
   # install only — for a WSL scope we'd have to detect inside the distro,
   # which we punt on. Users still get the warning surfaced for the host.
   if ((Get-PmsecPlatform) -ne 'win32') { return $null }
+  $min = $null; $msg = $null
+  switch ($Tool) {
+    'npm'  { $min = @(11,10,0);   $msg = 'min-release-age is silently ignored. Upgrade npm to enforce the cooldown.' }
+    'pnpm' { $min = @(10,6,0);    $msg = 'minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.' }
+    'yarn' { $min = @(4,10,0);    $msg = 'npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' }
+    'bun'  { $min = @(1,3,0);     $msg = 'minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' }
+    'mise' { $min = @(2026,4,22); $msg = 'setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' }
+    'uv'   { $min = @(0,9,17);    $msg = 'writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' }
+    default { return $null }  # cargo: no min version gate (ships with rustup)
+  }
   $v = VersionDetect $Tool
   if ($null -eq $v) { return $null }
-  switch ($Tool) {
-    'npm' {
-      if (-not (VersionGte $v @(11,10,0))) {
-        return ('npm {0} < 11.10.0: min-release-age is silently ignored. Upgrade npm to enforce the cooldown.' -f $v.Raw)
-      }
-    }
-    'pnpm' {
-      if (-not (VersionGte $v @(10,6,0))) {
-        return ('pnpm {0} < 10.6.0: minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.' -f $v.Raw)
-      }
-    }
-    'yarn' {
-      if (-not (VersionGte $v @(4,10,0))) {
-        return ('yarn {0} < 4.10.0: npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' -f $v.Raw)
-      }
-    }
-    'bun' {
-      if (-not (VersionGte $v @(1,3,0))) {
-        return ('bun {0} < 1.3.0: minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' -f $v.Raw)
-      }
-    }
-    'mise' {
-      if (-not (VersionGte $v @(2026,4,22))) {
-        return ('mise {0} < 2026.4.22: setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' -f $v.Raw)
-      }
-    }
-    'uv' {
-      if (-not (VersionGte $v @(0,9,17))) {
-        return ('uv {0} < 0.9.17: writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' -f $v.Raw)
-      }
-    }
-  }
-  return $null
+  if (VersionGte $v $min) { return $null }
+  return ('{0} {1} < {2}: {3}' -f $Tool, $v.Raw, ($min -join '.'), $msg)
 }
 
 # ---------- JSON helpers ----------

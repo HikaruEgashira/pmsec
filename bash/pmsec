@@ -271,7 +271,7 @@ write_atomic() {
     cp -p -- "$path" "$bak"
   fi
   tmp=$(mktemp "$path.XXXXXX") || return 1
-  cat > "$tmp"
+  cat > "$tmp" || { rm -f -- "$tmp"; return 1; }
   if [ -e "$path" ]; then
     # An existing .npmrc / .yarnrc may carry a registry token under 600.
     mode=$(_pmsec_stat '%Lp' '%a' "$path")
@@ -280,7 +280,7 @@ write_atomic() {
     # mktemp creates 600; under root that would be unreadable post-chown.
     chmod 644 "$tmp" 2>/dev/null || true
   fi
-  mv -f -- "$tmp" "$path"
+  mv -f -- "$tmp" "$path" || { rm -f -- "$tmp"; return 1; }
   _pmsec_handback "$path" "$bak" "$top_created"
 }
 
@@ -417,45 +417,27 @@ tool_extras() {
 # Echoes "configured|days" (configured may contain anything, days is integer or
 # empty when unparseable). Return 1 if the key is absent.
 
-# parse "Nd" / "Nw" / "Ndays" / "Nweeks" (optionally surrounded by quotes)
+# parse "Nd" / "Nw" / "Ndays" / "Nweeks" (optionally surrounded by quotes).
+# Pass `extra_units=1` to also accept m/months and y/years (used by mise).
 parse_days_dw() {
-  local v="$1" n unit lc
+  local v="$1" extra="${2:-0}" n unit lc
   v="${v#\"}"; v="${v%\"}"
   v="${v#"${v%%[![:space:]]*}"}"
   v="${v%"${v##*[![:space:]]}"}"
-  if [[ "$v" =~ ^([0-9]+)[[:space:]]*([A-Za-z]+)$ ]]; then
-    n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
-    lc=$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')
-    case "$lc" in
-      d|day|days) printf '%d' "$n" ;;
-      w|week|weeks) printf '%d' "$((n*7))" ;;
-      *) return 1 ;;
-    esac
-    return 0
-  fi
-  return 1
+  [[ "$v" =~ ^([0-9]+)[[:space:]]*([A-Za-z]+)$ ]] || return 1
+  n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+  lc=$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')
+  case "$lc" in
+    d|day|days) printf '%d' "$n" ;;
+    w|week|weeks) printf '%d' "$((n*7))" ;;
+    m|month|months) [ "$extra" = 1 ] && printf '%d' "$((n*30))" || return 1 ;;
+    y|year|years)   [ "$extra" = 1 ] && printf '%d' "$((n*365))" || return 1 ;;
+    *) return 1 ;;
+  esac
 }
 
 # mise additionally accepts months/years.
-parse_days_mise() {
-  local v="$1" n unit lc
-  v="${v#\"}"; v="${v%\"}"
-  v="${v#"${v%%[![:space:]]*}"}"
-  v="${v%"${v##*[![:space:]]}"}"
-  if [[ "$v" =~ ^([0-9]+)[[:space:]]*([A-Za-z]+)$ ]]; then
-    n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
-    lc=$(printf '%s' "$unit" | tr '[:upper:]' '[:lower:]')
-    case "$lc" in
-      d|day|days) printf '%d' "$n" ;;
-      w|week|weeks) printf '%d' "$((n*7))" ;;
-      m|month|months) printf '%d' "$((n*30))" ;;
-      y|year|years) printf '%d' "$((n*365))" ;;
-      *) return 1 ;;
-    esac
-    return 0
-  fi
-  return 1
-}
+parse_days_mise() { parse_days_dw "$1" 1; }
 
 # uv requires the value to be a quoted string ending in days/weeks (the toml
 # parser does not accept duration suffixes outside quotes).
@@ -585,38 +567,20 @@ tool_read_extras() {
 # ---------- per-tool: preflight (silently-ignored cooldown warning) ----------
 
 tool_preflight() {
-  local tool="$1" v
+  local tool="$1" v min msg
   case "$tool" in
-    cargo) return 0 ;;  # no min version gate, ships with rustup
+    npm)  min='11 10 0';   msg='min-release-age is silently ignored. Upgrade npm to enforce the cooldown.' ;;
+    pnpm) min='10 6 0';    msg='minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.' ;;
+    yarn) min='4 10 0';    msg='npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' ;;
+    bun)  min='1 3 0';     msg='minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' ;;
+    mise) min='2026 4 22'; msg='setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' ;;
+    uv)   min='0 9 17';    msg='writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' ;;
+    *) return 0 ;;  # cargo: no min version gate (ships with rustup)
   esac
   v=$(version_detect "$tool") || return 0
   set -- $v
-  case "$tool" in
-    npm)
-      version_gte "$1" "$2" "$3" 11 10 0 || \
-        printf 'npm %s < 11.10.0: min-release-age is silently ignored. Upgrade npm to enforce the cooldown.' "$4"
-      ;;
-    pnpm)
-      version_gte "$1" "$2" "$3" 10 6 0 || \
-        printf 'pnpm %s < 10.6.0: minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.' "$4"
-      ;;
-    yarn)
-      version_gte "$1" "$2" "$3" 4 10 0 || \
-        printf 'yarn %s < 4.10.0: npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' "$4"
-      ;;
-    bun)
-      version_gte "$1" "$2" "$3" 1 3 0 || \
-        printf 'bun %s < 1.3.0: minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' "$4"
-      ;;
-    mise)
-      version_gte "$1" "$2" "$3" 2026 4 22 || \
-        printf 'mise %s < 2026.4.22: setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' "$4"
-      ;;
-    uv)
-      version_gte "$1" "$2" "$3" 0 9 17 || \
-        printf 'uv %s < 0.9.17: writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' "$4"
-      ;;
-  esac
+  version_gte "$1" "$2" "$3" $min || \
+    printf '%s %s < %s: %s' "$tool" "$4" "${min// /.}" "$msg"
 }
 
 # ---------- JSON helpers ----------
@@ -723,10 +687,11 @@ parse_args() {
 
 _validate_days() {
   case "$1" in
-    ''|*[!0-9]*) printf 'pmsec: --days must be a positive integer (got "%s")\n' "$1" >&2; return 1 ;;
+    ''|*[!0-9]*) ;;
+    *) [ "$1" -ge 1 ] && return 0 ;;
   esac
-  [ "$1" -ge 1 ] || { printf 'pmsec: --days must be a positive integer (got "%s")\n' "$1" >&2; return 1; }
-  return 0
+  printf 'pmsec: --days must be a positive integer (got "%s")\n' "$1" >&2
+  return 1
 }
 
 # Resolve OPT_ONLY (csv or empty) → SELECTED array of tool names.

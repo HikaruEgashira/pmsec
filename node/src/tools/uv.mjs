@@ -1,7 +1,7 @@
 import { uvConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
-import { detectVersion, gte } from "../util/version.mjs";
+import { buildPreflight } from "../util/version.mjs";
 
 export const name = "uv";
 export const key = "exclude-newer";
@@ -11,12 +11,8 @@ export const extras = [];
 
 export function path(env, home, platform) { return uvConfigPath(env, home, platform); }
 
-export function preflight() {
-  const v = detectVersion("uv");
-  if (v === null) return { ok: true, message: null };
-  if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
-  return { ok: true, warn: true, version: v.raw, message: `uv ${v.raw} < ${minBin.join(".")}: writing exclude-newer = "N days" will break this uv until you \`uv self update\` (file will fail to parse).` };
-}
+export const preflight = buildPreflight(name, minBin,
+  "writing exclude-newer = \"N days\" will break this uv until you `uv self update` (file will fail to parse).");
 
 function parseDays(value) {
   if (value === null) return null;
@@ -35,10 +31,9 @@ export async function read(env, home, platform) {
 
 export async function write(days, env, home, platform) {
   const p = path(env, home, platform);
-  const before = await readSafe(p);
-  const after = setKey(before, key, `${key} = "${days} days"`);
-  await writeAtomic(p, after);
-  return { path: p, before, after };
+  const text = setKey(await readSafe(p), key, `${key} = "${days} days"`);
+  await writeAtomic(p, text);
+  return { path: p };
 }
 
 export async function unset(env, home, platform) {

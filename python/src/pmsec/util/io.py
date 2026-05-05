@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def _is_perm_err(exc: BaseException) -> bool:
-    return isinstance(exc, PermissionError) or (isinstance(exc, OSError) and exc.errno in (1, 13))
+    return isinstance(exc, PermissionError)
 
 
 def _is_symlink(path: Path) -> bool:
