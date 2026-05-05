@@ -5,7 +5,7 @@ from pathlib import Path
 from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
-from pmsec.util.paths import npmrc_path
+from pmsec.util.paths import pnpm_rc_path
 from pmsec.util.version import detect_version, gte
 
 NAME = "pnpm"
@@ -13,8 +13,8 @@ KEY = "minimum-release-age"
 DOCS = "https://pnpm.io/settings#minimumreleaseage"
 MIN_BIN = (10, 6, 0)
 # `default_since_major`: pnpm major version where the value became the default.
-# When detected, an absent line in `.npmrc` is still effectively in force, so
-# `read()` reports it as ok with `defaultEnforced: True`.
+# When detected, an absent line in the rc file is still effectively in force,
+# so `read()` reports it as ok with `defaultEnforced: True`.
 EXTRAS = [
     {"key": "trust-policy", "expected": "no-downgrade", "line": "trust-policy=no-downgrade"},
     {"key": "block-exotic-subdeps", "expected": "true", "line": "block-exotic-subdeps=true", "default_since_major": 11},
@@ -23,7 +23,7 @@ EXTRAS = [
 
 
 def path(env: dict[str, str], home: Path, platform: str) -> Path:
-    return npmrc_path(env, home)
+    return pnpm_rc_path(env, home, platform)
 
 
 def _pnpm_version(env: dict[str, str] | None):

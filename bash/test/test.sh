@@ -89,14 +89,18 @@ T() {
 t_enable_writes_all() {
   local home; home=$(setup_home)
   run_pmsec "$home" -- enable >/dev/null
-  local npmrc bunfig yarnrc uvtoml mise
+  local npmrc pnpmrc bunfig yarnrc uvtoml mise
   npmrc=$(cat "$home/.npmrc")
+  pnpmrc=$(cat "$home/.config/pnpm/rc")
   bunfig=$(cat "$home/.bunfig.toml")
   yarnrc=$(cat "$home/.yarnrc.yml")
   uvtoml=$(cat "$home/.config/uv/uv.toml")
   mise=$(cat "$home/.config/mise/config.toml")
   assert_match "npm key" '^min-release-age=3$' "$npmrc" || return
-  assert_match "pnpm key" '^minimum-release-age=4320$' "$npmrc" || return
+  assert_match "pnpm key" '^minimum-release-age=4320$' "$pnpmrc" || return
+  if printf '%s' "$npmrc" | grep -q 'minimum-release-age'; then
+    LAST_FAIL="pnpm key leaked into .npmrc"; return 1
+  fi
   assert_match "bun section" '^\[install\]$' "$bunfig" || return
   assert_match "bun key" '^minimumReleaseAge = 259200$' "$bunfig" || return
   assert_match "yarn key" '^npmMinimalAgeGate: "3d"$' "$yarnrc" || return
@@ -105,9 +109,9 @@ t_enable_writes_all() {
   assert_match "mise key" '^minimum_release_age = "3d"$' "$mise" || return
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
-  assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$npmrc" || return
-  assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$npmrc" || return
-  assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$npmrc" || return
+  assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
+  assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
+  assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   rm -rf -- "$home"
 }
@@ -135,7 +139,9 @@ t_check_fails_when_missing() {
 
 t_disable_preserves_unrelated_keys() {
   local home; home=$(setup_home)
-  printf 'registry=https://r/\nmin-release-age=3\nminimum-release-age=4320\n' > "$home/.npmrc"
+  printf 'registry=https://r/\nmin-release-age=3\n' > "$home/.npmrc"
+  mkdir -p "$home/.config/pnpm"
+  printf 'minimum-release-age=4320\nstore-dir=/tmp/pstore\n' > "$home/.config/pnpm/rc"
   mkdir -p "$home/.config/uv"
   printf 'exclude-newer = "3 days"\nindex-strategy = "unsafe-best-match"\n' > "$home/.config/uv/uv.toml"
   printf '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
@@ -143,6 +149,8 @@ t_disable_preserves_unrelated_keys() {
   run_pmsec "$home" -- disable >/dev/null
   assert_file_eq "npmrc" 'registry=https://r/
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
+  assert_file_eq "pnpm rc" 'store-dir=/tmp/pstore
+' "$home/.config/pnpm/rc" || { rm -rf "$home"; return 1; }
   assert_file_eq "uv.toml" 'index-strategy = "unsafe-best-match"
 ' "$home/.config/uv/uv.toml" || { rm -rf "$home"; return 1; }
   assert_file_eq "bunfig" '[install]
@@ -257,7 +265,8 @@ t_yarn_check_parses_days() {
 
 t_pnpm_normalizes_minutes() {
   local home; home=$(setup_home)
-  printf 'minimum-release-age=20160\n' > "$home/.npmrc"
+  mkdir -p "$home/.config/pnpm"
+  printf 'minimum-release-age=20160\n' > "$home/.config/pnpm/rc"
   local out
   out=$(run_pmsec "$home" -- check --json --tool pnpm)
   rm -rf -- "$home"
@@ -279,7 +288,7 @@ t_days_overrides_bundle_cooldown() {
   local home; home=$(setup_home)
   run_pmsec "$home" -- enable --days 7 >/dev/null
   assert_match "npm cooldown 7" '^min-release-age=7$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
-  assert_match "pnpm cooldown 10080m" '^minimum-release-age=10080$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "pnpm cooldown 10080m" '^minimum-release-age=10080$' "$(cat "$home/.config/pnpm/rc")" || { rm -rf "$home"; return 1; }
   assert_match "uv 7 days" 'exclude-newer = "7 days"' "$(cat "$home/.config/uv/uv.toml")" || { rm -rf "$home"; return 1; }
   assert_match "bun 7d secs" 'minimumReleaseAge = 604800' "$(cat "$home/.bunfig.toml")" || { rm -rf "$home"; return 1; }
 
@@ -331,21 +340,22 @@ t_version_flag() {
 }
 
 t_hardening_extras_roundtrip() {
-  local home; home=$(setup_home)
-  printf 'minimum-release-age=20160\n' > "$home/.npmrc"
+  local home pnpmrc; home=$(setup_home); pnpmrc="$home/.config/pnpm/rc"
+  mkdir -p "$home/.config/pnpm"
+  printf 'minimum-release-age=20160\n' > "$pnpmrc"
   local out rc
   out=$(run_pmsec "$home" -- check --json --tool pnpm 2>/dev/null); rc=$?
   assert_eq "extras-missing exit" "1" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "extras-missing ok=false" '"ok": false' "$out" || { rm -rf "$home"; return 1; }
   run_pmsec "$home" -- enable --tool pnpm >/dev/null
-  assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
-  assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
-  assert_match "strict-dep-builds written" '^strict-dep-builds=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "strict-dep-builds written" '^strict-dep-builds=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
   out=$(run_pmsec "$home" -- check --json --tool pnpm); rc=$?
   assert_eq "after-enable exit" "0" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "after-enable ok=true" '"ok": true' "$out" || { rm -rf "$home"; return 1; }
   run_pmsec "$home" -- disable --tool pnpm >/dev/null
-  local after; after=$(cat "$home/.npmrc")
+  local after; after=$(cat "$pnpmrc")
   ! printf '%s' "$after" | grep -q 'trust-policy' || { LAST_FAIL="trust-policy not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'block-exotic-subdeps' || { LAST_FAIL="block-exotic-subdeps not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'strict-dep-builds' || { LAST_FAIL="strict-dep-builds not removed"; rm -rf "$home"; return 1; }
@@ -374,7 +384,8 @@ T "enable rejects positional argument with exit 2" t_enable_rejects_positional_a
 T "--version prints PMSEC_VERSION" t_version_flag
 t_pnpm_11_default_enforced() {
   local home; home=$(setup_home)
-  printf 'minimum-release-age=4320\n' > "$home/.npmrc"
+  mkdir -p "$home/.config/pnpm"
+  printf 'minimum-release-age=4320\n' > "$home/.config/pnpm/rc"
   local out rc
   out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=11.0.0 -- check --json --tool pnpm 2>/dev/null); rc=$?
   rm -rf -- "$home"
@@ -386,7 +397,8 @@ t_pnpm_11_default_enforced() {
 
 t_pnpm_pre11_no_default_enforcement() {
   local home; home=$(setup_home)
-  printf 'minimum-release-age=4320\n' > "$home/.npmrc"
+  mkdir -p "$home/.config/pnpm"
+  printf 'minimum-release-age=4320\n' > "$home/.config/pnpm/rc"
   local out
   out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=10.26.0 -- check --json --tool pnpm 2>/dev/null)
   rm -rf -- "$home"
