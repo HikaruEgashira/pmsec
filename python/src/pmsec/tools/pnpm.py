@@ -12,9 +12,12 @@ NAME = "pnpm"
 KEY = "minimum-release-age"
 DOCS = "https://pnpm.io/settings#minimumreleaseage"
 MIN_BIN = (10, 6, 0)
+# `default_since_major`: pnpm major version where the value became the default.
+# When detected, an absent line in `.npmrc` is still effectively in force, so
+# `read()` reports it as ok with `defaultEnforced: True`.
 EXTRAS = [
     {"key": "trust-policy", "expected": "no-downgrade", "line": "trust-policy=no-downgrade"},
-    {"key": "block-exotic-subdeps", "expected": "true", "line": "block-exotic-subdeps=true"},
+    {"key": "block-exotic-subdeps", "expected": "true", "line": "block-exotic-subdeps=true", "default_since_major": 11},
 ]
 
 
@@ -22,8 +25,12 @@ def path(env: dict[str, str], home: Path, platform: str) -> Path:
     return npmrc_path(env, home)
 
 
-def preflight() -> dict:
-    v = detect_version("pnpm")
+def _pnpm_version(env: dict[str, str] | None):
+    return detect_version("pnpm", env=env, override_key="PMSEC_PNPM_VERSION")
+
+
+def preflight(env: dict[str, str] | None = None) -> dict:
+    v = _pnpm_version(env)
     if v is None:
         return {"ok": True, "message": None}
     if gte(v, MIN_BIN):
@@ -46,7 +53,15 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
         except ValueError:
             minutes = None
     days = None if minutes is None else minutes // (60 * 24)
-    return {"path": str(p), "configured": value, "days": days, "extras": read_extras(raw, EXTRAS)}
+    v = _pnpm_version(env)
+    defaults = {e["key"]: e["default_since_major"] for e in EXTRAS if e.get("default_since_major")}
+    extras_rows = []
+    for row in read_extras(raw, EXTRAS):
+        d = defaults.get(row["key"])
+        if row["configured"] is None and d and v is not None and v[0] >= d:
+            row = {**row, "ok": True, "defaultEnforced": True}
+        extras_rows.append(row)
+    return {"path": str(p), "configured": value, "days": days, "extras": extras_rows}
 
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:

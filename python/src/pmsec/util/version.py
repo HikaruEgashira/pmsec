@@ -4,7 +4,33 @@ import re
 import subprocess
 
 
-def detect_version(bin_name: str, args: list[str] | None = None) -> tuple[int, int, int, str] | None:
+def _parse(s: str | None) -> tuple[int, int, int, str] | None:
+    if not s:
+        return None
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", s)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(0)
+
+
+# `env[override_key]` ("X.Y.Z" or "none") forces the result without spawning the
+# real binary — used by tests to make pnpm 11 default-enforcement behavior
+# deterministic regardless of what's installed locally.
+def detect_version(
+    bin_name: str,
+    args: list[str] | None = None,
+    *,
+    env: dict[str, str] | None = None,
+    override_key: str | None = None,
+) -> tuple[int, int, int, str] | None:
+    if env is not None and override_key:
+        o = env.get(override_key)
+        if o == "none":
+            return None
+        if o:
+            p = _parse(o)
+            if p is not None:
+                return p
     args = args or ["--version"]
     try:
         out = subprocess.run([bin_name, *args], capture_output=True, text=True, timeout=5)
@@ -12,10 +38,7 @@ def detect_version(bin_name: str, args: list[str] | None = None) -> tuple[int, i
         return None
     if out.returncode != 0:
         return None
-    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out.stdout or "")
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(0)
+    return _parse(out.stdout)
 
 
 def gte(v: tuple[int, int, int, str] | None, target: tuple[int, int, int]) -> bool | None:

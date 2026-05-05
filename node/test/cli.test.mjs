@@ -17,13 +17,15 @@ async function setupHome() {
   return await mkdtemp(join(tmpdir(), "pmsec-"));
 }
 
-function envFor(home) {
-  return { HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
+function envFor(home, overrides = {}) {
+  // Hide the host pnpm by default so version-aware extras (pnpm 11 default
+  // enforcement) don't depend on what's installed on the test machine.
+  return { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PMSEC_PNPM_VERSION: "none", ...overrides };
 }
 
-async function runCli(argv, home, platform = "linux") {
+async function runCli(argv, home, platform = "linux", envOverrides = {}) {
   const out = sink(), err = sink();
-  const code = await run(argv, { env: envFor(home), home, platform, out, err });
+  const code = await run(argv, { env: envFor(home, envOverrides), home, platform, out, err });
   return { code, out: out.text(), err: err.text() };
 }
 
@@ -215,6 +217,32 @@ test("hardening extras: check fails when extras missing, enable fixes them, disa
   assert.doesNotMatch(after, /trust-policy/);
   assert.doesNotMatch(after, /block-exotic-subdeps/);
   assert.doesNotMatch(after, /minimum-release-age/);
+});
+
+test("pnpm 11 treats missing block-exotic-subdeps as default-enforced (ok=true)", async () => {
+  const home = await setupHome();
+  // Cooldown present, but extras lines absent. Under pnpm 11 the runtime still
+  // blocks exotic subdeps by default, so check must report it as OK rather
+  // than MISSING (trust-policy stays MISSING — no default change there).
+  await writeFile(join(home, ".npmrc"), "minimum-release-age=4320\n");
+  const { code, out } = await runCli(["check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "11.0.0" });
+  const data = JSON.parse(out);
+  const beSub = data.rows[0].extras.find(e => e.key === "block-exotic-subdeps");
+  const trust = data.rows[0].extras.find(e => e.key === "trust-policy");
+  assert.equal(beSub.ok, true);
+  assert.equal(beSub.defaultEnforced, true);
+  assert.equal(beSub.configured, null);
+  assert.equal(trust.ok, false);
+  assert.equal(code, 1, "trust-policy still missing — overall check fails");
+});
+
+test("pnpm <11 still flags missing block-exotic-subdeps as STALE", async () => {
+  const home = await setupHome();
+  await writeFile(join(home, ".npmrc"), "minimum-release-age=4320\n");
+  const { out } = await runCli(["check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "10.26.0" });
+  const beSub = JSON.parse(out).rows[0].extras.find(e => e.key === "block-exotic-subdeps");
+  assert.equal(beSub.ok, false);
+  assert.equal(beSub.defaultEnforced ?? false, false);
 });
 
 test("--days N overrides bundle cooldown for enable and check", async () => {

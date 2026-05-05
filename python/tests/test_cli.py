@@ -12,13 +12,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pmsec.cli import main  # noqa: E402
 
 
-def env_for(home: Path) -> dict[str, str]:
-    return {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")}
+def env_for(home: Path, **overrides: str) -> dict[str, str]:
+    # Hide the host pnpm by default so version-aware extras (pnpm 11 default
+    # enforcement) don't depend on what's installed on the test machine.
+    base = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"), "PMSEC_PNPM_VERSION": "none"}
+    base.update(overrides)
+    return base
 
 
-def run(argv, home, platform="linux"):
+def run(argv, home, platform="linux", **env_overrides):
     out, err = io.StringIO(), io.StringIO()
-    code = main(argv, env=env_for(home), home=home, platform=platform, out=out, err=err)
+    code = main(argv, env=env_for(home, **env_overrides), home=home, platform=platform, out=out, err=err)
     return code, out.getvalue(), err.getvalue()
 
 
@@ -196,6 +200,29 @@ def test_hardening_extras_roundtrip(tmp_path):
     assert "trust-policy" not in after
     assert "block-exotic-subdeps" not in after
     assert "minimum-release-age" not in after
+
+
+def test_pnpm_11_default_enforced_block_exotic_subdeps(tmp_path):
+    # Cooldown present, but extras lines absent. Under pnpm 11 the runtime
+    # still blocks exotic subdeps by default, so check must report it as OK
+    # rather than MISSING (trust-policy stays MISSING — no default change).
+    (tmp_path / ".npmrc").write_text("minimum-release-age=4320\n")
+    code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="11.0.0")
+    data = json.loads(out)
+    extras = {e["key"]: e for e in data["rows"][0]["extras"]}
+    assert extras["block-exotic-subdeps"]["ok"] is True
+    assert extras["block-exotic-subdeps"]["defaultEnforced"] is True
+    assert extras["block-exotic-subdeps"]["configured"] is None
+    assert extras["trust-policy"]["ok"] is False
+    assert code == 1
+
+
+def test_pnpm_pre11_still_flags_block_exotic_subdeps(tmp_path):
+    (tmp_path / ".npmrc").write_text("minimum-release-age=4320\n")
+    _, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="10.26.0")
+    extras = {e["key"]: e for e in json.loads(out)["rows"][0]["extras"]}
+    assert extras["block-exotic-subdeps"]["ok"] is False
+    assert extras["block-exotic-subdeps"].get("defaultEnforced", False) is False
 
 
 def test_days_flag_overrides_bundle_cooldown(tmp_path):

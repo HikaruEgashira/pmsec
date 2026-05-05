@@ -45,7 +45,9 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
     'NPM_CONFIG_USERCONFIG','UV_CONFIG_FILE','BUN_CONFIG_FILE',
     'YARN_RC_FILENAME','CARGO_HOME','MISE_GLOBAL_CONFIG_FILE',
     'APPDATA','LOCALAPPDATA','PMSEC_PLATFORM','XDG_CONFIG_HOME',
-    'PMSEC_HOME','HOME','USERPROFILE'
+    'PMSEC_HOME','HOME','USERPROFILE',
+    'PMSEC_NPM_VERSION','PMSEC_PNPM_VERSION','PMSEC_YARN_VERSION',
+    'PMSEC_BUN_VERSION','PMSEC_CARGO_VERSION','PMSEC_MISE_VERSION','PMSEC_UV_VERSION'
   )
   $saved = @{}
   foreach ($k in $envKeys) {
@@ -57,6 +59,10 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   [Environment]::SetEnvironmentVariable('PMSEC_HOME', $HomeDir, 'Process')
   [Environment]::SetEnvironmentVariable('XDG_CONFIG_HOME', (Join-Path $HomeDir '.config'), 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_PLATFORM', 'linux', 'Process')
+  # Hide the host pnpm so version-aware extras (pnpm 11 default enforcement)
+  # don't depend on what's installed on the test machine. Tests that exercise
+  # pnpm 11 behavior pass an override via $Extra.
+  [Environment]::SetEnvironmentVariable('PMSEC_PNPM_VERSION', 'none', 'Process')
   if ($Extra) {
     foreach ($k in $Extra.Keys) {
       [Environment]::SetEnvironmentVariable($k, $Extra[$k], 'Process')
@@ -385,6 +391,36 @@ T '--version prints PmsecVersion' {
       if ($r.Code -ne 0) { $script:LastFail = "$flag exit $($r.Code)`n$($r.Out)"; return $false }
       if ($r.Out.Trim() -ne "pmsec $expected") { $script:LastFail = "$flag out '$($r.Out.Trim())' != 'pmsec $expected'"; return $false }
     }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'pnpm 11 default-enforces missing block-exotic-subdeps' {
+  $h = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "minimum-release-age=4320`n")
+    $r = InvokePmsec $h @{ PMSEC_PNPM_VERSION = '11.0.0' } @('check','--json','--tool','pnpm')
+    if ($r.Code -ne 1) { $script:LastFail = "expected exit 1 (trust-policy still missing) got $($r.Code)`n$($r.Out)"; return $false }
+    $data = $r.Out | ConvertFrom-Json
+    $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
+    $trust = $data.rows[0].extras | Where-Object { $_.key -eq 'trust-policy' }
+    if (-not $beSub.ok) { $script:LastFail = "block-exotic-subdeps ok must be true`n$($r.Out)"; return $false }
+    if (-not $beSub.defaultEnforced) { $script:LastFail = "block-exotic-subdeps defaultEnforced must be true`n$($r.Out)"; return $false }
+    if ($null -ne $beSub.configured) { $script:LastFail = "block-exotic-subdeps configured must be null`n$($r.Out)"; return $false }
+    if ($trust.ok) { $script:LastFail = "trust-policy ok must be false`n$($r.Out)"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'pnpm <11 still flags missing block-exotic-subdeps' {
+  $h = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "minimum-release-age=4320`n")
+    $r = InvokePmsec $h @{ PMSEC_PNPM_VERSION = '10.26.0' } @('check','--json','--tool','pnpm')
+    if ($r.Out -match '"defaultEnforced"') { $script:LastFail = "pnpm 10 must not emit defaultEnforced`n$($r.Out)"; return $false }
+    $data = $r.Out | ConvertFrom-Json
+    $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
+    if ($beSub.ok) { $script:LastFail = "pnpm 10 should report ok=false`n$($r.Out)"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }

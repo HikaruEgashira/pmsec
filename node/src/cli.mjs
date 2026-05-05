@@ -105,8 +105,8 @@ function renderHuman(rows, min) {
     const tail = r.warn ? `\n       ⚠ ${r.warn}` : "";
     lines.push(`${status} ${r.tool.padEnd(4)} ${r.key} = ${value}  [${r.path}]${tail}`);
     for (const e of r.extras) {
-      const exStatus = e.configured === null ? "MISSING" : e.ok ? "OK     " : "STALE  ";
-      const exValue = e.configured ?? "(unset)";
+      const exStatus = e.ok ? "OK     " : e.configured === null ? "MISSING" : "STALE  ";
+      const exValue = e.defaultEnforced ? `(default — runtime enforces ${e.expected})` : (e.configured ?? "(unset)");
       lines.push(`${exStatus} ${r.tool.padEnd(4)} ${e.key} = ${exValue}  [${r.path}]`);
     }
   }
