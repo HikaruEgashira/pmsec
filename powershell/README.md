@@ -1,8 +1,14 @@
 # pmsec (PowerShell)
 
-PowerShell port of [pmsec](https://github.com/HikaruEgashira/pmsec) for Windows
-hosts where the npm and PyPI distributions are not the most natural fit.
-Targets Windows PowerShell 5.1 and PowerShell 7+.
+Windows-only PowerShell port of [pmsec](https://github.com/HikaruEgashira/pmsec).
+Runs on Windows PowerShell 5.1 and PowerShell 7+. **Non-Windows pwsh hosts
+(macOS, native Linux) are not supported** — use the bash, node, or python
+port instead.
+
+In addition to hardening the Windows host, the script reaches into every
+installed WSL distribution via `\\wsl$\<distro>\...` and applies the same
+config inside each distro's filesystem. One invocation, hardened everywhere
+your packages get installed.
 
 ```powershell
 # install — production: replace `main` with a commit SHA so rollouts are reproducible.
@@ -12,6 +18,7 @@ Invoke-WebRequest `
 
 # use
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable --days 7
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 check
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 disable
 ```
@@ -19,11 +26,21 @@ pwsh -File $env:USERPROFILE\bin\pmsec.ps1 disable
 The CLI surface is identical to the npm, PyPI, and bash distributions:
 
 ```
-pmsec enable  [--tool TOOL[,TOOL]] [--days N] [--force] [--json]
-pmsec check   [--tool TOOL[,TOOL]] [--days N] [--json]
-pmsec disable [--tool TOOL[,TOOL]] [--json]
+pmsec enable  [--tool TOOL[,TOOL]] [--days N] [--force] [--no-wsl] [--json]
+pmsec check   [--tool TOOL[,TOOL]] [--days N] [--no-wsl] [--json]
+pmsec disable [--tool TOOL[,TOOL]] [--no-wsl] [--json]
 pmsec --version
 ```
+
+`--no-wsl` (or `PMSEC_NO_WSL=1`) skips the WSL pass and only configures the
+Windows host. Without it, `wsl.exe -l -q` enumerates installed distros and
+each one gets the same hardening bundle written to `~/.npmrc`,
+`~/.config/uv/uv.toml`, etc. inside the distro filesystem. Docker Desktop's
+helper distros are skipped automatically.
+
+When more than one scope is targeted, output is grouped under `[<scope>]`
+headers (`[windows]`, `[wsl-Ubuntu]`, ...) and JSON results carry a `scope`
+field on every row.
 
 Supported tools, files, and units match the root `README.md`.
 
@@ -76,7 +93,6 @@ Intune detection scripts treat exit `0` as compliant and any other code as
 pwsh -File test/test.ps1
 ```
 
-Each test runs `pmsec.ps1` as a child process under a fresh `$env:HOME` /
-`$env:USERPROFILE`, with all pmsec-relevant env vars cleared, then diffs the
-on-disk config against the same expected bytes the node, python, and bash
-suites verify.
+Tests inject scope lists via `PMSEC_FAKE_SCOPES="label|home|platform;..."`
+to bypass real `wsl.exe` enumeration, then diff the on-disk shape against
+the same bytes the node, python, and bash suites verify.
