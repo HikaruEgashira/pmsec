@@ -5,11 +5,6 @@
 </p>
 
 <p align="center">
-  One command flips on every safe-by-default supply-chain knob each package manager exposes:
-  install cooldown, signature trust policy, lockfile re-verification, build-script attestation, and more.
-</p>
-
-<p align="center">
   <a href="https://www.npmjs.com/package/pmsec">npm</a> · <a href="https://pypi.org/project/pmsec/">PyPI</a> · <a href="bash/">bash</a> · <a href="powershell/">PowerShell</a>
 </p>
 
@@ -24,26 +19,20 @@ uvx pmsec enable
 ```
 
 ```bash
-# no npm/uv on the box? grab the bash port (production: pin a commit SHA):
 curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
 pmsec enable
 ```
 
 ```powershell
-# Windows? grab the PowerShell port (production: pin a commit SHA; also configures every installed WSL distro):
+# Windows only
 Invoke-WebRequest `
   -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 ```
 
-> MDM (Jamf / Intune): set `PMSEC_HOME` to the logged-in user's home —
-> see [`bash/README.md`](bash/README.md#mdm-deployment-jamf-ansible-) /
-> [`powershell/README.md`](powershell/README.md#mdm-deployment-intune).
-
-> Bootstrap: pmsec eats its own dog food — once a cooldown is in place,
-> the very first install may be filtered out. Override just for that call:
+> Bootstrap: pmsec eats its own
 >
 > ```bash
 > npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
@@ -51,12 +40,6 @@ pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 > ```
 
 ## Supported Package Managers
-
-Writes a fixed bundle of hardening keys to each tool's user-global config — a 1-day install cooldown plus every safe-by-default supply-chain knob the tool exposes. `disable` removes them; `check` exits non-zero if any row is missing or below the bundled value. The cooldown is opinionated but adjustable: pass `--days N` to `enable` / `check` to use a different threshold (e.g. `pmsec enable --days 7`). The extras have no knobs — pmsec is opinionated about what "hardened" means.
-
-`enable` is monotonic by default: it never weakens an existing stricter setting. If your `~/.npmrc` already has `min-release-age=14`, `pmsec enable` (default 1) keeps the 14 and prints `keep`. To raise a tool past the bundle default, pass `--days N` — `pmsec enable --days 30` will upgrade weaker tools to 30 and leave anything ≥ 30 as is. Use `pmsec disable` if you actually want to remove the cooldown. To explicitly downgrade (e.g. relax temporarily), pass `--force`: `pmsec enable --days 1 --force` overwrites whatever was there.
-
-Version floors below are strict: `≥ x.y.z` is the lowest release that actually honors the setting. On older versions, the line is silently ignored — `pmsec check` warns when it detects one for the cooldown keys it gates on (`min-release-age`, `minimum-release-age`, `npmMinimalAgeGate`, `minimumReleaseAge`, `minimum_release_age`, `exclude-newer`).
 
 | tool  | config file                          | key                                | value          | what it does                                                                                                  | min version          |
 |-------|--------------------------------------|------------------------------------|----------------|---------------------------------------------------------------------------------------------------------------|----------------------|
