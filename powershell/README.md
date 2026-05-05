@@ -5,9 +5,9 @@ hosts where the npm and PyPI distributions are not the most natural fit.
 Targets Windows PowerShell 5.1 and PowerShell 7+.
 
 ```powershell
-# install — pin to a tag for production rollouts.
+# install — production: replace `main` with a commit SHA so rollouts are reproducible.
 Invoke-WebRequest `
-  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/powershell/pmsec.ps1 `
+  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
 
 # use
