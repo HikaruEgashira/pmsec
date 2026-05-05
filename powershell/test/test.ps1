@@ -124,7 +124,7 @@ function T([string]$Name, [scriptblock]$Body) {
 T 'enable writes the bundle for every tool' {
   $h = NewHome
   try {
-    $r = InvokePmsec $h $null @('enable')
+    $r = InvokePmsec $h $null @()
     if ($r.Code -ne 0) { $script:LastFail = "exit code $($r.Code)`n$($r.Out)"; return $false }
     $pnpmrcPath = PathJoin $h '.config' 'pnpm' 'rc'
     $ok = $true
@@ -152,8 +152,8 @@ T 'enable writes the bundle for every tool' {
 T 'check passes after enable across all tools' {
   $h = NewHome
   try {
-    [void](InvokePmsec $h $null @('enable'))
-    $r = InvokePmsec $h $null @('check')
+    [void](InvokePmsec $h $null @())
+    $r = InvokePmsec $h $null @('--check')
     if ($r.Code -ne 0) { $script:LastFail = "exit $($r.Code)`n$($r.Out)" }
     return $r.Code -eq 0
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
@@ -162,7 +162,7 @@ T 'check passes after enable across all tools' {
 T 'check fails when bundle missing' {
   $h = NewHome
   try {
-    $r = InvokePmsec $h $null @('check')
+    $r = InvokePmsec $h $null @('--check')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1, got $($r.Code)`n$($r.Out)"; return $false }
     foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv') {
       if (-not (AssertMatch "MISSING $t" "MISSING $t" $r.Out)) { return $false }
@@ -181,7 +181,7 @@ T 'disable preserves unrelated keys per file' {
     [System.IO.File]::WriteAllText((PathJoin $h '.config' 'uv' 'uv.toml'), "exclude-newer = ""3 days""`nindex-strategy = ""unsafe-best-match""`n")
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "[install]`nminimumReleaseAge = 259200`nregistry = ""https://x/""`n")
     [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""3d""`nnpmRegistryServer: ""https://r/""`n")
-    [void](InvokePmsec $h $null @('disable'))
+    [void](InvokePmsec $h $null @('--disable'))
     $ok = $true
     $ok = $ok -and (AssertFileEq '.npmrc'    "registry=https://r/`n"                                  (Join-Path $h '.npmrc'))
     $ok = $ok -and (AssertFileEq 'pnpm rc'   "store-dir=/tmp/pstore`n"                                (PathJoin $h '.config' 'pnpm' 'rc'))
@@ -196,7 +196,7 @@ T 'enable upgrades values that are weaker than the request' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`nregistry=https://r/`n")
-    [void](InvokePmsec $h $null @('enable','--tool','npm','--days','7'))
+    [void](InvokePmsec $h $null @('--tool','npm','--days','7'))
     return (AssertFileEq '.npmrc' "min-release-age=7`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -205,7 +205,7 @@ T 'enable preserves stricter existing cooldowns' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`nregistry=https://r/`n")
-    $r = InvokePmsec $h $null @('enable','--tool','npm')
+    $r = InvokePmsec $h $null @('--tool','npm')
     if ($r.Out -notmatch '(?m)^keep ') { $script:LastFail = "expected keep line, got: $($r.Out)"; return $false }
     return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
@@ -215,7 +215,7 @@ T 'enable --force overwrites stricter existing values' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`n")
-    [void](InvokePmsec $h $null @('enable','--tool','npm','--days','1','--force'))
+    [void](InvokePmsec $h $null @('--tool','npm','--days','1','--force'))
     $body = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
     if ($body -notmatch '(?m)^min-release-age=1$') { $script:LastFail = "expected min-release-age=1, got: $body"; return $false }
     return $true
@@ -226,7 +226,7 @@ T 'enable --days upgrades when request exceeds existing' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`n")
-    [void](InvokePmsec $h $null @('enable','--tool','npm','--days','14'))
+    [void](InvokePmsec $h $null @('--tool','npm','--days','14'))
     $body = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
     if ($body -notmatch '(?m)^min-release-age=14$') { $script:LastFail = "expected min-release-age=14, got: $body"; return $false }
     return $true
@@ -236,7 +236,7 @@ T 'enable --days upgrades when request exceeds existing' {
 T '--tool restricts which tools get written' {
   $h = NewHome
   try {
-    [void](InvokePmsec $h $null @('enable','--tool','npm,bun'))
+    [void](InvokePmsec $h $null @('--tool','npm,bun'))
     if (-not (Test-Path -LiteralPath (Join-Path $h '.npmrc')))      { $script:LastFail = '.npmrc not written'; return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $h '.bunfig.toml'))){ $script:LastFail = '.bunfig.toml not written'; return $false }
     if (Test-Path -LiteralPath (PathJoin $h '.config' 'uv' 'uv.toml')) { $script:LastFail = 'uv.toml unexpectedly written'; return $false }
@@ -248,7 +248,7 @@ T 'Windows uv path uses APPDATA' {
   $h = NewHome
   try {
     $appdata = PathJoin $h 'AppData' 'Roaming'
-    [void](InvokePmsec $h @{ APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','uv'))
+    [void](InvokePmsec $h @{ APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('--tool','uv'))
     return (AssertMatch 'uv key' '(?m)^exclude-newer = "1 days"$' ([System.IO.File]::ReadAllText((PathJoin $appdata 'uv' 'uv.toml'))))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -257,7 +257,7 @@ T 'Windows mise path uses LOCALAPPDATA' {
   $h = NewHome
   try {
     $local = PathJoin $h 'AppData' 'Local'
-    [void](InvokePmsec $h @{ LOCALAPPDATA = $local; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','mise'))
+    [void](InvokePmsec $h @{ LOCALAPPDATA = $local; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('--tool','mise'))
     return (AssertMatch 'mise key' '(?m)^minimum_release_age = "1d"$' ([System.IO.File]::ReadAllText((PathJoin $local 'mise' 'config.toml'))))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -267,7 +267,7 @@ T 'Windows scope ignores XDG_CONFIG_HOME for uv' {
   try {
     $xdg = PathJoin $h 'xdg'
     $appdata = PathJoin $h 'AppData' 'Roaming'
-    [void](InvokePmsec $h @{ XDG_CONFIG_HOME = $xdg; APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','uv'))
+    [void](InvokePmsec $h @{ XDG_CONFIG_HOME = $xdg; APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('--tool','uv'))
     if (Test-Path -LiteralPath (PathJoin $xdg 'uv' 'uv.toml')) { $script:LastFail = 'uv leaked into XDG_CONFIG_HOME on win32 scope'; return $false }
     return (Test-Path -LiteralPath (PathJoin $appdata 'uv' 'uv.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
@@ -276,7 +276,7 @@ T 'Windows scope ignores XDG_CONFIG_HOME for uv' {
 T '--json emits parseable JSON for check' {
   $h = NewHome
   try {
-    $r = InvokePmsec $h $null @('check','--json')
+    $r = InvokePmsec $h $null @('--check','--json')
     $data = $null
     try { $data = $r.Out | ConvertFrom-Json } catch { $script:LastFail = "json parse failed: $_`n$($r.Out)"; return $false }
     if ($data.ok -ne $false) { $script:LastFail = "expected ok=false, got $($data.ok)"; return $false }
@@ -292,7 +292,7 @@ T 'bun enable inserts key inside existing [install] section' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "[install]`nregistry = ""https://x/""`n")
-    [void](InvokePmsec $h $null @('enable','--tool','bun'))
+    [void](InvokePmsec $h $null @('--tool','bun'))
     return (AssertFileEq '.bunfig' "[install]`nminimumReleaseAge = 86400`nregistry = ""https://x/""`n" (Join-Path $h '.bunfig.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -301,7 +301,7 @@ T 'bun enable creates [install] section if missing' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "telemetry = false`n")
-    [void](InvokePmsec $h $null @('enable','--tool','bun'))
+    [void](InvokePmsec $h $null @('--tool','bun'))
     return (AssertFileEq '.bunfig' "telemetry = false`n`n[install]`nminimumReleaseAge = 86400`n" (Join-Path $h '.bunfig.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -310,7 +310,7 @@ T 'yarn check parses npmMinimalAgeGate days correctly' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`n")
-    $r = InvokePmsec $h $null @('check','--json','--tool','yarn')
+    $r = InvokePmsec $h $null @('--check','--json','--tool','yarn')
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $true) { $script:LastFail = "expected ok=true"; return $false }
     if ($data.rows[0].days -ne 14) { $script:LastFail = "expected 14 days, got $($data.rows[0].days)"; return $false }
@@ -323,7 +323,7 @@ T 'pnpm check normalizes minutes to days' {
   try {
     [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.config' 'pnpm'))
     [System.IO.File]::WriteAllText((PathJoin $h '.config' 'pnpm' 'rc'), "minimum-release-age=20160`n")
-    $r = InvokePmsec $h $null @('check','--json','--tool','pnpm')
+    $r = InvokePmsec $h $null @('--check','--json','--tool','pnpm')
     $data = $r.Out | ConvertFrom-Json
     if ($data.rows[0].days -ne 14) { $script:LastFail = "expected 14, got $($data.rows[0].days)"; return $false }
     return $true
@@ -334,19 +334,28 @@ T '.bak is created once and never overwritten' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "registry=https://original/`n")
-    [void](InvokePmsec $h $null @('enable','--tool','npm'))
-    [void](InvokePmsec $h $null @('disable','--tool','npm'))
-    [void](InvokePmsec $h $null @('enable','--tool','npm'))
+    [void](InvokePmsec $h $null @('--tool','npm'))
+    [void](InvokePmsec $h $null @('--disable','--tool','npm'))
+    [void](InvokePmsec $h $null @('--tool','npm'))
     return (AssertFileEq '.npmrc.bak' "registry=https://original/`n" (Join-Path $h '.npmrc.bak'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
-T 'enable rejects positional arg with exit 2' {
+T 'rejects positional arg with exit 2' {
   $h = NewHome
   try {
-    $r = InvokePmsec $h $null @('enable','7')
+    $r = InvokePmsec $h $null @('enable')
     if ($r.Code -ne 2) { $script:LastFail = "expected exit 2, got $($r.Code)`nstderr: $($r.Err)"; return $false }
-    return ($r.Err -match 'unexpected argument: 7')
+    return ($r.Err -match 'unexpected argument: enable')
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T '--check and --disable are mutually exclusive' {
+  $h = NewHome
+  try {
+    $r = InvokePmsec $h $null @('--check','--disable')
+    if ($r.Code -ne 2) { $script:LastFail = "expected exit 2, got $($r.Code)`nstderr: $($r.Err)"; return $false }
+    return ($r.Err -match 'mutually exclusive')
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -356,20 +365,20 @@ T 'hardening extras roundtrip (check / enable / disable)' {
     $pnpmrc = PathJoin $h '.config' 'pnpm' 'rc'
     [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.config' 'pnpm'))
     [System.IO.File]::WriteAllText($pnpmrc, "minimum-release-age=20160`n")
-    $r = InvokePmsec $h $null @('check','--json','--tool','pnpm')
+    $r = InvokePmsec $h $null @('--check','--json','--tool','pnpm')
     if ($r.Code -ne 1) { $script:LastFail = "extras-missing exit $($r.Code)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $false) { $script:LastFail = "extras-missing ok != false"; return $false }
     if ($data.rows[0].extras.Count -ne 3) { $script:LastFail = "expected 3 extras, got $($data.rows[0].extras.Count)"; return $false }
-    [void](InvokePmsec $h $null @('enable','--tool','pnpm'))
+    [void](InvokePmsec $h $null @('--tool','pnpm'))
     $body = [System.IO.File]::ReadAllText($pnpmrc)
     if ($body -notmatch '(?m)^trust-policy=no-downgrade$') { $script:LastFail = "trust-policy not written: $body"; return $false }
     if ($body -notmatch '(?m)^block-exotic-subdeps=true$') { $script:LastFail = "block-exotic-subdeps not written: $body"; return $false }
     if ($body -notmatch '(?m)^strict-dep-builds=true$') { $script:LastFail = "strict-dep-builds not written: $body"; return $false }
-    $r2 = InvokePmsec $h $null @('check','--json','--tool','pnpm')
+    $r2 = InvokePmsec $h $null @('--check','--json','--tool','pnpm')
     if ($r2.Code -ne 0) { $script:LastFail = "after-enable exit $($r2.Code)"; return $false }
     if (($r2.Out | ConvertFrom-Json).ok -ne $true) { $script:LastFail = "after-enable ok != true"; return $false }
-    [void](InvokePmsec $h $null @('disable','--tool','pnpm'))
+    [void](InvokePmsec $h $null @('--disable','--tool','pnpm'))
     $after = [System.IO.File]::ReadAllText($pnpmrc)
     if ($after -match 'trust-policy') { $script:LastFail = "trust-policy not removed: $after"; return $false }
     if ($after -match 'block-exotic-subdeps') { $script:LastFail = "block-exotic-subdeps not removed: $after"; return $false }
@@ -381,7 +390,7 @@ T 'hardening extras roundtrip (check / enable / disable)' {
 T '--days N overrides bundle cooldown for enable and check' {
   $h = NewHome
   try {
-    $r = InvokePmsec $h $null @('enable','--days','7')
+    $r = InvokePmsec $h $null @('--days','7')
     if ($r.Code -ne 0) { $script:LastFail = "enable --days 7 exit $($r.Code)"; return $false }
     $npm = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
     if ($npm -notmatch '(?m)^min-release-age=7$') { $script:LastFail = "min-release-age not 7: $npm"; return $false }
@@ -392,14 +401,14 @@ T '--days N overrides bundle cooldown for enable and check' {
     $bun = [System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))
     if ($bun -notmatch 'minimumReleaseAge = 604800') { $script:LastFail = "bun not 604800: $bun"; return $false }
 
-    $r2 = InvokePmsec $h $null @('check','--json','--days','7')
+    $r2 = InvokePmsec $h $null @('--check','--json','--days','7')
     if ($r2.Code -ne 0) { $script:LastFail = "check --days 7 exit $($r2.Code)"; return $false }
     if (($r2.Out | ConvertFrom-Json).bundleDays -ne 7) { $script:LastFail = "bundleDays != 7"; return $false }
 
-    $r3 = InvokePmsec $h $null @('check')
+    $r3 = InvokePmsec $h $null @('--check')
     if ($r3.Code -ne 0) { $script:LastFail = "default check exit $($r3.Code)"; return $false }
 
-    $r4 = InvokePmsec $h $null @('check','--days','30')
+    $r4 = InvokePmsec $h $null @('--check','--days','30')
     if ($r4.Code -ne 1) { $script:LastFail = "stricter check should fail, got $($r4.Code)"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
@@ -409,7 +418,7 @@ T '--days rejects non-positive integers with exit 2' {
   $h = NewHome
   try {
     foreach ($bad in @('0','-1','abc','')) {
-      $r = InvokePmsec $h $null @('enable','--days',$bad)
+      $r = InvokePmsec $h $null @('--days',$bad)
       if ($r.Code -ne 2) { $script:LastFail = "--days '$bad' expected exit 2 got $($r.Code)"; return $false }
     }
     return $true
@@ -437,7 +446,7 @@ T 'pnpm 11 default-enforces missing block-exotic-subdeps' {
     [System.IO.File]::WriteAllText((Join-Path $pnpmrcDir 'rc'), "minimum-release-age=4320`n")
     # Default-enforcement detection runs the local pnpm binary, so it only
     # fires on the Windows host scope.
-    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '11.0.0' } @('check','--json','--tool','pnpm')
+    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '11.0.0' } @('--check','--json','--tool','pnpm')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1 (trust-policy still missing) got $($r.Code)`n$($r.Out)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
@@ -456,7 +465,7 @@ T 'pnpm <11 still flags missing block-exotic-subdeps' {
     $pnpmrcDir = PathJoin $h 'AppData' 'Local' 'pnpm' 'config'
     [void](New-Item -ItemType Directory -Force -Path $pnpmrcDir)
     [System.IO.File]::WriteAllText((Join-Path $pnpmrcDir 'rc'), "minimum-release-age=4320`n")
-    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '10.26.0' } @('check','--json','--tool','pnpm')
+    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '10.26.0' } @('--check','--json','--tool','pnpm')
     if ($r.Out -match '"defaultEnforced"') { $script:LastFail = "pnpm 10 must not emit defaultEnforced`n$($r.Out)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
@@ -474,7 +483,7 @@ T 'multi-scope enable writes both host and WSL configs' {
     $appdata = PathJoin $h1 'AppData' 'Roaming'
     $local   = PathJoin $h1 'AppData' 'Local'
     $scopes  = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
-    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; APPDATA = $appdata; LOCALAPPDATA = $local } @('enable')
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; APPDATA = $appdata; LOCALAPPDATA = $local } @()
     if ($r.Code -ne 0) { $script:LastFail = "enable exit $($r.Code)`n$($r.Out)"; return $false }
     if ($r.Out -notmatch '\[windows\]')     { $script:LastFail = "missing [windows] header`n$($r.Out)"; return $false }
     if ($r.Out -notmatch '\[wsl-Ubuntu\]')  { $script:LastFail = "missing [wsl-Ubuntu] header`n$($r.Out)"; return $false }
@@ -499,7 +508,7 @@ T '--no-wsl skips linux scopes when fakes are present' {
   try {
     $appdata = PathJoin $h1 'AppData' 'Roaming'
     $scopes  = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
-    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; APPDATA = $appdata } @('enable','--no-wsl','--tool','npm')
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; APPDATA = $appdata } @('--no-wsl','--tool','npm')
     if ($r.Code -ne 0) { $script:LastFail = "exit $($r.Code)`n$($r.Out)"; return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $h1 '.npmrc'))) { $script:LastFail = 'host .npmrc not written'; return $false }
     if (Test-Path -LiteralPath (Join-Path $h2 '.npmrc'))         { $script:LastFail = 'wsl .npmrc unexpectedly written'; return $false }
@@ -515,7 +524,7 @@ T 'PMSEC_NO_WSL=1 env var skips linux scopes' {
   $h2 = NewHome
   try {
     $scopes  = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
-    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; PMSEC_NO_WSL = '1' } @('enable','--tool','npm')
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; PMSEC_NO_WSL = '1' } @('--tool','npm')
     if ($r.Code -ne 0) { $script:LastFail = "exit $($r.Code)`n$($r.Out)"; return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $h1 '.npmrc'))) { $script:LastFail = 'host .npmrc not written'; return $false }
     if (Test-Path -LiteralPath (Join-Path $h2 '.npmrc'))         { $script:LastFail = 'wsl .npmrc unexpectedly written'; return $false }
@@ -531,7 +540,7 @@ T 'check JSON includes scope on every row across scopes' {
   $h2 = NewHome
   try {
     $scopes = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
-    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes } @('check','--json','--tool','npm')
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes } @('--check','--json','--tool','npm')
     $data = $r.Out | ConvertFrom-Json
     if ($data.rows.Count -ne 2) { $script:LastFail = "expected 2 rows, got $($data.rows.Count)`n$($r.Out)"; return $false }
     $labels = ($data.rows | ForEach-Object { $_.scope }) -join ','
@@ -550,7 +559,7 @@ T 'multi-scope disable removes from both scopes' {
     [System.IO.File]::WriteAllText((Join-Path $h1 '.npmrc'), "min-release-age=3`naudit-level=high`nregistry=https://r/`n")
     [System.IO.File]::WriteAllText((Join-Path $h2 '.npmrc'), "min-release-age=3`naudit-level=high`nregistry=https://r2/`n")
     $scopes = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
-    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes } @('disable','--tool','npm')
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes } @('--disable','--tool','npm')
     if ($r.Code -ne 0) { $script:LastFail = "disable exit $($r.Code)`n$($r.Out)"; return $false }
     $ok = $true
     $ok = $ok -and (AssertFileEq 'h1 .npmrc' "registry=https://r/`n"  (Join-Path $h1 '.npmrc'))
@@ -565,7 +574,7 @@ T 'multi-scope disable removes from both scopes' {
 T 'single-scope output has no scope header (back-compat)' {
   $h = NewHome
   try {
-    $r = InvokePmsec $h $null @('enable','--tool','npm')
+    $r = InvokePmsec $h $null @('--tool','npm')
     if ($r.Out -match '(?m)^\[') { $script:LastFail = "unexpected scope header in single-scope output`n$($r.Out)"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }

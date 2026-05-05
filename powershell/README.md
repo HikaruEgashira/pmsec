@@ -17,18 +17,18 @@ Invoke-WebRequest `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
 
 # use
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable --days 7
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 check
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 disable
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1 --days 7
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1 --check
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1 --disable
 ```
 
 The CLI surface is identical to the npm, PyPI, and bash distributions:
 
 ```
-pmsec enable  [--tool TOOL[,TOOL]] [--days N] [--force] [--no-wsl] [--json]
-pmsec check   [--tool TOOL[,TOOL]] [--days N] [--no-wsl] [--json]
-pmsec disable [--tool TOOL[,TOOL]] [--no-wsl] [--json]
+pmsec            [--tool TOOL[,TOOL]] [--days N] [--force] [--no-wsl] [--json]
+pmsec --check    [--tool TOOL[,TOOL]] [--days N] [--no-wsl] [--json]
+pmsec --disable  [--tool TOOL[,TOOL]] [--no-wsl] [--json]
 pmsec --version
 ```
 
@@ -67,13 +67,13 @@ $prof = (Get-CimInstance Win32_UserProfile |
 if (-not $prof) { exit 1 }   # nobody logged in — let Intune retry later
 
 $env:PMSEC_HOME = $prof
-& "$PSScriptRoot\pmsec.ps1" enable
-& "$PSScriptRoot\pmsec.ps1" check
+& "$PSScriptRoot\pmsec.ps1"
+& "$PSScriptRoot\pmsec.ps1" --check
 exit $LASTEXITCODE
 ```
 
 Intune detection scripts treat exit `0` as compliant and any other code as
-"needs remediation" — that maps directly onto `pmsec check`.
+"needs remediation" — that maps directly onto `pmsec --check`.
 
 ## Environment overrides
 

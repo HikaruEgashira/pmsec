@@ -18,11 +18,11 @@ BUNDLE_DAYS = 1
 
 USAGE_EPILOG = """\
 examples:
-  uvx pmsec enable
-  uvx pmsec enable --days 7
-  uvx pmsec enable --days 1 --force
-  uvx pmsec check
-  uvx pmsec disable --tool npm
+  uvx pmsec
+  uvx pmsec --days 7
+  uvx pmsec --days 1 --force
+  uvx pmsec --check
+  uvx pmsec --disable --tool npm
 """
 
 
@@ -41,26 +41,21 @@ def _parser() -> argparse.ArgumentParser:
         prog="pmsec",
         description=(
             "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, "
-            "bun, cargo, mise, and uv. `enable` flips on every safe-by-default key "
-            "each tool exposes (cooldown, audit-level, trust-policy, hardened mode, "
-            "attestation re-verification, ...). No knobs."
+            "bun, cargo, mise, and uv. Default action enables every safe-by-default "
+            "key each tool exposes (cooldown, audit-level, trust-policy, hardened "
+            "mode, attestation re-verification, ...). No knobs."
         ),
         epilog=USAGE_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("-V", "--version", action="version", version=f"pmsec {__version__}")
-    sub = p.add_subparsers(dest="command", required=True)
-
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
-    common.add_argument("--json", action="store_true", help="emit JSON output")
-    common.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
-    common.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns (otherwise enable is monotonic)")
-
-    sub.add_parser("enable", parents=[common], help="apply the hardening bundle")
-    sub.add_parser("disable", parents=[common], help="remove the hardening bundle")
-    sub.add_parser("check", parents=[common], help="verify the hardening bundle is in place")
-
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="verify the bundle is in place (exit 1 if anything missing)")
+    mode.add_argument("--disable", action="store_true", help="remove the hardening bundle from selected tools")
+    p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
+    p.add_argument("--json", action="store_true", help="emit JSON output")
+    p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
+    p.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns (otherwise enable is monotonic)")
     return p
 
 
@@ -128,9 +123,9 @@ def _check(args, targets, ctx: Context, out, err):
     else:
         out.write(_render_human(rows, args.days))
     if failing_primary:
-        err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.days} days — run `pmsec enable`\n")
+        err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.days} days — run `pmsec`\n")
     if failing_extras:
-        err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value — run `pmsec enable`\n")
+        err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value — run `pmsec`\n")
     return 0 if ok else 1
 
 
@@ -237,10 +232,8 @@ def main(
     args = _parser().parse_args(argv)
     targets = _select(args.tool)
     ctx = Context(env=env, home=home, platform=platform)
-    if args.command == "check":
+    if args.check:
         return _check(args, targets, ctx, out, err)
-    if args.command == "enable":
-        return _enable(args, targets, ctx, out, err)
-    if args.command == "disable":
+    if args.disable:
         return _disable(args, targets, ctx, out, err)
-    return 2
+    return _enable(args, targets, ctx, out, err)

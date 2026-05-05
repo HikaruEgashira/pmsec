@@ -26,8 +26,8 @@ def run(argv, home, platform="linux", **env_overrides):
     return code, out.getvalue(), err.getvalue()
 
 
-def test_enable_writes_bundle_for_every_tool(tmp_path):
-    code, _, _ = run(["enable"], tmp_path)
+def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
+    code, _, _ = run([], tmp_path)
     assert code == 0
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=1" in npmrc
@@ -51,14 +51,14 @@ def test_enable_writes_bundle_for_every_tool(tmp_path):
     assert "paranoid = true" in mise
 
 
-def test_check_passes_after_enable(tmp_path):
-    run(["enable"], tmp_path)
-    code, _, _ = run(["check"], tmp_path)
+def test_check_passes_after_default_enable(tmp_path):
+    run([], tmp_path)
+    code, _, _ = run(["--check"], tmp_path)
     assert code == 0
 
 
 def test_check_fails_when_bundle_missing(tmp_path):
-    code, out, _ = run(["check"], tmp_path)
+    code, out, _ = run(["--check"], tmp_path)
     assert code == 1
     for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"):
         assert f"MISSING {tool}" in out
@@ -82,7 +82,7 @@ def test_disable_preserves_other_keys(tmp_path):
     (tmp_path / ".yarnrc.yml").write_text(
         'npmMinimalAgeGate: "3d"\nnpmRegistryServer: "https://r/"\n'
     )
-    run(["disable"], tmp_path)
+    run(["--disable"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == "registry=https://r/\n"
     assert (pnpm_dir / "rc").read_text() == "store-dir=/tmp/pstore\n"
     assert (uv_dir / "uv.toml").read_text() == 'index-strategy = "unsafe-best-match"\n'
@@ -92,7 +92,7 @@ def test_disable_preserves_other_keys(tmp_path):
 
 def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
-    run(["enable", "--tool", "npm", "--days", "7"], tmp_path)
+    run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
         "min-release-age=7\nregistry=https://r/\naudit-level=high\n"
     )
@@ -100,7 +100,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
 
 def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=99\nregistry=https://r/\n")
-    code, out, _ = run(["enable", "--tool", "npm"], tmp_path)
+    code, out, _ = run(["--tool", "npm"], tmp_path)
     assert code == 0
     assert "keep" in out
     assert (tmp_path / ".npmrc").read_text() == (
@@ -110,7 +110,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
 
 def test_enable_force_overwrites_stricter_existing(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=99\n")
-    code, _, _ = run(["enable", "--tool", "npm", "--days", "1", "--force"], tmp_path)
+    code, _, _ = run(["--tool", "npm", "--days", "1", "--force"], tmp_path)
     assert code == 0
     text = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=1" in text
@@ -118,13 +118,13 @@ def test_enable_force_overwrites_stricter_existing(tmp_path):
 
 def test_enable_days_upgrades_when_request_exceeds_existing(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\n")
-    run(["enable", "--tool", "npm", "--days", "14"], tmp_path)
+    run(["--tool", "npm", "--days", "14"], tmp_path)
     text = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=14" in text
 
 
 def test_tool_filter(tmp_path):
-    run(["enable", "--tool", "npm,bun"], tmp_path)
+    run(["--tool", "npm,bun"], tmp_path)
     assert (tmp_path / ".npmrc").exists()
     assert (tmp_path / ".bunfig.toml").exists()
     assert not (tmp_path / ".config" / "uv" / "uv.toml").exists()
@@ -133,12 +133,12 @@ def test_tool_filter(tmp_path):
 def test_windows_uv_path(tmp_path):
     appdata = tmp_path / "AppData" / "Roaming"
     out, err = io.StringIO(), io.StringIO()
-    main(["enable", "--tool", "uv"], env={"APPDATA": str(appdata)}, home=tmp_path, platform="win32", out=out, err=err)
+    main(["--tool", "uv"], env={"APPDATA": str(appdata)}, home=tmp_path, platform="win32", out=out, err=err)
     assert (appdata / "uv" / "uv.toml").read_text().splitlines()[0] == 'exclude-newer = "1 days"'
 
 
 def test_check_json(tmp_path):
-    _, out, _ = run(["check", "--json"], tmp_path)
+    _, out, _ = run(["--check", "--json"], tmp_path)
     data = json.loads(out)
     assert data["ok"] is False
     assert data["bundleDays"] == 1
@@ -148,14 +148,14 @@ def test_check_json(tmp_path):
 
 def test_bun_section_insert(tmp_path):
     (tmp_path / ".bunfig.toml").write_text('[install]\nregistry = "https://x/"\n')
-    run(["enable", "--tool", "bun"], tmp_path)
+    run(["--tool", "bun"], tmp_path)
     text = (tmp_path / ".bunfig.toml").read_text()
     assert text.startswith("[install]\nminimumReleaseAge = 86400\nregistry =")
 
 
 def test_bun_creates_section_if_missing(tmp_path):
     (tmp_path / ".bunfig.toml").write_text("telemetry = false\n")
-    run(["enable", "--tool", "bun"], tmp_path)
+    run(["--tool", "bun"], tmp_path)
     text = (tmp_path / ".bunfig.toml").read_text()
     assert text == "telemetry = false\n\n[install]\nminimumReleaseAge = 86400\n"
 
@@ -164,7 +164,7 @@ def test_yarn_check_parses_days(tmp_path):
     (tmp_path / ".yarnrc.yml").write_text(
         'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\n'
     )
-    _, out, _ = run(["check", "--json", "--tool", "yarn"], tmp_path)
+    _, out, _ = run(["--check", "--json", "--tool", "yarn"], tmp_path)
     data = json.loads(out)
     assert data["ok"] is True
     assert data["rows"][0]["days"] == 14
@@ -174,16 +174,16 @@ def test_pnpm_check_normalizes_minutes(tmp_path):
     pnpm_dir = tmp_path / ".config" / "pnpm"
     pnpm_dir.mkdir(parents=True)
     (pnpm_dir / "rc").write_text("minimum-release-age=20160\n")
-    _, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
+    _, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert data["rows"][0]["days"] == 14
 
 
 def test_bak_created_once(tmp_path):
     (tmp_path / ".npmrc").write_text("registry=https://original/\n")
-    run(["enable", "--tool", "npm"], tmp_path)
-    run(["disable", "--tool", "npm"], tmp_path)
-    run(["enable", "--tool", "npm"], tmp_path)
+    run(["--tool", "npm"], tmp_path)
+    run(["--disable", "--tool", "npm"], tmp_path)
+    run(["--tool", "npm"], tmp_path)
     assert (tmp_path / ".npmrc.bak").read_text() == "registry=https://original/\n"
 
 
@@ -192,23 +192,23 @@ def test_hardening_extras_roundtrip(tmp_path):
     pnpm_dir.mkdir(parents=True)
     pnpmrc = pnpm_dir / "rc"
     pnpmrc.write_text("minimum-release-age=20160\n")
-    code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
+    code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
     assert len(data["rows"][0]["extras"]) == 3
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
-    run(["enable", "--tool", "pnpm"], tmp_path)
+    run(["--tool", "pnpm"], tmp_path)
     text = pnpmrc.read_text()
     assert "trust-policy=no-downgrade" in text
     assert "block-exotic-subdeps=true" in text
     assert "strict-dep-builds=true" in text
 
-    code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
+    code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     assert code == 0
     assert json.loads(out)["ok"] is True
 
-    run(["disable", "--tool", "pnpm"], tmp_path)
+    run(["--disable", "--tool", "pnpm"], tmp_path)
     after = pnpmrc.read_text()
     assert "trust-policy" not in after
     assert "block-exotic-subdeps" not in after
@@ -223,7 +223,7 @@ def test_pnpm_11_default_enforced_block_exotic_subdeps(tmp_path):
     pnpm_dir = tmp_path / ".config" / "pnpm"
     pnpm_dir.mkdir(parents=True)
     (pnpm_dir / "rc").write_text("minimum-release-age=4320\n")
-    code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="11.0.0")
+    code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="11.0.0")
     data = json.loads(out)
     extras = {e["key"]: e for e in data["rows"][0]["extras"]}
     assert extras["block-exotic-subdeps"]["ok"] is True
@@ -237,14 +237,14 @@ def test_pnpm_pre11_still_flags_block_exotic_subdeps(tmp_path):
     pnpm_dir = tmp_path / ".config" / "pnpm"
     pnpm_dir.mkdir(parents=True)
     (pnpm_dir / "rc").write_text("minimum-release-age=4320\n")
-    _, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="10.26.0")
+    _, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="10.26.0")
     extras = {e["key"]: e for e in json.loads(out)["rows"][0]["extras"]}
     assert extras["block-exotic-subdeps"]["ok"] is False
     assert extras["block-exotic-subdeps"].get("defaultEnforced", False) is False
 
 
 def test_days_flag_overrides_bundle_cooldown(tmp_path):
-    code, _, _ = run(["enable", "--days", "7"], tmp_path)
+    code, _, _ = run(["--days", "7"], tmp_path)
     assert code == 0
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=7" in npmrc
@@ -253,21 +253,27 @@ def test_days_flag_overrides_bundle_cooldown(tmp_path):
     assert 'exclude-newer = "7 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert "minimumReleaseAge = 604800" in (tmp_path / ".bunfig.toml").read_text()
 
-    code, out, _ = run(["check", "--json", "--days", "7"], tmp_path)
+    code, out, _ = run(["--check", "--json", "--days", "7"], tmp_path)
     assert code == 0
     assert json.loads(out)["bundleDays"] == 7
 
-    code, _, _ = run(["check"], tmp_path)
+    code, _, _ = run(["--check"], tmp_path)
     assert code == 0
 
-    code, _, _ = run(["check", "--days", "30"], tmp_path)
+    code, _, _ = run(["--check", "--days", "30"], tmp_path)
     assert code == 1
 
 
 @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
 def test_days_rejects_invalid(tmp_path, bad):
     with pytest.raises(SystemExit) as exc:
-        run(["enable", "--days", bad], tmp_path)
+        run(["--days", bad], tmp_path)
+    assert exc.value.code == 2
+
+
+def test_check_disable_mutually_exclusive(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        run(["--check", "--disable"], tmp_path)
     assert exc.value.code == 2
 
 
