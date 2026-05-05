@@ -15,7 +15,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.5.2'
+$script:PmsecVersion = '0.6.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 3
