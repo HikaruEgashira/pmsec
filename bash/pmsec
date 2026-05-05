@@ -16,22 +16,24 @@ TOOLS=(npm pnpm yarn bun cargo mise uv)
 
 # ---------- paths ----------
 
-# Resolve the home directory pmsec should write into. PMSEC_HOME wins so MDM
-# wrappers (Jamf/Intune) running as root/SYSTEM can target the logged-in
-# user's home without having to override every per-tool env var separately.
+# `PMSEC_HOME` wins over `$HOME` so a single env var can redirect every
+# per-tool path — MDM wrappers (Jamf, Intune) need this when running as
+# root/SYSTEM against another user's profile.
 _pmsec_home() {
   if [ -n "${PMSEC_HOME:-}" ]; then printf '%s' "$PMSEC_HOME"; return; fi
   printf '%s' "$HOME"
 }
 
-# Owner (username) of the resolved home dir. Used when running as root to
-# chown freshly-written configs back to the real user. Empty if undetectable.
-_pmsec_home_owner() {
-  local h owner
-  h=$(_pmsec_home)
-  [ -d "$h" ] || return 0
-  owner=$(stat -f '%Su' "$h" 2>/dev/null) || owner=$(stat -c '%U' "$h" 2>/dev/null) || owner=""
-  printf '%s' "$owner"
+# `stat`'s flags differ between BSD (macOS) and GNU coreutils (Linux); try
+# both, fall back to empty on platforms with neither.
+_pmsec_stat() {
+  stat -f "$1" "$3" 2>/dev/null || stat -c "$2" "$3" 2>/dev/null || printf ''
+}
+
+_pmsec_owner_of() {
+  local p="$1"
+  [ -d "$p" ] || return 0
+  _pmsec_stat '%Su' '%U' "$p"
 }
 
 path_npmrc() {
@@ -234,15 +236,12 @@ lines_remove_key() {
 
 write_atomic() {
   # write stdin to $1 atomically; create one-shot $1.bak from the existing file.
-  # When running as root (typical under Jamf), chown the resulting file and any
-  # newly-created parent dirs back to the resolved home owner so the real user
-  # can still read and edit them.
-  local path="$1" dir tmp bak mode home_dir top_created="" owner=""
+  local path="$1" dir tmp bak mode top_created=""
   dir=$(dirname -- "$path")
   if [ ! -d "$dir" ]; then
-    # Track the highest pre-existing ancestor so we can chown only the part
-    # we just created (avoids chowning unrelated existing dirs).
-    home_dir=$(_pmsec_home)
+    # Walk up while parents are missing so chown later only touches the
+    # ancestors we actually created — never an existing user-owned dir.
+    local home_dir; home_dir=$(_pmsec_home)
     top_created="$dir"
     while [ -n "$top_created" ] && [ "$top_created" != "/" ] && [ "$top_created" != "$home_dir" ] \
           && [ ! -d "$(dirname -- "$top_created")" ]; do
@@ -261,26 +260,29 @@ write_atomic() {
   tmp=$(mktemp "$path.XXXXXX") || return 1
   cat > "$tmp"
   if [ -e "$path" ]; then
-    # Preserve mode from existing file (it may carry a registry token under 600).
-    mode=$(stat -f '%Lp' "$path" 2>/dev/null) || mode=$(stat -c '%a' "$path" 2>/dev/null) || mode=""
+    # An existing .npmrc / .yarnrc may carry a registry token under 600.
+    mode=$(_pmsec_stat '%Lp' '%a' "$path")
     [ -n "$mode" ] && chmod "$mode" "$tmp" 2>/dev/null || true
-  else
-    # New file: leave mktemp's 600 in place, but relax to 644 when running as
-    # root so the real user can read it after chown.
-    if [ "$(id -u)" = "0" ]; then
-      chmod 644 "$tmp" 2>/dev/null || true
-    fi
+  elif [ "$(id -u)" = "0" ]; then
+    # mktemp creates 600; under root that would be unreadable post-chown.
+    chmod 644 "$tmp" 2>/dev/null || true
   fi
   mv -f -- "$tmp" "$path"
-  if [ "$(id -u)" = "0" ]; then
-    owner=$(_pmsec_home_owner)
-    if [ -n "$owner" ]; then
-      chown "$owner" "$path" 2>/dev/null || true
-      [ -e "$bak" ] && chown "$owner" "$bak" 2>/dev/null || true
-      [ -n "$top_created" ] && [ -d "$top_created" ] && \
-        chown -R "$owner" "$top_created" 2>/dev/null || true
-    fi
-  fi
+  _pmsec_handback "$path" "$bak" "$top_created"
+}
+
+# Hand the freshly-written file (and dirs we created) back to the home owner
+# when running as root. Caller must always invoke; the function decides.
+_pmsec_handback() {
+  [ "$(id -u)" = "0" ] || return 0
+  local path="$1" bak="$2" top_created="$3"
+  local owner; owner=$(_pmsec_owner_of "$(_pmsec_home)")
+  [ -n "$owner" ] || return 0
+  chown "$owner" "$path" 2>/dev/null || true
+  [ -e "$bak" ] && chown "$owner" "$bak" 2>/dev/null || true
+  [ -n "$top_created" ] && [ -d "$top_created" ] && \
+    chown -R "$owner" "$top_created" 2>/dev/null || true
+  return 0
 }
 
 # ---------- version detection ----------
