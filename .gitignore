@@ -9,3 +9,7 @@ build/
 *.egg-info/
 .pytest_cache/
 .claude/
+# pwsh / macOS caches that the powershell test harness leaks into the
+# repo when its sandboxed HOME points at the working tree.
+powershell/.cache/
+powershell/Library/
