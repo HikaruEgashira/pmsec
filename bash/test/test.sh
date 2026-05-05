@@ -16,6 +16,9 @@ setup_home() {
 }
 
 # run [extra envs...] -- pmsec args...
+# `PMSEC_PNPM_VERSION=none` hides the host pnpm so version-aware extras
+# (pnpm 11 default enforcement) don't depend on what's installed locally.
+# Test cases that exercise pnpm 11 behavior pass an override in `extra`.
 run_pmsec() {
   local home="$1"; shift
   local extra=()
@@ -25,9 +28,11 @@ run_pmsec() {
   shift
   if [ "${#extra[@]}" -eq 0 ]; then
     env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" \
+      PMSEC_PNPM_VERSION=none \
       bash "$PMSEC" "$@"
   else
     env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" \
+      PMSEC_PNPM_VERSION=none \
       "${extra[@]}" bash "$PMSEC" "$@"
   fi
 }
@@ -364,7 +369,32 @@ T "--days N overrides bundle cooldown for enable and check" t_days_overrides_bun
 T "--days rejects non-positive integers with exit 2" t_days_rejects_invalid
 T "enable rejects positional argument with exit 2" t_enable_rejects_positional_arg
 T "--version prints PMSEC_VERSION" t_version_flag
+t_pnpm_11_default_enforced() {
+  local home; home=$(setup_home)
+  printf 'minimum-release-age=4320\n' > "$home/.npmrc"
+  local out rc
+  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=11.0.0 -- check --json --tool pnpm 2>/dev/null); rc=$?
+  rm -rf -- "$home"
+  # block-exotic-subdeps should be reported as ok+defaultEnforced; trust-policy still missing.
+  assert_match "block-exotic-subdeps default-enforced" '"key": "block-exotic-subdeps", "configured": null,[^}]*"ok": true,[^}]*"defaultEnforced": true' "$out" || return 1
+  assert_match "trust-policy still failing" '"key": "trust-policy", "configured": null,[^}]*"ok": false' "$out" || return 1
+  assert_eq "exit code (trust-policy still failing)" "1" "$rc"
+}
+
+t_pnpm_pre11_no_default_enforcement() {
+  local home; home=$(setup_home)
+  printf 'minimum-release-age=4320\n' > "$home/.npmrc"
+  local out
+  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=10.26.0 -- check --json --tool pnpm 2>/dev/null)
+  rm -rf -- "$home"
+  # No defaultEnforced field, ok must be false.
+  ! printf '%s' "$out" | grep -q 'defaultEnforced' || { LAST_FAIL="pnpm 10 must not set defaultEnforced"; return 1; }
+  assert_match "block-exotic-subdeps not ok under pnpm 10" '"key": "block-exotic-subdeps", "configured": null, "expected": "true", "ok": false' "$out"
+}
+
 T "hardening extras roundtrip (check / enable / disable)" t_hardening_extras_roundtrip
+T "pnpm 11 default-enforces missing block-exotic-subdeps" t_pnpm_11_default_enforced
+T "pnpm <11 still flags missing block-exotic-subdeps" t_pnpm_pre11_no_default_enforcement
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

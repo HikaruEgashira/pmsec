@@ -235,7 +235,31 @@ function WriteAtomic([string]$Path, [string]$Content) {
 
 # ---------- version detection ----------
 
+# `PMSEC_<TOOL>_VERSION` ("X.Y.Z" or "none") forces the result without spawning
+# the real binary — used by tests to make pnpm 11 default-enforcement behavior
+# deterministic regardless of what's installed locally.
+function VersionOverrideEnvVar([string]$Bin) {
+  switch ($Bin) {
+    'npm'   { 'PMSEC_NPM_VERSION' }
+    'pnpm'  { 'PMSEC_PNPM_VERSION' }
+    'yarn'  { 'PMSEC_YARN_VERSION' }
+    'bun'   { 'PMSEC_BUN_VERSION' }
+    'cargo' { 'PMSEC_CARGO_VERSION' }
+    'mise'  { 'PMSEC_MISE_VERSION' }
+    'uv'    { 'PMSEC_UV_VERSION' }
+    default { '' }
+  }
+}
+
 function VersionDetect([string]$Bin) {
+  $var = VersionOverrideEnvVar $Bin
+  if ($var) {
+    $ovr = [Environment]::GetEnvironmentVariable($var)
+    if ($ovr -eq 'none') { return $null }
+    if ($ovr -and $ovr -match '(\d+)\.(\d+)\.(\d+)') {
+      return @{ Major = [int]$Matches[1]; Minor = [int]$Matches[2]; Patch = [int]$Matches[3]; Raw = $Matches[0] }
+    }
+  }
   if (-not (Get-Command $Bin -ErrorAction Ignore)) { return $null }
   try { $out = & $Bin --version 2>$null } catch { return $null }
   $text = ($out | Out-String)
@@ -299,9 +323,11 @@ function ToolExtras([string]$Tool) {
       )
     }
     'pnpm' {
+      # DefaultSinceMajor: pnpm 11 made block-exotic-subdeps the default, so a
+      # missing line is still in force under pnpm >= 11.
       return ,@(
         @{ Key = 'trust-policy'; Expected = 'no-downgrade'; Line = 'trust-policy=no-downgrade'; Sep = '='; Section = '' },
-        @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = '' }
+        @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = ''; DefaultSinceMajor = 11 }
       )
     }
     'yarn' {
@@ -374,11 +400,20 @@ function ToolRead([string]$Tool) {
     }
   }
   $extras = New-Object System.Collections.Generic.List[hashtable]
+  $toolVersion = $null
+  if ($Tool -eq 'pnpm') { $toolVersion = VersionDetect 'pnpm' }
   foreach ($e in (ToolExtras $Tool)) {
     $cur = LinesReadKey $e.Key $e.Sep $e.Section
+    $ok = ($null -ne $cur -and $cur -eq $e.Expected)
+    $defaultEnforced = $false
+    if (-not $ok -and $null -eq $cur -and $e.ContainsKey('DefaultSinceMajor') -and $null -ne $toolVersion) {
+      if ($toolVersion.Major -ge [int]$e.DefaultSinceMajor) {
+        $ok = $true; $defaultEnforced = $true
+      }
+    }
     $extras.Add(@{
       Key = $e.Key; Configured = $cur; Expected = $e.Expected
-      Ok = ($null -ne $cur -and $cur -eq $e.Expected)
+      Ok = $ok; DefaultEnforced = $defaultEnforced
     })
   }
   return @{ Path = $path; Configured = $val; Days = $days; Extras = $extras }
@@ -612,7 +647,10 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days) {
       foreach ($e in $r.Extras) {
         if (-not $first) { $extrasJson += ', ' }
         $first = $false
-        $extrasJson += "{""key"": $(JsonString $e.Key), ""configured"": $(JsonStrOrNull $e.Configured), ""expected"": $(JsonString $e.Expected), ""ok"": $(JsonBool $e.Ok)}"
+        $extraEntry = "{""key"": $(JsonString $e.Key), ""configured"": $(JsonStrOrNull $e.Configured), ""expected"": $(JsonString $e.Expected), ""ok"": $(JsonBool $e.Ok)"
+        if ($e.DefaultEnforced) { $extraEntry += ', "defaultEnforced": true' }
+        $extraEntry += '}'
+        $extrasJson += $extraEntry
       }
       $extrasJson += ']'
       $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
@@ -630,8 +668,10 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days) {
       StdOut ('{0} {1} {2} = {3}  [{4}]' -f $status, (Pad4 $r.Tool), $r.Key, $disp, $r.Path)
       if ($r.Warn) { StdOut ('       ' + $script:WarnGlyph + ' ' + $r.Warn) }
       foreach ($e in $r.Extras) {
-        $exStatus = if ($null -eq $e.Configured) { 'MISSING' } elseif ($e.Ok) { 'OK     ' } else { 'STALE  ' }
-        $exDisp = if ($null -eq $e.Configured) { '(unset)' } else { $e.Configured }
+        $exStatus = if ($e.Ok) { 'OK     ' } elseif ($null -eq $e.Configured) { 'MISSING' } else { 'STALE  ' }
+        $exDisp = if ($e.DefaultEnforced) { "(default $($script:EmDash) runtime enforces $($e.Expected))" }
+                  elseif ($null -eq $e.Configured) { '(unset)' }
+                  else { $e.Configured }
         StdOut ('{0} {1} {2} = {3}  [{4}]' -f $exStatus, (Pad4 $r.Tool), $e.Key, $exDisp, $r.Path)
       }
     }

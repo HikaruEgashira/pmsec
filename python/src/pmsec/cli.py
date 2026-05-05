@@ -105,13 +105,17 @@ def _render_human(rows, min_days):
         if r.get("warn"):
             out.append(f"       ⚠ {r['warn']}")
         for e in r.get("extras", []):
-            if e["configured"] is None:
-                ex_status = "MISSING"
-            elif e["ok"]:
+            if e["ok"]:
                 ex_status = "OK     "
+            elif e["configured"] is None:
+                ex_status = "MISSING"
             else:
                 ex_status = "STALE  "
-            out.append(f"{ex_status} {r['tool']:<4} {e['key']} = {e['configured'] or '(unset)'}  [{r['path']}]")
+            if e.get("defaultEnforced"):
+                ex_value = f"(default — runtime enforces {e['expected']})"
+            else:
+                ex_value = e["configured"] or "(unset)"
+            out.append(f"{ex_status} {r['tool']:<4} {e['key']} = {ex_value}  [{r['path']}]")
     return "\n".join(out) + "\n"
 
 
