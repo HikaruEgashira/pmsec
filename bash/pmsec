@@ -6,6 +6,7 @@
 # default cooldown.
 # Bash port. Works without npm/uv installed; only needs bash 3.2+ and coreutils.
 # License: MIT.
+# SPDX-License-Identifier: MIT
 set +u
 
 PMSEC_VERSION="0.10.0"

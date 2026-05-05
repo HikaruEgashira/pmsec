@@ -10,6 +10,7 @@
 # config files (skip with `--no-wsl` or `PMSEC_NO_WSL=1`). Non-Windows
 # pwsh hosts are not supported — use the bash, node, or python port.
 # License: MIT.
+# SPDX-License-Identifier: MIT
 # NOTE: deliberately no param() block. Adding [CmdletBinding] or any
 # [Parameter()] attribute makes this script an advanced function, which
 # silently exposes the common parameters (-Verbose, -Debug, ...). PowerShell
