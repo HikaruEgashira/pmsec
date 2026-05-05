@@ -7,7 +7,7 @@ from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import mise_config_path
-from pmsec.util.version import detect_version, gte
+from pmsec.util.version import build_preflight
 
 NAME = "mise"
 KEY = "minimum_release_age"
@@ -18,19 +18,11 @@ EXTRAS = [
     {"key": "paranoid", "expected": "true", "line": "paranoid = true", "section": SECTION},
 ]
 
-
-def preflight() -> dict:
-    v = detect_version("mise")
-    if v is None:
-        return {"ok": True, "message": None}
-    if gte(v, MIN_BIN):
-        return {"ok": True, "version": v[3], "message": None}
-    msg = (
-        f"mise {v[3]} < {'.'.join(str(n) for n in MIN_BIN)}: setting was named "
-        "install_before before 2026.4.22 and minimum_release_age is silently ignored "
-        "on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown."
-    )
-    return {"ok": True, "warn": True, "version": v[3], "message": msg}
+preflight = build_preflight(
+    NAME, MIN_BIN,
+    "setting was named install_before before 2026.4.22 and minimum_release_age is silently "
+    "ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.",
+)
 
 _DURATION = re.compile(
     r'^"?\s*(\d+)\s*(d|days?|w|weeks?|m|months?|y|years?)\s*"?$',
@@ -68,11 +60,10 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:
     p = path(env, home, platform)
-    before = p.read_text("utf-8") if p.exists() else ""
-    after = set_key(before, KEY, f'{KEY} = "{days}d"', section=SECTION)
-    after = apply_extras(after, EXTRAS)
-    write_atomic(p, after)
-    return {"path": str(p), "before": before, "after": after}
+    raw = p.read_text("utf-8") if p.exists() else ""
+    text = apply_extras(set_key(raw, KEY, f'{KEY} = "{days}d"', section=SECTION), EXTRAS)
+    write_atomic(p, text)
+    return {"path": str(p)}
 
 
 def unset(env: dict[str, str], home: Path, platform: str) -> dict:

@@ -1,7 +1,7 @@
 import { bunConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
-import { detectVersion, gte } from "../util/version.mjs";
+import { buildPreflight } from "../util/version.mjs";
 
 export const name = "bun";
 export const key = "minimumReleaseAge";
@@ -12,12 +12,8 @@ export const extras = [];
 
 export function path(env, home) { return bunConfigPath(env, home); }
 
-export function preflight() {
-  const v = detectVersion("bun");
-  if (v === null) return { ok: true, message: null };
-  if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
-  return { ok: true, warn: true, version: v.raw, message: `bun ${v.raw} < ${minBin.join(".")}: minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.` };
-}
+export const preflight = buildPreflight(name, minBin,
+  "minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.");
 
 export async function read(env, home) {
   const p = path(env, home);
@@ -29,10 +25,9 @@ export async function read(env, home) {
 
 export async function write(days, env, home) {
   const p = path(env, home);
-  const before = await readSafe(p);
-  const after = setKey(before, key, `${key} = ${days * 86400}`, { section });
-  await writeAtomic(p, after);
-  return { path: p, before, after };
+  const text = setKey(await readSafe(p), key, `${key} = ${days * 86400}`, { section });
+  await writeAtomic(p, text);
+  return { path: p };
 }
 
 export async function unset(env, home) {

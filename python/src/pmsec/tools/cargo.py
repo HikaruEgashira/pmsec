@@ -37,10 +37,9 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
 
 def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:
     p = path(env, home, platform)
-    before = p.read_text("utf-8") if p.exists() else ""
-    after = set_key(before, KEY, f'{KEY} = "{days}d"', section=SECTION)
-    write_atomic(p, after)
-    return {"path": str(p), "before": before, "after": after}
+    raw = p.read_text("utf-8") if p.exists() else ""
+    write_atomic(p, set_key(raw, KEY, f'{KEY} = "{days}d"', section=SECTION))
+    return {"path": str(p)}
 
 
 def unset(env: dict[str, str], home: Path, platform: str) -> dict:

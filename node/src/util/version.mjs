@@ -19,7 +19,7 @@ export function detectVersion(bin, args = ["--version"], { env, overrideKey } = 
     }
   }
   try {
-    const res = spawnSync(bin, args, { encoding: "utf8" });
+    const res = spawnSync(bin, args, { encoding: "utf8", timeout: 5000, killSignal: "SIGKILL" });
     if (res.status !== 0) return null;
     return parseSemver(res.stdout);
   } catch { return null; }
@@ -31,4 +31,14 @@ export function gte(v, target) {
   if (v.major !== a) return v.major > a;
   if (v.minor !== b) return v.minor > b;
   return v.patch >= c;
+}
+
+export function buildPreflight(name, minBin, suffix) {
+  return () => {
+    const v = detectVersion(name);
+    if (v === null) return { ok: true, message: null };
+    if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
+    return { ok: true, warn: true, version: v.raw,
+      message: `${name} ${v.raw} < ${minBin.join(".")}: ${suffix}` };
+  };
 }

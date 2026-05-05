@@ -49,3 +49,17 @@ def gte(v: tuple[int, int, int, str] | None, target: tuple[int, int, int]) -> bo
     if v[1] != target[1]:
         return v[1] > target[1]
     return v[2] >= target[2]
+
+
+def build_preflight(name: str, min_bin: tuple[int, int, int], suffix: str):
+    def _pf() -> dict:
+        v = detect_version(name)
+        if v is None:
+            return {"ok": True, "message": None}
+        if gte(v, min_bin):
+            return {"ok": True, "version": v[3], "message": None}
+        return {
+            "ok": True, "warn": True, "version": v[3],
+            "message": f"{name} {v[3]} < {'.'.join(str(n) for n in min_bin)}: {suffix}",
+        }
+    return _pf

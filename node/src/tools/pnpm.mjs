@@ -53,11 +53,10 @@ export async function read(env, home, platform) {
 
 export async function write(days, env, home, platform) {
   const p = path(env, home, platform);
-  const before = await readSafe(p);
-  let after = setKey(before, key, `${key}=${days * 24 * 60}`);
-  after = applyExtras(after, extras);
-  await writeAtomic(p, after);
-  return { path: p, before, after };
+  let text = setKey(await readSafe(p), key, `${key}=${days * 24 * 60}`);
+  text = applyExtras(text, extras);
+  await writeAtomic(p, text);
+  return { path: p };
 }
 
 export async function unset(env, home, platform) {

@@ -27,10 +27,9 @@ export async function read(env, home) {
 
 export async function write(days, env, home) {
   const p = path(env, home);
-  const before = await readSafe(p);
-  const after = setKey(before, key, `${key} = "${days}d"`, { section });
-  await writeAtomic(p, after);
-  return { path: p, before, after };
+  const text = setKey(await readSafe(p), key, `${key} = "${days}d"`, { section });
+  await writeAtomic(p, text);
+  return { path: p };
 }
 
 export async function unset(env, home) {
