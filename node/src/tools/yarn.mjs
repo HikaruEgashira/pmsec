@@ -13,7 +13,7 @@ export const extras = [
   { key: "enableHardenedMode", expected: "true", line: "enableHardenedMode: true", sep: SEP }
 ];
 
-export function path(env, home) { return yarnrcPath(env, home); }
+export function path(ctx) { return yarnrcPath(ctx.env, ctx.home); }
 
 export const preflight = buildPreflight(name, minBin,
   "npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.");
@@ -26,8 +26,8 @@ function parseDays(value) {
   return /^(w|weeks?)$/i.test(m[2]) ? n * 7 : n;
 }
 
-export async function read(env, home) {
-  const p = path(env, home);
+export async function read(ctx) {
+  const p = path(ctx);
   const raw = await readSafe(p);
   const value = readKey(raw, key, { sep: SEP });
   return {
@@ -36,16 +36,16 @@ export async function read(env, home) {
   };
 }
 
-export async function write(days, env, home) {
-  const p = path(env, home);
+export async function write(days, ctx) {
+  const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key}: "${days}d"`, { sep: SEP });
   text = applyExtras(text, extras);
   await writeAtomic(p, text);
   return { path: p };
 }
 
-export async function unset(env, home) {
-  const p = path(env, home);
+export async function unset(ctx) {
+  const p = path(ctx);
   const before = await readSafe(p);
   const cooldown = removeKey(before, key, { sep: SEP });
   const ex = removeExtras(cooldown.text, extras);

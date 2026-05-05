@@ -17,25 +17,34 @@ export const extras = [
   { key: "strict-dep-builds", expected: "true", line: "strict-dep-builds=true" }
 ];
 
-export function path(env, home, platform) { return pnpmRcPath(env, home, platform); }
+export function path(ctx) { return pnpmRcPath(ctx.env, ctx.home, ctx.platform); }
 
-function pnpmVersion(env) {
-  return detectVersion("pnpm", ["--version"], { env, overrideKey: "PMSEC_PNPM_VERSION" });
+// Cache `pnpm --version` for the lifetime of the process. preflight() and
+// read() both want it; without memoization a single `pmsec check` spawns
+// pnpm twice. Cache key is the override env value so tests with different
+// `PMSEC_PNPM_VERSION` settings invalidate naturally.
+let _versionCache = null;
+function pnpmVersion(ctx) {
+  const override = ctx.env?.PMSEC_PNPM_VERSION ?? null;
+  if (_versionCache && _versionCache.override === override) return _versionCache.value;
+  const v = detectVersion("pnpm", ["--version"], { env: ctx.env, overrideKey: "PMSEC_PNPM_VERSION" });
+  _versionCache = { override, value: v };
+  return v;
 }
 
-export function preflight(env) {
-  const v = pnpmVersion(env);
+export function preflight(ctx) {
+  const v = pnpmVersion(ctx);
   if (v === null) return { ok: true, message: null };
   if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
   return { ok: true, warn: true, version: v.raw, message: `pnpm ${v.raw} < ${minBin.join(".")}: minimum-release-age is silently ignored. Upgrade pnpm to enforce the cooldown.` };
 }
 
-export async function read(env, home, platform) {
-  const p = path(env, home, platform);
+export async function read(ctx) {
+  const p = path(ctx);
   const raw = await readSafe(p);
   const value = readKey(raw, key);
   const minutes = value === null ? null : Number(value);
-  const v = pnpmVersion(env);
+  const v = pnpmVersion(ctx);
   const defaults = new Map(extras.filter(x => x.defaultSinceMajor).map(x => [x.key, x.defaultSinceMajor]));
   const evaluated = readExtras(raw, extras).map(e => {
     const def = defaults.get(e.key);
@@ -51,16 +60,16 @@ export async function read(env, home, platform) {
   };
 }
 
-export async function write(days, env, home, platform) {
-  const p = path(env, home, platform);
+export async function write(days, ctx) {
+  const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key}=${days * 24 * 60}`);
   text = applyExtras(text, extras);
   await writeAtomic(p, text);
   return { path: p };
 }
 
-export async function unset(env, home, platform) {
-  const p = path(env, home, platform);
+export async function unset(ctx) {
+  const p = path(ctx);
   const before = await readSafe(p);
   const cooldown = removeKey(before, key);
   const ex = removeExtras(cooldown.text, extras);

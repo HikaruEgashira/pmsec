@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pmsec.util.context import Context
 from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
@@ -22,16 +23,29 @@ EXTRAS = [
 ]
 
 
-def path(env: dict[str, str], home: Path, platform: str) -> Path:
-    return pnpm_rc_path(env, home, platform)
+def path(ctx: Context) -> Path:
+    return pnpm_rc_path(ctx.env, ctx.home, ctx.platform)
 
 
-def _pnpm_version(env: dict[str, str] | None):
-    return detect_version("pnpm", env=env, override_key="PMSEC_PNPM_VERSION")
+# Cache `pnpm --version` for the lifetime of the process. preflight() and
+# read() both want it; without memoization a single `pmsec check` spawns
+# pnpm twice. Cache key is the override env value so tests with different
+# `PMSEC_PNPM_VERSION` settings invalidate naturally.
+_version_cache: tuple[str | None, tuple[int, int, int, str] | None] | None = None
 
 
-def preflight(env: dict[str, str] | None = None) -> dict:
-    v = _pnpm_version(env)
+def _pnpm_version(ctx: Context):
+    global _version_cache
+    override = ctx.env.get("PMSEC_PNPM_VERSION")
+    if _version_cache is not None and _version_cache[0] == override:
+        return _version_cache[1]
+    v = detect_version("pnpm", env=ctx.env, override_key="PMSEC_PNPM_VERSION")
+    _version_cache = (override, v)
+    return v
+
+
+def preflight(ctx: Context) -> dict:
+    v = _pnpm_version(ctx)
     if v is None:
         return {"ok": True, "message": None}
     if gte(v, MIN_BIN):
@@ -43,8 +57,8 @@ def preflight(env: dict[str, str] | None = None) -> dict:
     return {"ok": True, "warn": True, "version": v[3], "message": msg}
 
 
-def read(env: dict[str, str], home: Path, platform: str) -> dict:
-    p = path(env, home, platform)
+def read(ctx: Context) -> dict:
+    p = path(ctx)
     raw = p.read_text("utf-8") if p.exists() else ""
     value = read_key(raw, KEY)
     minutes = None
@@ -54,7 +68,7 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
         except ValueError:
             minutes = None
     days = None if minutes is None else minutes // (60 * 24)
-    v = _pnpm_version(env)
+    v = _pnpm_version(ctx)
     defaults = {e["key"]: e["default_since_major"] for e in EXTRAS if e.get("default_since_major")}
     extras_rows = []
     for row in read_extras(raw, EXTRAS):
@@ -65,16 +79,16 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
     return {"path": str(p), "configured": value, "days": days, "extras": extras_rows}
 
 
-def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:
-    p = path(env, home, platform)
+def write(days: int, ctx: Context) -> dict:
+    p = path(ctx)
     raw = p.read_text("utf-8") if p.exists() else ""
     text = apply_extras(set_key(raw, KEY, f"{KEY}={days * 24 * 60}"), EXTRAS)
     write_atomic(p, text)
     return {"path": str(p)}
 
 
-def unset(env: dict[str, str], home: Path, platform: str) -> dict:
-    p = path(env, home, platform)
+def unset(ctx: Context) -> dict:
+    p = path(ctx)
     if not p.exists():
         return {"path": str(p), "removed": False}
     before = p.read_text("utf-8")

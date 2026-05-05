@@ -80,20 +80,20 @@ function selectTools(only) {
   return found;
 }
 
-function preflightWarn(t) {
+function preflightWarn(t, ctx) {
   if (typeof t.preflight !== "function") return null;
-  const pf = t.preflight();
+  const pf = t.preflight(ctx);
   return pf?.message ?? null;
 }
 
-async function gatherStatus(targets, env, home, platform) {
+async function gatherStatus(targets, ctx) {
   return Promise.all(targets.map(async t => {
-    const r = await t.read(env, home, platform);
+    const r = await t.read(ctx);
     return {
       tool: t.name, key: t.key, path: r.path,
       configured: r.configured, days: r.days,
       extras: r.extras ?? [],
-      warn: preflightWarn(t)
+      warn: preflightWarn(t, ctx)
     };
   }));
 }
@@ -114,8 +114,8 @@ function renderHuman(rows, min) {
   return lines.join("\n") + "\n";
 }
 
-async function runCheck(targets, { json, days }, env, home, platform, out, err) {
-  const rows = await gatherStatus(targets, env, home, platform);
+async function runCheck(targets, { json, days }, ctx, out, err) {
+  const rows = await gatherStatus(targets, ctx);
   const failingPrimary = rows.filter(r => r.days === null || r.days < days);
   const failingExtras = rows.flatMap(r => r.extras.filter(e => !e.ok));
   const ok = failingPrimary.length === 0 && failingExtras.length === 0;
@@ -136,23 +136,23 @@ function explainFsError(e, tool) {
   return `${tool}: ${e?.message ?? e}`;
 }
 
-async function runEnable(targets, json, days, force, env, home, platform, out, err) {
+async function runEnable(targets, json, days, force, ctx, out, err) {
   const results = [];
   const failures = [];
   const warnings = [];
   for (const t of targets) {
-    const warn = preflightWarn(t);
+    const warn = preflightWarn(t, ctx);
     if (warn) warnings.push({ tool: t.name, warn });
     try {
       let effective = days;
       let kept = false;
       if (!force) {
-        const current = await t.read(env, home, platform);
+        const current = await t.read(ctx);
         const currentDays = current.days ?? 0;
         effective = Math.max(currentDays, days);
         kept = currentDays >= days && currentDays > 0;
       }
-      const r = await t.write(effective, env, home, platform);
+      const r = await t.write(effective, ctx);
       results.push({ tool: t.name, path: r.path, days: effective, requested: days, kept, forced: force, ok: true, warn });
     } catch (e) {
       failures.push({ tool: t.name, error: explainFsError(e, t.name) });
@@ -175,12 +175,12 @@ async function runEnable(targets, json, days, force, env, home, platform, out, e
   return failures.length ? 1 : 0;
 }
 
-async function runDisable(targets, json, env, home, platform, out, err) {
+async function runDisable(targets, json, ctx, out, err) {
   const results = [];
   const failures = [];
   for (const t of targets) {
     try {
-      const r = await t.unset(env, home, platform);
+      const r = await t.unset(ctx);
       results.push({ tool: t.name, path: r.path, removed: r.removed, ok: true });
     } catch (e) {
       failures.push({ tool: t.name, error: explainFsError(e, t.name) });
@@ -211,10 +211,11 @@ export async function run(argv, {
   let targets;
   try { targets = selectTools(opts.only); }
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
+  const ctx = { env, home, platform };
   try {
-    if (opts.command === "check") return await runCheck(targets, opts, env, home, platform, out, err);
-    if (opts.command === "enable") return await runEnable(targets, opts.json, opts.days, opts.force, env, home, platform, out, err);
-    if (opts.command === "disable") return await runDisable(targets, opts.json, env, home, platform, out, err);
+    if (opts.command === "check") return await runCheck(targets, opts, ctx, out, err);
+    if (opts.command === "enable") return await runEnable(targets, opts.json, opts.days, opts.force, ctx, out, err);
+    if (opts.command === "disable") return await runDisable(targets, opts.json, ctx, out, err);
     err.write(`pmsec: unknown command "${opts.command}"\n`);
     return 2;
   } catch (e) {

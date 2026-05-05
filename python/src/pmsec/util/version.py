@@ -52,7 +52,9 @@ def gte(v: tuple[int, int, int, str] | None, target: tuple[int, int, int]) -> bo
 
 
 def build_preflight(name: str, min_bin: tuple[int, int, int], suffix: str):
-    def _pf() -> dict:
+    # ctx is accepted for signature uniformity with pnpm.preflight; this
+    # helper detects against the local PATH and ignores ctx.
+    def _pf(_ctx=None) -> dict:
         v = detect_version(name)
         if v is None:
             return {"ok": True, "message": None}

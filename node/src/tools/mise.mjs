@@ -12,7 +12,7 @@ export const extras = [
   { key: "paranoid", expected: "true", line: "paranoid = true", section }
 ];
 
-export function path(env, home, platform) { return miseConfigPath(env, home, platform); }
+export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }
 
 export const preflight = buildPreflight(name, minBin,
   "setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.");
@@ -29,8 +29,8 @@ function parseDays(value) {
   return n;
 }
 
-export async function read(env, home, platform) {
-  const p = path(env, home, platform);
+export async function read(ctx) {
+  const p = path(ctx);
   const raw = await readSafe(p);
   const value = readKey(raw, key, { section });
   return {
@@ -39,16 +39,16 @@ export async function read(env, home, platform) {
   };
 }
 
-export async function write(days, env, home, platform) {
-  const p = path(env, home, platform);
+export async function write(days, ctx) {
+  const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key} = "${days}d"`, { section });
   text = applyExtras(text, extras);
   await writeAtomic(p, text);
   return { path: p };
 }
 
-export async function unset(env, home, platform) {
-  const p = path(env, home, platform);
+export async function unset(ctx) {
+  const p = path(ctx);
   const before = await readSafe(p);
   const cooldown = removeKey(before, key, { section });
   const ex = removeExtras(cooldown.text, extras);

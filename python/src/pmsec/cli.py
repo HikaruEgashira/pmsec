@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pmsec import __version__
 from pmsec.tools import bun, cargo, mise, npm, pnpm, uv, yarn
+from pmsec.util.context import Context
 from pmsec.util.paths import current_platform
 
 TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv]
@@ -74,19 +75,19 @@ def _select(only: str | None) -> list:
     return found
 
 
-def _preflight_warn(t) -> str | None:
+def _preflight_warn(t, ctx: Context) -> str | None:
     pf = getattr(t, "preflight", None)
     if pf is None:
         return None
-    result = pf()
+    result = pf(ctx)
     return result.get("message")
 
 
-def _gather(targets, env, home, platform):
+def _gather(targets, ctx: Context):
     rows = []
     for t in targets:
-        r = t.read(env, home, platform)
-        rows.append({"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t), **r})
+        r = t.read(ctx)
+        rows.append({"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t, ctx), **r})
     return rows
 
 
@@ -117,8 +118,8 @@ def _render_human(rows, min_days):
     return "\n".join(out) + "\n"
 
 
-def _check(args, targets, env, home, platform, out, err):
-    rows = _gather(targets, env, home, platform)
+def _check(args, targets, ctx: Context, out, err):
+    rows = _gather(targets, ctx)
     failing_primary = [r for r in rows if r["days"] is None or r["days"] < args.days]
     failing_extras = [e for r in rows for e in r.get("extras", []) if not e["ok"]]
     ok = not failing_primary and not failing_extras
@@ -148,25 +149,25 @@ def _explain_fs_error(exc: BaseException, tool: str) -> str:
     return f"{tool}: {exc}"
 
 
-def _enable(args, targets, env, home, platform, out, err):
+def _enable(args, targets, ctx: Context, out, err):
     results = []
     failures = []
     warnings = []
     requested = args.days
     force = args.force
     for t in targets:
-        warn = _preflight_warn(t)
+        warn = _preflight_warn(t, ctx)
         if warn:
             warnings.append({"tool": t.NAME, "warn": warn})
         try:
             if force:
                 effective, kept = requested, False
             else:
-                current = t.read(env, home, platform)
+                current = t.read(ctx)
                 current_days = current.get("days") or 0
                 effective = max(current_days, requested)
                 kept = current_days >= requested and current_days > 0
-            r = t.write(effective, env, home, platform)
+            r = t.write(effective, ctx)
             results.append({"tool": t.NAME, "path": r["path"], "days": effective, "requested": requested, "kept": kept, "forced": force, "ok": True, "warn": warn})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)
@@ -191,12 +192,12 @@ def _enable(args, targets, env, home, platform, out, err):
     return 1 if failures else 0
 
 
-def _disable(args, targets, env, home, platform, out, err):
+def _disable(args, targets, ctx: Context, out, err):
     results = []
     failures = []
     for t in targets:
         try:
-            r = t.unset(env, home, platform)
+            r = t.unset(ctx)
             results.append({"tool": t.NAME, "path": r["path"], "removed": r["removed"], "ok": True})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)
@@ -235,10 +236,11 @@ def main(
 
     args = _parser().parse_args(argv)
     targets = _select(args.tool)
+    ctx = Context(env=env, home=home, platform=platform)
     if args.command == "check":
-        return _check(args, targets, env, home, platform, out, err)
+        return _check(args, targets, ctx, out, err)
     if args.command == "enable":
-        return _enable(args, targets, env, home, platform, out, err)
+        return _enable(args, targets, ctx, out, err)
     if args.command == "disable":
-        return _disable(args, targets, env, home, platform, out, err)
+        return _disable(args, targets, ctx, out, err)
     return 2

@@ -8,7 +8,7 @@ export const section = "install";
 export const docs = "https://rust-lang.github.io/rfcs/3801-package-cooldown.html";
 export const extras = [];
 
-export function path(env, home) { return cargoConfigPath(env, home); }
+export function path(ctx) { return cargoConfigPath(ctx.env, ctx.home); }
 
 function parseDays(value) {
   if (value === null) return null;
@@ -18,22 +18,22 @@ function parseDays(value) {
   return /^(w|weeks?)$/i.test(m[2]) ? n * 7 : n;
 }
 
-export async function read(env, home) {
-  const p = path(env, home);
+export async function read(ctx) {
+  const p = path(ctx);
   const raw = await readSafe(p);
   const value = readKey(raw, key, { section });
   return { path: p, configured: value, days: parseDays(value), extras: [] };
 }
 
-export async function write(days, env, home) {
-  const p = path(env, home);
+export async function write(days, ctx) {
+  const p = path(ctx);
   const text = setKey(await readSafe(p), key, `${key} = "${days}d"`, { section });
   await writeAtomic(p, text);
   return { path: p };
 }
 
-export async function unset(env, home) {
-  const p = path(env, home);
+export async function unset(ctx) {
+  const p = path(ctx);
   const before = await readSafe(p);
   const { text: after, removed } = removeKey(before, key, { section });
   if (removed) await writeAtomic(p, after);

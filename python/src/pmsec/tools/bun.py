@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pmsec.util.context import Context
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import bun_config_path
@@ -20,12 +21,12 @@ preflight = build_preflight(
 )
 
 
-def path(env: dict[str, str], home: Path, platform: str) -> Path:
-    return bun_config_path(env, home)
+def path(ctx: Context) -> Path:
+    return bun_config_path(ctx.env, ctx.home)
 
 
-def read(env: dict[str, str], home: Path, platform: str) -> dict:
-    p = path(env, home, platform)
+def read(ctx: Context) -> dict:
+    p = path(ctx)
     raw = p.read_text("utf-8") if p.exists() else ""
     value = read_key(raw, KEY, section=SECTION)
     seconds = None
@@ -38,15 +39,15 @@ def read(env: dict[str, str], home: Path, platform: str) -> dict:
     return {"path": str(p), "configured": value, "days": days, "extras": []}
 
 
-def write(days: int, env: dict[str, str], home: Path, platform: str) -> dict:
-    p = path(env, home, platform)
+def write(days: int, ctx: Context) -> dict:
+    p = path(ctx)
     raw = p.read_text("utf-8") if p.exists() else ""
     write_atomic(p, set_key(raw, KEY, f"{KEY} = {days * 86400}", section=SECTION))
     return {"path": str(p)}
 
 
-def unset(env: dict[str, str], home: Path, platform: str) -> dict:
-    p = path(env, home, platform)
+def unset(ctx: Context) -> dict:
+    p = path(ctx)
     if not p.exists():
         return {"path": str(p), "removed": False}
     before = p.read_text("utf-8")
