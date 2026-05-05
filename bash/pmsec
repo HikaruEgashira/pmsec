@@ -8,10 +8,10 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.8.0"
+PMSEC_VERSION="0.9.0"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
-BUNDLE_DAYS=3
+BUNDLE_DAYS=1
 TOOLS=(npm pnpm yarn bun cargo mise uv)
 
 # ---------- paths ----------
@@ -629,7 +629,7 @@ Commands:
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
-  --days N              Override cooldown days (default 3)
+  --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version

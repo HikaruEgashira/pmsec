@@ -14,7 +14,7 @@ from pmsec.util.paths import current_platform
 TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv]
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
-BUNDLE_DAYS = 3
+BUNDLE_DAYS = 1
 
 USAGE_EPILOG = """\
 examples:

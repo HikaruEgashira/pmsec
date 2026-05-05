@@ -96,17 +96,17 @@ t_enable_writes_all() {
   yarnrc=$(cat "$home/.yarnrc.yml")
   uvtoml=$(cat "$home/.config/uv/uv.toml")
   mise=$(cat "$home/.config/mise/config.toml")
-  assert_match "npm key" '^min-release-age=3$' "$npmrc" || return
-  assert_match "pnpm key" '^minimum-release-age=4320$' "$pnpmrc" || return
+  assert_match "npm key" '^min-release-age=1$' "$npmrc" || return
+  assert_match "pnpm key" '^minimum-release-age=1440$' "$pnpmrc" || return
   if printf '%s' "$npmrc" | grep -q 'minimum-release-age'; then
     LAST_FAIL="pnpm key leaked into .npmrc"; return 1
   fi
   assert_match "bun section" '^\[install\]$' "$bunfig" || return
-  assert_match "bun key" '^minimumReleaseAge = 259200$' "$bunfig" || return
-  assert_match "yarn key" '^npmMinimalAgeGate: "3d"$' "$yarnrc" || return
-  assert_match "uv key" '^exclude-newer = "3 days"$' "$uvtoml" || return
+  assert_match "bun key" '^minimumReleaseAge = 86400$' "$bunfig" || return
+  assert_match "yarn key" '^npmMinimalAgeGate: "1d"$' "$yarnrc" || return
+  assert_match "uv key" '^exclude-newer = "1 days"$' "$uvtoml" || return
   assert_match "mise section" '^\[settings\]$' "$mise" || return
-  assert_match "mise key" '^minimum_release_age = "3d"$' "$mise" || return
+  assert_match "mise key" '^minimum_release_age = "1d"$' "$mise" || return
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
@@ -163,9 +163,9 @@ registry = "https://x/"
 
 t_enable_upgrades_weak_existing_value() {
   local home; home=$(setup_home)
-  printf 'min-release-age=1\nregistry=https://r/\n' > "$home/.npmrc"
-  run_pmsec "$home" -- enable --tool npm >/dev/null
-  assert_file_eq "npmrc" 'min-release-age=3
+  printf 'min-release-age=3\nregistry=https://r/\n' > "$home/.npmrc"
+  run_pmsec "$home" -- enable --tool npm --days 7 >/dev/null
+  assert_file_eq "npmrc" 'min-release-age=7
 registry=https://r/
 audit-level=high
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
@@ -215,7 +215,7 @@ t_windows_uv_path() {
   local appdata="$home/AppData/Roaming"
   env -i PATH="$PATH" HOME="$home" APPDATA="$appdata" PMSEC_PLATFORM=win32 \
     bash "$PMSEC" enable --tool uv >/dev/null
-  assert_match "uv key" '^exclude-newer = "3 days"$' "$(cat "$appdata/uv/uv.toml")" || { rm -rf "$home"; return 1; }
+  assert_match "uv key" '^exclude-newer = "1 days"$' "$(cat "$appdata/uv/uv.toml")" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
@@ -225,7 +225,7 @@ t_json_check() {
   out=$(run_pmsec "$home" -- check --json)
   rm -rf -- "$home"
   assert_match "ok false" '"ok": false' "$out" || return
-  assert_match "bundleDays 3" '"bundleDays": 3' "$out" || return
+  assert_match "bundleDays 1" '"bundleDays": 1' "$out" || return
   assert_match "rows include uv" '"tool": "uv"' "$out" || return
   assert_match "rows include cargo" '"tool": "cargo"' "$out" || return
 }
@@ -235,7 +235,7 @@ t_bun_inserts_into_existing_section() {
   printf '[install]\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
   run_pmsec "$home" -- enable --tool bun >/dev/null
   assert_file_eq "bunfig" '[install]
-minimumReleaseAge = 259200
+minimumReleaseAge = 86400
 registry = "https://x/"
 ' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
@@ -248,7 +248,7 @@ t_bun_creates_section_if_missing() {
   assert_file_eq "bunfig" 'telemetry = false
 
 [install]
-minimumReleaseAge = 259200
+minimumReleaseAge = 86400
 ' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
