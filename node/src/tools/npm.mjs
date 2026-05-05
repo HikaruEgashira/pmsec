@@ -12,13 +12,13 @@ export const extras = [
   { key: "audit-level", expected: "high", line: "audit-level=high" }
 ];
 
-export function path(env, home) { return npmrcPath(env, home); }
+export function path(ctx) { return npmrcPath(ctx.env, ctx.home); }
 
 export const preflight = buildPreflight(name, minBin,
   "min-release-age is silently ignored. Upgrade npm to enforce the cooldown.");
 
-export async function read(env, home) {
-  const p = path(env, home);
+export async function read(ctx) {
+  const p = path(ctx);
   const raw = await readSafe(p);
   const value = readKey(raw, key);
   return {
@@ -28,16 +28,16 @@ export async function read(env, home) {
   };
 }
 
-export async function write(days, env, home) {
-  const p = path(env, home);
+export async function write(days, ctx) {
+  const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key}=${days}`);
   text = applyExtras(text, extras);
   await writeAtomic(p, text);
   return { path: p };
 }
 
-export async function unset(env, home) {
-  const p = path(env, home);
+export async function unset(ctx) {
+  const p = path(ctx);
   const before = await readSafe(p);
   const cooldown = removeKey(before, key);
   const ex = removeExtras(cooldown.text, extras);

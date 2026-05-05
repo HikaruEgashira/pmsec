@@ -32,9 +32,9 @@ Adding a new package manager means: (1) add a `tools/<tool>` module on **all fou
 
 ### Per-tool module contract
 
-Node (`tools/*.mjs`) exports: `name`, `key`, `docs`, `minBin`, `path(env, home, platform?)`, `read(...)`, `write(days, ...)`, `unset(...)`, optional `preflight()`.
+Node (`tools/*.mjs`) exports: `name`, `key`, `docs`, `minBin`, `path(ctx)`, `read(ctx)`, `write(days, ctx)`, `unset(ctx)`, optional `preflight(ctx)`. `ctx` is `{ env, home, platform }` constructed once in `cli.mjs` and threaded through every call.
 
-Python (`tools/*.py`) exposes the same as module-level: `NAME`, `KEY`, `DOCS`, `MIN_BIN`, `path()`, `read()`, `write()`, `unset()`, optional `preflight()`. Functions return plain dicts (`{path, configured, days}` etc.) so `cli.py` can treat all tools uniformly.
+Python (`tools/*.py`) exposes the same as module-level: `NAME`, `KEY`, `DOCS`, `MIN_BIN`, `path(ctx)`, `read(ctx)`, `write(days, ctx)`, `unset(ctx)`, optional `preflight(ctx)`. `ctx` is `pmsec.util.context.Context` (frozen dataclass with `env`, `home`, `platform`). Functions return plain dicts (`{path, configured, days}` etc.) so `cli.py` can treat all tools uniformly.
 
 Bash exposes per-tool metadata via the `tool_path`, `tool_key`, `tool_section`, `tool_sep`, `tool_read`, `tool_write`, `tool_unset`, `tool_preflight` dispatchers in `bash/pmsec` — adding a tool means extending each dispatcher's `case` plus a `path_<tool>` helper.
 
