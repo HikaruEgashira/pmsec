@@ -24,16 +24,16 @@ uvx pmsec enable
 ```
 
 ```bash
-# no npm/uv on the box? grab the bash port (pin a tag for production):
-curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/bash/pmsec \
+# no npm/uv on the box? grab the bash port (production: pin a commit SHA):
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
 pmsec enable
 ```
 
 ```powershell
-# Windows? grab the PowerShell port (pin a tag for production; also configures every installed WSL distro):
+# Windows? grab the PowerShell port (production: pin a commit SHA; also configures every installed WSL distro):
 Invoke-WebRequest `
-  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/powershell/pmsec.ps1 `
+  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 ```

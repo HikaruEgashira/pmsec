@@ -11,9 +11,9 @@ config inside each distro's filesystem. One invocation, hardened everywhere
 your packages get installed.
 
 ```powershell
-# install — pin to a tag for production rollouts.
+# install — production: replace `main` with a commit SHA so rollouts are reproducible.
 Invoke-WebRequest `
-  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/powershell/pmsec.ps1 `
+  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
 
 # use

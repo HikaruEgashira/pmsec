@@ -5,8 +5,8 @@ environments where you do not have npm, uv, or python — only bash 3.2+ and
 coreutils.
 
 ```bash
-# Pin to a tag for production rollouts (raw URLs on `main` are not stable).
-curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/bash/pmsec \
+# Production: replace `main` with a commit SHA so rollouts are reproducible.
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
 
 pmsec enable
