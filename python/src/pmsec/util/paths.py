@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 
@@ -8,6 +9,22 @@ def npmrc_path(env: dict[str, str], home: Path) -> Path:
     if "NPM_CONFIG_USERCONFIG" in env:
         return Path(env["NPM_CONFIG_USERCONFIG"])
     return home / ".npmrc"
+
+
+def pnpm_rc_path(env: dict[str, str], home: Path, platform: str) -> Path:
+    """pnpm reads its global rc separately from ~/.npmrc; writing pnpm-only
+    keys here keeps npm from warning (and, in npm 12, erroring) about unknown
+    user config. pnpm respects XDG_CONFIG_HOME on every OS."""
+    if "PMSEC_PNPM_CONFIG_FILE" in env:
+        return Path(env["PMSEC_PNPM_CONFIG_FILE"])
+    if "XDG_CONFIG_HOME" in env:
+        return Path(env["XDG_CONFIG_HOME"]) / "pnpm" / "rc"
+    if platform == "darwin":
+        return home / "Library" / "Preferences" / "pnpm" / "rc"
+    if platform == "win32":
+        base = Path(env["LOCALAPPDATA"]) if "LOCALAPPDATA" in env else home / "AppData" / "Local"
+        return base / "pnpm" / "config" / "rc"
+    return home / ".config" / "pnpm" / "rc"
 
 
 def bun_config_path(env: dict[str, str], home: Path) -> Path:
@@ -49,4 +66,8 @@ def uv_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
 
 
 def current_platform() -> str:
-    return "win32" if os.name == "nt" else "linux"
+    if os.name == "nt":
+        return "win32"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"

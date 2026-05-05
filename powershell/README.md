@@ -35,7 +35,7 @@ pmsec --version
 `--no-wsl` (or `PMSEC_NO_WSL=1`) skips the WSL pass and only configures the
 Windows host. Without it, `wsl.exe -l -q` enumerates installed distros and
 each one gets the same hardening bundle written to `~/.npmrc`,
-`~/.config/uv/uv.toml`, etc. inside the distro filesystem. Docker Desktop's
+`~/.config/pnpm/rc`, `~/.config/uv/uv.toml`, etc. inside the distro filesystem. Docker Desktop's
 helper distros are skipped automatically.
 
 When more than one scope is targeted, output is grouped under `[<scope>]`

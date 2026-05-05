@@ -8,7 +8,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.7.0"
+PMSEC_VERSION="0.8.0"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=3
@@ -37,6 +37,19 @@ _pmsec_home_owner() {
 path_npmrc() {
   if [ -n "${NPM_CONFIG_USERCONFIG:-}" ]; then printf '%s' "$NPM_CONFIG_USERCONFIG"; return; fi
   printf '%s/.npmrc' "$(_pmsec_home)"
+}
+# pnpm reads its global rc separately from ~/.npmrc; writing pnpm-only keys
+# here keeps npm from warning (and, in npm 12, erroring) about unknown user
+# config. pnpm respects XDG_CONFIG_HOME on every OS.
+path_pnpm() {
+  local home; home=$(_pmsec_home)
+  if [ -n "${PMSEC_PNPM_CONFIG_FILE:-}" ]; then printf '%s' "$PMSEC_PNPM_CONFIG_FILE"; return; fi
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s/pnpm/rc' "$XDG_CONFIG_HOME"; return; fi
+  if [ "${PMSEC_PLATFORM:-}" = "darwin" ]; then printf '%s/Library/Preferences/pnpm/rc' "$home"; return; fi
+  if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
+    printf '%s/pnpm/config/rc' "${LOCALAPPDATA:-$home/AppData/Local}"; return
+  fi
+  printf '%s/.config/pnpm/rc' "$home"
 }
 path_uv() {
   local home; home=$(_pmsec_home)
@@ -337,7 +350,7 @@ version_gte() {
 tool_path() {
   case "$1" in
     npm)   path_npmrc ;;
-    pnpm)  path_npmrc ;;
+    pnpm)  path_pnpm ;;
     yarn)  path_yarn ;;
     bun)   path_bun ;;
     cargo) path_cargo ;;

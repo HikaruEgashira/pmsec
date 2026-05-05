@@ -31,11 +31,13 @@ def test_enable_writes_bundle_for_every_tool(tmp_path):
     assert code == 0
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=3" in npmrc
-    assert "minimum-release-age=4320" in npmrc
     assert "audit-level=high" in npmrc
-    assert "trust-policy=no-downgrade" in npmrc
-    assert "block-exotic-subdeps=true" in npmrc
-    assert "strict-dep-builds=true" in npmrc
+    assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
+    pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
+    assert "minimum-release-age=4320" in pnpmrc
+    assert "trust-policy=no-downgrade" in pnpmrc
+    assert "block-exotic-subdeps=true" in pnpmrc
+    assert "strict-dep-builds=true" in pnpmrc
     assert 'exclude-newer = "3 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     bunfig = (tmp_path / ".bunfig.toml").read_text()
     assert "[install]" in bunfig
@@ -64,8 +66,11 @@ def test_check_fails_when_bundle_missing(tmp_path):
 
 def test_disable_preserves_other_keys(tmp_path):
     (tmp_path / ".npmrc").write_text(
-        "registry=https://r/\nmin-release-age=3\nminimum-release-age=4320\n"
+        "registry=https://r/\nmin-release-age=3\n"
     )
+    pnpm_dir = tmp_path / ".config" / "pnpm"
+    pnpm_dir.mkdir(parents=True)
+    (pnpm_dir / "rc").write_text("minimum-release-age=4320\nstore-dir=/tmp/pstore\n")
     uv_dir = tmp_path / ".config" / "uv"
     uv_dir.mkdir(parents=True)
     (uv_dir / "uv.toml").write_text(
@@ -79,6 +84,7 @@ def test_disable_preserves_other_keys(tmp_path):
     )
     run(["disable"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == "registry=https://r/\n"
+    assert (pnpm_dir / "rc").read_text() == "store-dir=/tmp/pstore\n"
     assert (uv_dir / "uv.toml").read_text() == 'index-strategy = "unsafe-best-match"\n'
     assert (tmp_path / ".bunfig.toml").read_text() == '[install]\nregistry = "https://x/"\n'
     assert (tmp_path / ".yarnrc.yml").read_text() == 'npmRegistryServer: "https://r/"\n'
@@ -165,7 +171,9 @@ def test_yarn_check_parses_days(tmp_path):
 
 
 def test_pnpm_check_normalizes_minutes(tmp_path):
-    (tmp_path / ".npmrc").write_text("minimum-release-age=20160\n")
+    pnpm_dir = tmp_path / ".config" / "pnpm"
+    pnpm_dir.mkdir(parents=True)
+    (pnpm_dir / "rc").write_text("minimum-release-age=20160\n")
     _, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert data["rows"][0]["days"] == 14
@@ -180,7 +188,10 @@ def test_bak_created_once(tmp_path):
 
 
 def test_hardening_extras_roundtrip(tmp_path):
-    (tmp_path / ".npmrc").write_text("minimum-release-age=20160\n")
+    pnpm_dir = tmp_path / ".config" / "pnpm"
+    pnpm_dir.mkdir(parents=True)
+    pnpmrc = pnpm_dir / "rc"
+    pnpmrc.write_text("minimum-release-age=20160\n")
     code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
@@ -188,17 +199,17 @@ def test_hardening_extras_roundtrip(tmp_path):
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
     run(["enable", "--tool", "pnpm"], tmp_path)
-    npmrc = (tmp_path / ".npmrc").read_text()
-    assert "trust-policy=no-downgrade" in npmrc
-    assert "block-exotic-subdeps=true" in npmrc
-    assert "strict-dep-builds=true" in npmrc
+    text = pnpmrc.read_text()
+    assert "trust-policy=no-downgrade" in text
+    assert "block-exotic-subdeps=true" in text
+    assert "strict-dep-builds=true" in text
 
     code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
     assert code == 0
     assert json.loads(out)["ok"] is True
 
     run(["disable", "--tool", "pnpm"], tmp_path)
-    after = (tmp_path / ".npmrc").read_text()
+    after = pnpmrc.read_text()
     assert "trust-policy" not in after
     assert "block-exotic-subdeps" not in after
     assert "strict-dep-builds" not in after
@@ -209,7 +220,9 @@ def test_pnpm_11_default_enforced_block_exotic_subdeps(tmp_path):
     # Cooldown present, but extras lines absent. Under pnpm 11 the runtime
     # still blocks exotic subdeps by default, so check must report it as OK
     # rather than MISSING (trust-policy stays MISSING — no default change).
-    (tmp_path / ".npmrc").write_text("minimum-release-age=4320\n")
+    pnpm_dir = tmp_path / ".config" / "pnpm"
+    pnpm_dir.mkdir(parents=True)
+    (pnpm_dir / "rc").write_text("minimum-release-age=4320\n")
     code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="11.0.0")
     data = json.loads(out)
     extras = {e["key"]: e for e in data["rows"][0]["extras"]}
@@ -221,7 +234,9 @@ def test_pnpm_11_default_enforced_block_exotic_subdeps(tmp_path):
 
 
 def test_pnpm_pre11_still_flags_block_exotic_subdeps(tmp_path):
-    (tmp_path / ".npmrc").write_text("minimum-release-age=4320\n")
+    pnpm_dir = tmp_path / ".config" / "pnpm"
+    pnpm_dir.mkdir(parents=True)
+    (pnpm_dir / "rc").write_text("minimum-release-age=4320\n")
     _, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="10.26.0")
     extras = {e["key"]: e for e in json.loads(out)["rows"][0]["extras"]}
     assert extras["block-exotic-subdeps"]["ok"] is False
@@ -233,7 +248,8 @@ def test_days_flag_overrides_bundle_cooldown(tmp_path):
     assert code == 0
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=7" in npmrc
-    assert "minimum-release-age=10080" in npmrc
+    pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
+    assert "minimum-release-age=10080" in pnpmrc
     assert 'exclude-newer = "7 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert "minimumReleaseAge = 604800" in (tmp_path / ".bunfig.toml").read_text()
 

@@ -19,7 +19,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.7.0'
+$script:PmsecVersion = '0.8.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 3
@@ -54,6 +54,19 @@ function Get-PmsecHome {
 function Get-NpmrcPath {
   if ((Get-PmsecPlatform) -eq 'win32' -and $env:NPM_CONFIG_USERCONFIG) { return $env:NPM_CONFIG_USERCONFIG }
   return (Join-Path (Get-PmsecHome) '.npmrc')
+}
+# pnpm reads its global rc separately from ~/.npmrc; writing pnpm-only keys
+# here keeps npm from warning (and, in npm 12, erroring) about unknown user
+# config. pnpm respects XDG_CONFIG_HOME on every OS.
+function Get-PnpmRcPath {
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:PMSEC_PNPM_CONFIG_FILE) { return $env:PMSEC_PNPM_CONFIG_FILE }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:XDG_CONFIG_HOME) { return (PathJoin $env:XDG_CONFIG_HOME 'pnpm' 'rc') }
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
+    return (PathJoin $base 'pnpm' 'config' 'rc')
+  }
+  # WSL scopes: use Linux default (XDG_CONFIG_HOME isn't propagated through \\wsl$).
+  return (PathJoin (Get-PmsecHome) '.config' 'pnpm' 'rc')
 }
 # PathJoin keeps the first segment as a base path and joins each subsequent
 # argument's components through Join-Path so the platform separator wins
@@ -362,7 +375,7 @@ function VersionGte($V, [int[]]$Target) {
 function ToolPath([string]$Tool) {
   switch ($Tool) {
     'npm'   { return Get-NpmrcPath }
-    'pnpm'  { return Get-NpmrcPath }
+    'pnpm'  { return Get-PnpmRcPath }
     'yarn'  { return Get-YarnPath }
     'bun'   { return Get-BunPath }
     'cargo' { return Get-CargoPath }
