@@ -44,8 +44,8 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   $envKeys = @(
     'NPM_CONFIG_USERCONFIG','UV_CONFIG_FILE','BUN_CONFIG_FILE',
     'YARN_RC_FILENAME','CARGO_HOME','MISE_GLOBAL_CONFIG_FILE',
-    'APPDATA','LOCALAPPDATA','PMSEC_PLATFORM','XDG_CONFIG_HOME',
-    'PMSEC_HOME','HOME','USERPROFILE',
+    'APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME',
+    'PMSEC_HOME','HOME','USERPROFILE','PMSEC_FAKE_SCOPES','PMSEC_NO_WSL',
     'PMSEC_NPM_VERSION','PMSEC_PNPM_VERSION','PMSEC_YARN_VERSION',
     'PMSEC_BUN_VERSION','PMSEC_CARGO_VERSION','PMSEC_MISE_VERSION','PMSEC_UV_VERSION'
   )
@@ -54,11 +54,11 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
     $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process')
     [Environment]::SetEnvironmentVariable($k, $null, 'Process')
   }
-  [Environment]::SetEnvironmentVariable('HOME', $HomeDir, 'Process')
-  [Environment]::SetEnvironmentVariable('USERPROFILE', $HomeDir, 'Process')
-  [Environment]::SetEnvironmentVariable('PMSEC_HOME', $HomeDir, 'Process')
-  [Environment]::SetEnvironmentVariable('XDG_CONFIG_HOME', (Join-Path $HomeDir '.config'), 'Process')
-  [Environment]::SetEnvironmentVariable('PMSEC_PLATFORM', 'linux', 'Process')
+  # Default scope = a single Linux scope rooted at $HomeDir. This stands in
+  # for "one WSL distro" and reproduces the original behaviour of every
+  # tool dropping its config under $HomeDir/... Tests can override via
+  # $Extra.PMSEC_FAKE_SCOPES (e.g. for win32 APPDATA paths or multi-scope).
+  [Environment]::SetEnvironmentVariable('PMSEC_FAKE_SCOPES', "test|$HomeDir|linux", 'Process')
   # Hide the host pnpm so version-aware extras (pnpm 11 default enforcement)
   # don't depend on what's installed on the test machine. Tests that exercise
   # pnpm 11 behavior pass an override via $Extra.
@@ -240,8 +240,28 @@ T 'Windows uv path uses APPDATA' {
   $h = NewHome
   try {
     $appdata = PathJoin $h 'AppData' 'Roaming'
-    [void](InvokePmsec $h @{ APPDATA = $appdata; PMSEC_PLATFORM = 'win32' } @('enable','--tool','uv'))
+    [void](InvokePmsec $h @{ APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','uv'))
     return (AssertMatch 'uv key' '(?m)^exclude-newer = "3 days"$' ([System.IO.File]::ReadAllText((PathJoin $appdata 'uv' 'uv.toml'))))
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'Windows mise path uses LOCALAPPDATA' {
+  $h = NewHome
+  try {
+    $local = PathJoin $h 'AppData' 'Local'
+    [void](InvokePmsec $h @{ LOCALAPPDATA = $local; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','mise'))
+    return (AssertMatch 'mise key' '(?m)^minimum_release_age = "3d"$' ([System.IO.File]::ReadAllText((PathJoin $local 'mise' 'config.toml'))))
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'Windows scope ignores XDG_CONFIG_HOME for uv' {
+  $h = NewHome
+  try {
+    $xdg = PathJoin $h 'xdg'
+    $appdata = PathJoin $h 'AppData' 'Roaming'
+    [void](InvokePmsec $h @{ XDG_CONFIG_HOME = $xdg; APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','uv'))
+    if (Test-Path -LiteralPath (PathJoin $xdg 'uv' 'uv.toml')) { $script:LastFail = 'uv leaked into XDG_CONFIG_HOME on win32 scope'; return $false }
+    return (Test-Path -LiteralPath (PathJoin $appdata 'uv' 'uv.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -399,7 +419,9 @@ T 'pnpm 11 default-enforces missing block-exotic-subdeps' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "minimum-release-age=4320`n")
-    $r = InvokePmsec $h @{ PMSEC_PNPM_VERSION = '11.0.0' } @('check','--json','--tool','pnpm')
+    # Default-enforcement detection runs the local pnpm binary, so it only
+    # fires on the Windows host scope.
+    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '11.0.0' } @('check','--json','--tool','pnpm')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1 (trust-policy still missing) got $($r.Code)`n$($r.Out)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
@@ -416,11 +438,117 @@ T 'pnpm <11 still flags missing block-exotic-subdeps' {
   $h = NewHome
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "minimum-release-age=4320`n")
-    $r = InvokePmsec $h @{ PMSEC_PNPM_VERSION = '10.26.0' } @('check','--json','--tool','pnpm')
+    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '10.26.0' } @('check','--json','--tool','pnpm')
     if ($r.Out -match '"defaultEnforced"') { $script:LastFail = "pnpm 10 must not emit defaultEnforced`n$($r.Out)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
     if ($beSub.ok) { $script:LastFail = "pnpm 10 should report ok=false`n$($r.Out)"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+# ---------- WSL / multi-scope ----------
+
+T 'multi-scope enable writes both host and WSL configs' {
+  $h1 = NewHome
+  $h2 = NewHome
+  try {
+    $appdata = PathJoin $h1 'AppData' 'Roaming'
+    $local   = PathJoin $h1 'AppData' 'Local'
+    $scopes  = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; APPDATA = $appdata; LOCALAPPDATA = $local } @('enable')
+    if ($r.Code -ne 0) { $script:LastFail = "enable exit $($r.Code)`n$($r.Out)"; return $false }
+    if ($r.Out -notmatch '\[windows\]')     { $script:LastFail = "missing [windows] header`n$($r.Out)"; return $false }
+    if ($r.Out -notmatch '\[wsl-Ubuntu\]')  { $script:LastFail = "missing [wsl-Ubuntu] header`n$($r.Out)"; return $false }
+    $ok = $true
+    $ok = $ok -and (Test-Path -LiteralPath (Join-Path $h1 '.npmrc'))
+    $ok = $ok -and (Test-Path -LiteralPath (PathJoin $appdata 'uv' 'uv.toml'))
+    $ok = $ok -and (Test-Path -LiteralPath (PathJoin $local 'mise' 'config.toml'))
+    $ok = $ok -and (Test-Path -LiteralPath (Join-Path $h2 '.npmrc'))
+    $ok = $ok -and (Test-Path -LiteralPath (PathJoin $h2 '.config' 'uv' 'uv.toml'))
+    $ok = $ok -and (Test-Path -LiteralPath (PathJoin $h2 '.config' 'mise' 'config.toml'))
+    if (-not $ok) { $script:LastFail = "files missing across scopes`n$($r.Out)" }
+    return $ok
+  } finally {
+    Remove-Item -Recurse -Force -LiteralPath $h1
+    Remove-Item -Recurse -Force -LiteralPath $h2
+  }
+}
+
+T '--no-wsl skips linux scopes when fakes are present' {
+  $h1 = NewHome
+  $h2 = NewHome
+  try {
+    $appdata = PathJoin $h1 'AppData' 'Roaming'
+    $scopes  = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; APPDATA = $appdata } @('enable','--no-wsl','--tool','npm')
+    if ($r.Code -ne 0) { $script:LastFail = "exit $($r.Code)`n$($r.Out)"; return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $h1 '.npmrc'))) { $script:LastFail = 'host .npmrc not written'; return $false }
+    if (Test-Path -LiteralPath (Join-Path $h2 '.npmrc'))         { $script:LastFail = 'wsl .npmrc unexpectedly written'; return $false }
+    return $true
+  } finally {
+    Remove-Item -Recurse -Force -LiteralPath $h1
+    Remove-Item -Recurse -Force -LiteralPath $h2
+  }
+}
+
+T 'PMSEC_NO_WSL=1 env var skips linux scopes' {
+  $h1 = NewHome
+  $h2 = NewHome
+  try {
+    $scopes  = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes; PMSEC_NO_WSL = '1' } @('enable','--tool','npm')
+    if ($r.Code -ne 0) { $script:LastFail = "exit $($r.Code)`n$($r.Out)"; return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $h1 '.npmrc'))) { $script:LastFail = 'host .npmrc not written'; return $false }
+    if (Test-Path -LiteralPath (Join-Path $h2 '.npmrc'))         { $script:LastFail = 'wsl .npmrc unexpectedly written'; return $false }
+    return $true
+  } finally {
+    Remove-Item -Recurse -Force -LiteralPath $h1
+    Remove-Item -Recurse -Force -LiteralPath $h2
+  }
+}
+
+T 'check JSON includes scope on every row across scopes' {
+  $h1 = NewHome
+  $h2 = NewHome
+  try {
+    $scopes = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes } @('check','--json','--tool','npm')
+    $data = $r.Out | ConvertFrom-Json
+    if ($data.rows.Count -ne 2) { $script:LastFail = "expected 2 rows, got $($data.rows.Count)`n$($r.Out)"; return $false }
+    $labels = ($data.rows | ForEach-Object { $_.scope }) -join ','
+    if ($labels -ne 'windows,wsl-Ubuntu') { $script:LastFail = "scope order: $labels"; return $false }
+    return $true
+  } finally {
+    Remove-Item -Recurse -Force -LiteralPath $h1
+    Remove-Item -Recurse -Force -LiteralPath $h2
+  }
+}
+
+T 'multi-scope disable removes from both scopes' {
+  $h1 = NewHome
+  $h2 = NewHome
+  try {
+    [System.IO.File]::WriteAllText((Join-Path $h1 '.npmrc'), "min-release-age=3`naudit-level=high`nregistry=https://r/`n")
+    [System.IO.File]::WriteAllText((Join-Path $h2 '.npmrc'), "min-release-age=3`naudit-level=high`nregistry=https://r2/`n")
+    $scopes = "windows|$h1|win32;wsl-Ubuntu|$h2|linux"
+    $r = InvokePmsec $h1 @{ PMSEC_FAKE_SCOPES = $scopes } @('disable','--tool','npm')
+    if ($r.Code -ne 0) { $script:LastFail = "disable exit $($r.Code)`n$($r.Out)"; return $false }
+    $ok = $true
+    $ok = $ok -and (AssertFileEq 'h1 .npmrc' "registry=https://r/`n"  (Join-Path $h1 '.npmrc'))
+    $ok = $ok -and (AssertFileEq 'h2 .npmrc' "registry=https://r2/`n" (Join-Path $h2 '.npmrc'))
+    return $ok
+  } finally {
+    Remove-Item -Recurse -Force -LiteralPath $h1
+    Remove-Item -Recurse -Force -LiteralPath $h2
+  }
+}
+
+T 'single-scope output has no scope header (back-compat)' {
+  $h = NewHome
+  try {
+    $r = InvokePmsec $h $null @('enable','--tool','npm')
+    if ($r.Out -match '(?m)^\[') { $script:LastFail = "unexpected scope header in single-scope output`n$($r.Out)"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }

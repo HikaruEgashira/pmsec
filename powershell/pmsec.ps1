@@ -4,7 +4,11 @@
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
 # hardened mode, attestation re-verification, ...). `--days N` overrides the
 # default cooldown.
-# PowerShell port. Targets Windows PowerShell 5.1 and PowerShell 7+.
+# PowerShell port. Windows-only: targets Windows PowerShell 5.1 and
+# PowerShell 7+ on Windows. The script also reaches into every installed
+# WSL distribution and applies the same hardening to the Linux-side
+# config files (skip with `--no-wsl` or `PMSEC_NO_WSL=1`). Non-Windows
+# pwsh hosts are not supported — use the bash, node, or python port.
 # License: MIT.
 # NOTE: deliberately no param() block. Adding [CmdletBinding] or any
 # [Parameter()] attribute makes this script an advanced function, which
@@ -21,30 +25,34 @@ $script:PmsecVersion = '0.6.0'
 $script:BundleDays = 3
 $script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
 
-# ---------- platform / paths ----------
+# ---------- scope / platform / paths ----------
+
+# A scope is @{ Label; Home; Platform } where Platform is 'win32' (the
+# Windows host) or 'linux' (a WSL distribution accessed via UNC path).
+# CmdEnable / CmdCheck / CmdDisable iterate scopes and assign $script:Scope
+# so the path/IO helpers below resolve against the active scope.
+$script:Scope = $null
 
 function Get-PmsecPlatform {
-  if ($env:PMSEC_PLATFORM) { return $env:PMSEC_PLATFORM }
-  if ($env:OS -eq 'Windows_NT') { return 'win32' }
-  if ($PSVersionTable.PSVersion.Major -ge 6 -and (Get-Variable -Name IsMacOS -ErrorAction Ignore) -and $IsMacOS) { return 'darwin' }
-  return 'linux'
+  if ($script:Scope) { return $script:Scope.Platform }
+  return 'win32'
 }
 
 # Pmsec ignores PowerShell's session-static $HOME so tests can override paths
-# via $env:HOME / $env:USERPROFILE / $env:PMSEC_HOME at runtime.
+# via $env:USERPROFILE / $env:PMSEC_HOME at runtime. Honored only outside an
+# active scope (i.e., for raw helpers, not for per-scope file operations).
 function Get-PmsecHome {
+  if ($script:Scope) { return $script:Scope.Home }
   if ($env:PMSEC_HOME) { return $env:PMSEC_HOME }
-  $platform = Get-PmsecPlatform
-  if ($platform -eq 'win32') {
-    if ($env:USERPROFILE) { return $env:USERPROFILE }
-  } else {
-    if ($env:HOME) { return $env:HOME }
-  }
+  if ($env:USERPROFILE) { return $env:USERPROFILE }
   return $HOME
 }
 
+# Env-var overrides for tool config paths only apply when writing to the
+# Windows host. For a WSL scope the relevant binary lives inside the distro
+# and reads its own env, so we use the in-distro default location instead.
 function Get-NpmrcPath {
-  if ($env:NPM_CONFIG_USERCONFIG) { return $env:NPM_CONFIG_USERCONFIG }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:NPM_CONFIG_USERCONFIG) { return $env:NPM_CONFIG_USERCONFIG }
   return (Join-Path (Get-PmsecHome) '.npmrc')
 }
 # PathJoin keeps the first segment as a base path and joins each subsequent
@@ -62,34 +70,99 @@ function PathJoin {
 }
 
 function Get-UvPath {
-  if ($env:UV_CONFIG_FILE) { return $env:UV_CONFIG_FILE }
   if ((Get-PmsecPlatform) -eq 'win32') {
+    if ($env:UV_CONFIG_FILE) { return $env:UV_CONFIG_FILE }
     $base = if ($env:APPDATA) { $env:APPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Roaming' }
     return (PathJoin $base 'uv' 'uv.toml')
   }
-  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { PathJoin (Get-PmsecHome) '.config' }
-  return (PathJoin $base 'uv' 'uv.toml')
+  return (PathJoin (Get-PmsecHome) '.config' 'uv' 'uv.toml')
 }
 function Get-BunPath {
-  if ($env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
   return (PathJoin (Get-PmsecHome) '.bunfig.toml')
 }
 function Get-YarnPath {
-  if ($env:YARN_RC_FILENAME) { return $env:YARN_RC_FILENAME }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:YARN_RC_FILENAME) { return $env:YARN_RC_FILENAME }
   return (PathJoin (Get-PmsecHome) '.yarnrc.yml')
 }
 function Get-CargoPath {
-  if ($env:CARGO_HOME) { return (PathJoin $env:CARGO_HOME 'config.toml') }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:CARGO_HOME) { return (PathJoin $env:CARGO_HOME 'config.toml') }
   return (PathJoin (Get-PmsecHome) '.cargo' 'config.toml')
 }
 function Get-MisePath {
-  if ($env:MISE_GLOBAL_CONFIG_FILE) { return $env:MISE_GLOBAL_CONFIG_FILE }
   if ((Get-PmsecPlatform) -eq 'win32') {
+    if ($env:MISE_GLOBAL_CONFIG_FILE) { return $env:MISE_GLOBAL_CONFIG_FILE }
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
     return (PathJoin $base 'mise' 'config.toml')
   }
-  $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { PathJoin (Get-PmsecHome) '.config' }
-  return (PathJoin $base 'mise' 'config.toml')
+  return (PathJoin (Get-PmsecHome) '.config' 'mise' 'config.toml')
+}
+
+# ---------- scope discovery ----------
+
+# Build the list of scopes pmsec writes to:
+#   1. The Windows host (always present).
+#   2. Each installed WSL distribution, accessed via the `\\wsl$\<distro>\...`
+#      UNC path so we can write to the in-distro filesystem from Windows.
+#
+# Tests bypass real WSL enumeration via PMSEC_FAKE_SCOPES, formatted as
+# `label|home|platform;label|home|platform`. When set it fully replaces the
+# scope list — no host scope is appended automatically.
+function Get-PmsecScopes([bool]$IncludeWsl) {
+  if ($env:PMSEC_FAKE_SCOPES) {
+    $list = New-Object System.Collections.Generic.List[hashtable]
+    foreach ($spec in ($env:PMSEC_FAKE_SCOPES -split ';')) {
+      if ([string]::IsNullOrWhiteSpace($spec)) { continue }
+      $parts = $spec -split '\|', 3
+      if ($parts.Count -lt 3) { continue }
+      $entry = @{ Label = $parts[0]; Home = $parts[1]; Platform = $parts[2] }
+      # Treat any non-win32 fake scope as a stand-in for a WSL distro so
+      # --no-wsl / PMSEC_NO_WSL=1 has the same effect under test.
+      if (-not $IncludeWsl -and $entry.Platform -ne 'win32') { continue }
+      $list.Add($entry)
+    }
+    return ,$list.ToArray()
+  }
+  $hostHome = if ($env:PMSEC_HOME) { $env:PMSEC_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+  $list = New-Object System.Collections.Generic.List[hashtable]
+  $list.Add(@{ Label = 'windows'; Home = $hostHome; Platform = 'win32' })
+  if ($IncludeWsl) {
+    foreach ($d in (Get-WslDistros)) { $list.Add($d) }
+  }
+  return ,$list.ToArray()
+}
+
+# Enumerate WSL distros via wsl.exe. `wsl.exe -l -q` historically emits
+# UTF-16LE; WSL 0.64+ honors $env:WSL_UTF8=1, so set that for the duration
+# of the call. Skip docker-desktop helper distros — they have no useful
+# user $HOME and writing to them would surprise the user.
+function Get-WslDistros {
+  if (-not (Get-Command wsl.exe -ErrorAction Ignore)) { return ,@() }
+  $list = New-Object System.Collections.Generic.List[hashtable]
+  $prevUtf8 = $env:WSL_UTF8
+  $prevEnc = [Console]::OutputEncoding
+  try {
+    $env:WSL_UTF8 = '1'
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $raw = & wsl.exe -l -q 2>$null
+  } catch {
+    $raw = @()
+  } finally {
+    [Console]::OutputEncoding = $prevEnc
+    if ($null -eq $prevUtf8) { Remove-Item Env:WSL_UTF8 -ErrorAction Ignore } else { $env:WSL_UTF8 = $prevUtf8 }
+  }
+  foreach ($line in $raw) {
+    $name = ([string]$line).Trim() -replace "`0",''
+    if ($name -eq '' -or $name -match '^docker-desktop') { continue }
+    try {
+      $home = (& wsl.exe -d $name -- sh -c 'printf %s "$HOME"' 2>$null) | Out-String
+    } catch { continue }
+    $home = ([string]$home).Trim()
+    if ($home -eq '' -or -not $home.StartsWith('/')) { continue }
+    $unc = '\\wsl$\' + $name + ($home -replace '/', '\')
+    $list.Add(@{ Label = "wsl-$name"; Home = $unc; Platform = 'linux' })
+  }
+  return ,$list.ToArray()
 }
 
 # ---------- line buffer ----------
@@ -401,7 +474,10 @@ function ToolRead([string]$Tool) {
   }
   $extras = New-Object System.Collections.Generic.List[hashtable]
   $toolVersion = $null
-  if ($Tool -eq 'pnpm') { $toolVersion = VersionDetect 'pnpm' }
+  # Version detection runs the local binary; only meaningful for the host
+  # scope. For a WSL scope we'd have to shell into the distro and that's
+  # not worth the complexity for the default-enforcement heuristic.
+  if ($Tool -eq 'pnpm' -and (Get-PmsecPlatform) -eq 'win32') { $toolVersion = VersionDetect 'pnpm' }
   foreach ($e in (ToolExtras $Tool)) {
     $cur = LinesReadKey $e.Key $e.Sep $e.Section
     $ok = ($null -ne $cur -and $cur -eq $e.Expected)
@@ -457,6 +533,10 @@ function ToolUnset([string]$Tool) {
 
 function ToolPreflight([string]$Tool) {
   if ($Tool -eq 'cargo') { return $null }
+  # Preflight runs the binary on the local PATH. That maps to a Windows
+  # install only — for a WSL scope we'd have to detect inside the distro,
+  # which we punt on. Users still get the warning surfaced for the host.
+  if ((Get-PmsecPlatform) -ne 'win32') { return $null }
   $v = VersionDetect $Tool
   if ($null -eq $v) { return $null }
   switch ($Tool) {
@@ -554,6 +634,7 @@ Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 3)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
+  --no-wsl              Skip the WSL pass; only configure the Windows host
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
@@ -578,7 +659,9 @@ function ParseDays($Raw) {
 function ParseArgs($Argv) {
   $opts = @{
     Command = ''
-    Json = $false; Only = $null; Days = $script:BundleDays; Force = $false; Help = $false; Version = $false
+    Json = $false; Only = $null; Days = $script:BundleDays; Force = $false
+    NoWsl = ($env:PMSEC_NO_WSL -eq '1')
+    Help = $false; Version = $false
   }
   $positional = New-Object System.Collections.Generic.List[string]
   $i = 0
@@ -589,6 +672,7 @@ function ParseArgs($Argv) {
     elseif ($a -eq '-V' -or $a -eq '--version') { $opts.Version = $true }
     elseif ($a -eq '--json') { $opts.Json = $true }
     elseif ($a -eq '--force') { $opts.Force = $true }
+    elseif ($a -eq '--no-wsl') { $opts.NoWsl = $true }
     elseif ($a -eq '--tool') { $i++; $opts.Only = $Argv[$i] -split ',' }
     elseif ($a -like '--tool=*') { $opts.Only = $a.Substring(7) -split ',' }
     elseif ($a -eq '--days') { $i++; $opts.Days = ParseDays $Argv[$i] }
@@ -617,21 +701,27 @@ function SelectTools($Only) {
   return $found.ToArray()
 }
 
-function CmdCheck($Targets, [bool]$Json, [int]$Days) {
+function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
   $rows = New-Object System.Collections.Generic.List[hashtable]
   $failing = 0
   $failingExtras = 0
-  foreach ($t in $Targets) {
-    $r = ToolRead $t
-    $warn = ToolPreflight $t
-    if ($null -eq $r.Days -or $r.Days -lt $Days) { $failing++ }
-    foreach ($e in $r.Extras) { if (-not $e.Ok) { $failingExtras++ } }
-    $rows.Add(@{
-      Tool = $t; Key = (ToolKey $t); Path = $r.Path
-      Configured = $r.Configured; Days = $r.Days; Warn = $warn
-      Extras = $r.Extras
-    })
+  foreach ($scope in $Scopes) {
+    $script:Scope = $scope
+    foreach ($t in $Targets) {
+      $r = ToolRead $t
+      $warn = ToolPreflight $t
+      if ($null -eq $r.Days -or $r.Days -lt $Days) { $failing++ }
+      foreach ($e in $r.Extras) { if (-not $e.Ok) { $failingExtras++ } }
+      $rows.Add(@{
+        Scope = $scope.Label
+        Tool = $t; Key = (ToolKey $t); Path = $r.Path
+        Configured = $r.Configured; Days = $r.Days; Warn = $warn
+        Extras = $r.Extras
+      })
+    }
   }
+  $script:Scope = $null
+  $multiScope = $Scopes.Count -gt 1
   if ($Json) {
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine('{')
@@ -653,7 +743,7 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days) {
         $extrasJson += $extraEntry
       }
       $extrasJson += ']'
-      $entry = "    {""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
+      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
       if ($i -lt $rows.Count - 1) { $entry += ',' }
       [void]$sb.AppendLine($entry)
     }
@@ -662,7 +752,12 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days) {
     [void]$sb.Append('}')
     StdOut $sb.ToString()
   } else {
+    $lastScope = ''
     foreach ($r in $rows) {
+      if ($multiScope -and $r.Scope -ne $lastScope) {
+        StdOut ('[' + $r.Scope + ']')
+        $lastScope = $r.Scope
+      }
       $status = if ($null -eq $r.Days) { 'MISSING' } elseif ($r.Days -lt $Days) { 'STALE  ' } else { 'OK     ' }
       $disp = if ($null -eq $r.Configured) { '(unset)' } else { $r.Configured }
       StdOut ('{0} {1} {2} = {3}  [{4}]' -f $status, (Pad4 $r.Tool), $r.Key, $disp, $r.Path)
@@ -686,38 +781,44 @@ function ExplainFsError([string]$Tool, $Err) {
   return ("$Tool" + ': ' + $Err.ToString())
 }
 
-function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force) {
+function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scopes) {
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
   $warnCount = 0
-  foreach ($t in $Targets) {
-    $warn = ToolPreflight $t
-    if ($warn) { $warnCount++ }
-    $err = $null
-    $path = ToolPath $t
-    if ($Force) {
-      $effective = $Days; $kept = $false
-    } else {
-      $current = ToolRead $t
-      $curDays = if ($null -eq $current.Days) { 0 } else { [int]$current.Days }
-      if ($curDays -ge $Days -and $curDays -gt 0) {
-        $effective = $curDays; $kept = $true
-      } else {
+  foreach ($scope in $Scopes) {
+    $script:Scope = $scope
+    foreach ($t in $Targets) {
+      $warn = ToolPreflight $t
+      if ($warn) { $warnCount++ }
+      $err = $null
+      $path = ToolPath $t
+      if ($Force) {
         $effective = $Days; $kept = $false
+      } else {
+        $current = ToolRead $t
+        $curDays = if ($null -eq $current.Days) { 0 } else { [int]$current.Days }
+        if ($curDays -ge $Days -and $curDays -gt 0) {
+          $effective = $curDays; $kept = $true
+        } else {
+          $effective = $Days; $kept = $false
+        }
       }
+      try {
+        $w = ToolWrite $t $effective
+        $path = $w.Path
+      } catch {
+        $err = ExplainFsError $t $_
+        $failures.Add($err)
+      }
+      $results.Add(@{
+        Scope = $scope.Label
+        Tool = $t; Path = $path; Days = $effective; Requested = $Days; Kept = $kept
+        Ok = ($null -eq $err); Warn = $warn; Error = $err
+      })
     }
-    try {
-      $w = ToolWrite $t $effective
-      $path = $w.Path
-    } catch {
-      $err = ExplainFsError $t $_
-      $failures.Add($err)
-    }
-    $results.Add(@{
-      Tool = $t; Path = $path; Days = $effective; Requested = $Days; Kept = $kept
-      Ok = ($null -eq $err); Warn = $warn; Error = $err
-    })
   }
+  $script:Scope = $null
+  $multiScope = $Scopes.Count -gt 1
   if ($Json) {
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine('{')
@@ -726,7 +827,7 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force) {
     [void]$sb.AppendLine('  "results": [')
     for ($i = 0; $i -lt $results.Count; $i++) {
       $r = $results[$i]
-      $entry = "    {""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""requested"": $($r.Requested), ""kept"": $(JsonBool $r.Kept), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
+      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""requested"": $($r.Requested), ""kept"": $(JsonBool $r.Kept), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
       if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
       $entry += '}'
       if ($i -lt $results.Count - 1) { $entry += ',' }
@@ -739,7 +840,7 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force) {
       if ($r.Warn) {
         if (-not $first) { [void]$sb.Append(',') }
         $first = $false
-        [void]$sb.Append("`n    {""tool"": $(JsonString $r.Tool), ""warn"": $(JsonString $r.Warn)}")
+        [void]$sb.Append("`n    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""warn"": $(JsonString $r.Warn)}")
       }
     }
     if (-not $first) { [void]$sb.Append("`n  ") }
@@ -748,7 +849,12 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force) {
     [void]$sb.Append('}')
     StdOut $sb.ToString()
   } else {
+    $lastScope = ''
     foreach ($r in $results) {
+      if ($multiScope -and $r.Scope -ne $lastScope) {
+        StdOut ('[' + $r.Scope + ']')
+        $lastScope = $r.Scope
+      }
       if ($r.Ok) {
         if ($r.Kept) {
           StdOut ('keep    {0} [{1}]  (kept existing {2}d ' + [string][char]0x2265 + ' {3}d)' -f (Pad4 $r.Tool), $r.Path, $r.Days, $r.Requested)
@@ -769,33 +875,39 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force) {
   return 0
 }
 
-function CmdDisable($Targets, [bool]$Json) {
+function CmdDisable($Targets, [bool]$Json, [array]$Scopes) {
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
-  foreach ($t in $Targets) {
-    $err = $null
-    $path = ToolPath $t
-    $removed = $false
-    try {
-      $u = ToolUnset $t
-      $path = $u.Path
-      $removed = [bool]$u.Removed
-    } catch {
-      $err = ExplainFsError $t $_
-      $failures.Add($err)
+  foreach ($scope in $Scopes) {
+    $script:Scope = $scope
+    foreach ($t in $Targets) {
+      $err = $null
+      $path = ToolPath $t
+      $removed = $false
+      try {
+        $u = ToolUnset $t
+        $path = $u.Path
+        $removed = [bool]$u.Removed
+      } catch {
+        $err = ExplainFsError $t $_
+        $failures.Add($err)
+      }
+      $results.Add(@{
+        Scope = $scope.Label
+        Tool = $t; Path = $path; Removed = $removed
+        Ok = ($null -eq $err); Error = $err
+      })
     }
-    $results.Add(@{
-      Tool = $t; Path = $path; Removed = $removed
-      Ok = ($null -eq $err); Error = $err
-    })
   }
+  $script:Scope = $null
+  $multiScope = $Scopes.Count -gt 1
   if ($Json) {
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine('{')
     [void]$sb.AppendLine('  "results": [')
     for ($i = 0; $i -lt $results.Count; $i++) {
       $r = $results[$i]
-      $entry = "    {""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""removed"": $(JsonBool $r.Removed), ""ok"": $(JsonBool $r.Ok)"
+      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""removed"": $(JsonBool $r.Removed), ""ok"": $(JsonBool $r.Ok)"
       if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
       $entry += '}'
       if ($i -lt $results.Count - 1) { $entry += ',' }
@@ -806,7 +918,12 @@ function CmdDisable($Targets, [bool]$Json) {
     [void]$sb.Append('}')
     StdOut $sb.ToString()
   } else {
+    $lastScope = ''
     foreach ($r in $results) {
+      if ($multiScope -and $r.Scope -ne $lastScope) {
+        StdOut ('[' + $r.Scope + ']')
+        $lastScope = $r.Scope
+      }
       if (-not $r.Ok) {
         StdOut ('FAIL    {0} {1}' -f (Pad4 $r.Tool), $r.Error)
       } elseif ($r.Removed) {
@@ -841,11 +958,17 @@ try {
   exit 2
 }
 
+$scopes = Get-PmsecScopes (-not $opts.NoWsl)
+if ($scopes.Count -eq 0) {
+  StdErr 'pmsec: no scopes resolved (PMSEC_FAKE_SCOPES set but empty?)'
+  exit 2
+}
+
 try {
   switch ($opts.Command) {
-    'check'   { exit (CmdCheck $targets $opts.Json $opts.Days) }
-    'enable'  { exit (CmdEnable $targets $opts.Json $opts.Days $opts.Force) }
-    'disable' { exit (CmdDisable $targets $opts.Json) }
+    'check'   { exit (CmdCheck $targets $opts.Json $opts.Days $scopes) }
+    'enable'  { exit (CmdEnable $targets $opts.Json $opts.Days $opts.Force $scopes) }
+    'disable' { exit (CmdDisable $targets $opts.Json $scopes) }
     default   { StdErr ("pmsec: unknown command ""{0}""" -f $opts.Command); exit 2 }
   }
 } catch {

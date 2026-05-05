@@ -31,7 +31,7 @@ pmsec enable
 ```
 
 ```powershell
-# Windows? grab the PowerShell port:
+# Windows? grab the PowerShell port (also configures every installed WSL distro):
 Invoke-WebRequest `
   -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
