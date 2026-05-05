@@ -39,6 +39,7 @@ test("enable writes the bundle (cooldown + extras) for every tool", async () => 
   assert.match(npmrc, /^audit-level=high$/m);
   assert.match(npmrc, /^trust-policy=no-downgrade$/m);
   assert.match(npmrc, /^block-exotic-subdeps=true$/m);
+  assert.match(npmrc, /^strict-dep-builds=true$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "3 days"$/m);
   const bunfig = await readFile(join(home, ".bunfig.toml"), "utf8");
@@ -200,13 +201,14 @@ test("hardening extras: check fails when extras missing, enable fixes them, disa
   const r1 = await runCli(["check", "--json", "--tool", "pnpm"], home);
   const d1 = JSON.parse(r1.out);
   assert.equal(r1.code, 1, "extras missing should fail check");
-  assert.equal(d1.rows[0].extras.length, 2);
+  assert.equal(d1.rows[0].extras.length, 3);
   assert.equal(d1.rows[0].extras.every(e => !e.ok), true);
 
   await runCli(["enable", "--tool", "pnpm"], home);
   const npmrc = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(npmrc, /^trust-policy=no-downgrade$/m);
   assert.match(npmrc, /^block-exotic-subdeps=true$/m);
+  assert.match(npmrc, /^strict-dep-builds=true$/m);
 
   const r2 = await runCli(["check", "--json", "--tool", "pnpm"], home);
   assert.equal(r2.code, 0);
@@ -216,6 +218,7 @@ test("hardening extras: check fails when extras missing, enable fixes them, disa
   const after = await readFile(join(home, ".npmrc"), "utf8");
   assert.doesNotMatch(after, /trust-policy/);
   assert.doesNotMatch(after, /block-exotic-subdeps/);
+  assert.doesNotMatch(after, /strict-dep-builds/);
   assert.doesNotMatch(after, /minimum-release-age/);
 });
 

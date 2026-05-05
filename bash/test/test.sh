@@ -107,6 +107,7 @@ t_enable_writes_all() {
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$npmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$npmrc" || return
+  assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$npmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   rm -rf -- "$home"
 }
@@ -339,6 +340,7 @@ t_hardening_extras_roundtrip() {
   run_pmsec "$home" -- enable --tool pnpm >/dev/null
   assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "strict-dep-builds written" '^strict-dep-builds=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   out=$(run_pmsec "$home" -- check --json --tool pnpm); rc=$?
   assert_eq "after-enable exit" "0" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "after-enable ok=true" '"ok": true' "$out" || { rm -rf "$home"; return 1; }
@@ -346,6 +348,7 @@ t_hardening_extras_roundtrip() {
   local after; after=$(cat "$home/.npmrc")
   ! printf '%s' "$after" | grep -q 'trust-policy' || { LAST_FAIL="trust-policy not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'block-exotic-subdeps' || { LAST_FAIL="block-exotic-subdeps not removed"; rm -rf "$home"; return 1; }
+  ! printf '%s' "$after" | grep -q 'strict-dep-builds' || { LAST_FAIL="strict-dep-builds not removed"; rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
@@ -395,6 +398,26 @@ t_pnpm_pre11_no_default_enforcement() {
 T "hardening extras roundtrip (check / enable / disable)" t_hardening_extras_roundtrip
 T "pnpm 11 default-enforces missing block-exotic-subdeps" t_pnpm_11_default_enforced
 T "pnpm <11 still flags missing block-exotic-subdeps" t_pnpm_pre11_no_default_enforcement
+
+# PMSEC_HOME redirects writes off of $HOME so MDM root wrappers can target the
+# logged-in user's home without overriding every per-tool env var.
+t_pmsec_home_redirects() {
+  local real fake; real=$(setup_home); fake=$(setup_home)
+  # HOME points at $real but PMSEC_HOME redirects everything to $fake.
+  env -i PATH="$PATH" HOME="$real" XDG_CONFIG_HOME="$fake/.config" \
+    PMSEC_PNPM_VERSION=none PMSEC_HOME="$fake" \
+    bash "$PMSEC" enable >/dev/null 2>&1
+  local rc=$?
+  local has_real=0 has_fake=0
+  [ -e "$real/.npmrc" ] && has_real=1
+  [ -e "$fake/.npmrc" ] && has_fake=1
+  rm -rf -- "$real" "$fake"
+  assert_eq "exit code 0" "0" "$rc" || return 1
+  assert_eq "$HOME/.npmrc untouched" "0" "$has_real" || return 1
+  assert_eq "PMSEC_HOME/.npmrc written" "1" "$has_fake" || return 1
+}
+
+T "PMSEC_HOME overrides \$HOME" t_pmsec_home_redirects
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

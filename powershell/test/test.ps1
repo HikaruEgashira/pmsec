@@ -139,6 +139,7 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'npm audit-level extra' '(?m)^audit-level=high$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'pnpm trust-policy extra' '(?m)^trust-policy=no-downgrade$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'pnpm block-exotic-subdeps extra' '(?m)^block-exotic-subdeps=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'pnpm strict-dep-builds extra' '(?m)^strict-dep-builds=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'yarn enableHardenedMode extra' '(?m)^enableHardenedMode: true$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     return $ok
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
@@ -349,11 +350,12 @@ T 'hardening extras roundtrip (check / enable / disable)' {
     if ($r.Code -ne 1) { $script:LastFail = "extras-missing exit $($r.Code)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $false) { $script:LastFail = "extras-missing ok != false"; return $false }
-    if ($data.rows[0].extras.Count -ne 2) { $script:LastFail = "expected 2 extras, got $($data.rows[0].extras.Count)"; return $false }
+    if ($data.rows[0].extras.Count -ne 3) { $script:LastFail = "expected 3 extras, got $($data.rows[0].extras.Count)"; return $false }
     [void](InvokePmsec $h $null @('enable','--tool','pnpm'))
     $body = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
     if ($body -notmatch '(?m)^trust-policy=no-downgrade$') { $script:LastFail = "trust-policy not written: $body"; return $false }
     if ($body -notmatch '(?m)^block-exotic-subdeps=true$') { $script:LastFail = "block-exotic-subdeps not written: $body"; return $false }
+    if ($body -notmatch '(?m)^strict-dep-builds=true$') { $script:LastFail = "strict-dep-builds not written: $body"; return $false }
     $r2 = InvokePmsec $h $null @('check','--json','--tool','pnpm')
     if ($r2.Code -ne 0) { $script:LastFail = "after-enable exit $($r2.Code)"; return $false }
     if (($r2.Out | ConvertFrom-Json).ok -ne $true) { $script:LastFail = "after-enable ok != true"; return $false }
@@ -361,6 +363,7 @@ T 'hardening extras roundtrip (check / enable / disable)' {
     $after = [System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))
     if ($after -match 'trust-policy') { $script:LastFail = "trust-policy not removed: $after"; return $false }
     if ($after -match 'block-exotic-subdeps') { $script:LastFail = "block-exotic-subdeps not removed: $after"; return $false }
+    if ($after -match 'strict-dep-builds') { $script:LastFail = "strict-dep-builds not removed: $after"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }

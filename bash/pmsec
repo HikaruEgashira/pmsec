@@ -8,7 +8,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.6.0"
+PMSEC_VERSION="0.7.0"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=3
@@ -16,35 +16,55 @@ TOOLS=(npm pnpm yarn bun cargo mise uv)
 
 # ---------- paths ----------
 
+# Resolve the home directory pmsec should write into. PMSEC_HOME wins so MDM
+# wrappers (Jamf/Intune) running as root/SYSTEM can target the logged-in
+# user's home without having to override every per-tool env var separately.
+_pmsec_home() {
+  if [ -n "${PMSEC_HOME:-}" ]; then printf '%s' "$PMSEC_HOME"; return; fi
+  printf '%s' "$HOME"
+}
+
+# Owner (username) of the resolved home dir. Used when running as root to
+# chown freshly-written configs back to the real user. Empty if undetectable.
+_pmsec_home_owner() {
+  local h owner
+  h=$(_pmsec_home)
+  [ -d "$h" ] || return 0
+  owner=$(stat -f '%Su' "$h" 2>/dev/null) || owner=$(stat -c '%U' "$h" 2>/dev/null) || owner=""
+  printf '%s' "$owner"
+}
+
 path_npmrc() {
   if [ -n "${NPM_CONFIG_USERCONFIG:-}" ]; then printf '%s' "$NPM_CONFIG_USERCONFIG"; return; fi
-  printf '%s/.npmrc' "$HOME"
+  printf '%s/.npmrc' "$(_pmsec_home)"
 }
 path_uv() {
+  local home; home=$(_pmsec_home)
   if [ -n "${UV_CONFIG_FILE:-}" ]; then printf '%s' "$UV_CONFIG_FILE"; return; fi
   if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
-    printf '%s/uv/uv.toml' "${APPDATA:-$HOME/AppData/Roaming}"; return
+    printf '%s/uv/uv.toml' "${APPDATA:-$home/AppData/Roaming}"; return
   fi
-  printf '%s/uv/uv.toml' "${XDG_CONFIG_HOME:-$HOME/.config}"
+  printf '%s/uv/uv.toml' "${XDG_CONFIG_HOME:-$home/.config}"
 }
 path_bun() {
   if [ -n "${BUN_CONFIG_FILE:-}" ]; then printf '%s' "$BUN_CONFIG_FILE"; return; fi
-  printf '%s/.bunfig.toml' "$HOME"
+  printf '%s/.bunfig.toml' "$(_pmsec_home)"
 }
 path_yarn() {
   if [ -n "${YARN_RC_FILENAME:-}" ]; then printf '%s' "$YARN_RC_FILENAME"; return; fi
-  printf '%s/.yarnrc.yml' "$HOME"
+  printf '%s/.yarnrc.yml' "$(_pmsec_home)"
 }
 path_cargo() {
   if [ -n "${CARGO_HOME:-}" ]; then printf '%s/config.toml' "$CARGO_HOME"; return; fi
-  printf '%s/.cargo/config.toml' "$HOME"
+  printf '%s/.cargo/config.toml' "$(_pmsec_home)"
 }
 path_mise() {
+  local home; home=$(_pmsec_home)
   if [ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]; then printf '%s' "$MISE_GLOBAL_CONFIG_FILE"; return; fi
   if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
-    printf '%s/mise/config.toml' "${LOCALAPPDATA:-$HOME/AppData/Local}"; return
+    printf '%s/mise/config.toml' "${LOCALAPPDATA:-$home/AppData/Local}"; return
   fi
-  printf '%s/mise/config.toml' "${XDG_CONFIG_HOME:-$HOME/.config}"
+  printf '%s/mise/config.toml' "${XDG_CONFIG_HOME:-$home/.config}"
 }
 
 # ---------- line buffer ----------
@@ -214,9 +234,22 @@ lines_remove_key() {
 
 write_atomic() {
   # write stdin to $1 atomically; create one-shot $1.bak from the existing file.
-  local path="$1" dir tmp bak
+  # When running as root (typical under Jamf), chown the resulting file and any
+  # newly-created parent dirs back to the resolved home owner so the real user
+  # can still read and edit them.
+  local path="$1" dir tmp bak mode home_dir top_created="" owner=""
   dir=$(dirname -- "$path")
-  mkdir -p -- "$dir"
+  if [ ! -d "$dir" ]; then
+    # Track the highest pre-existing ancestor so we can chown only the part
+    # we just created (avoids chowning unrelated existing dirs).
+    home_dir=$(_pmsec_home)
+    top_created="$dir"
+    while [ -n "$top_created" ] && [ "$top_created" != "/" ] && [ "$top_created" != "$home_dir" ] \
+          && [ ! -d "$(dirname -- "$top_created")" ]; do
+      top_created=$(dirname -- "$top_created")
+    done
+    mkdir -p -- "$dir"
+  fi
   if [ -L "$path" ]; then
     printf 'pmsec: refusing to write through symlink %s\n' "$path" >&2
     return 1
@@ -227,8 +260,27 @@ write_atomic() {
   fi
   tmp=$(mktemp "$path.XXXXXX") || return 1
   cat > "$tmp"
-  chmod 600 "$tmp" 2>/dev/null || true
+  if [ -e "$path" ]; then
+    # Preserve mode from existing file (it may carry a registry token under 600).
+    mode=$(stat -f '%Lp' "$path" 2>/dev/null) || mode=$(stat -c '%a' "$path" 2>/dev/null) || mode=""
+    [ -n "$mode" ] && chmod "$mode" "$tmp" 2>/dev/null || true
+  else
+    # New file: leave mktemp's 600 in place, but relax to 644 when running as
+    # root so the real user can read it after chown.
+    if [ "$(id -u)" = "0" ]; then
+      chmod 644 "$tmp" 2>/dev/null || true
+    fi
+  fi
   mv -f -- "$tmp" "$path"
+  if [ "$(id -u)" = "0" ]; then
+    owner=$(_pmsec_home_owner)
+    if [ -n "$owner" ]; then
+      chown "$owner" "$path" 2>/dev/null || true
+      [ -e "$bak" ] && chown "$owner" "$bak" 2>/dev/null || true
+      [ -n "$top_created" ] && [ -d "$top_created" ] && \
+        chown -R "$owner" "$top_created" 2>/dev/null || true
+    fi
+  fi
 }
 
 # ---------- version detection ----------
@@ -334,6 +386,7 @@ tool_extras() {
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
       printf 'block-exotic-subdeps|true|block-exotic-subdeps=true|=|\n'
+      printf 'strict-dep-builds|true|strict-dep-builds=true|=|\n'
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
@@ -609,6 +662,19 @@ Examples:
   pmsec enable --days 1 --force
   pmsec check
   pmsec disable --tool npm
+
+Environment:
+  PMSEC_HOME            Home dir to operate on (overrides \$HOME). Set this
+                        when running as root via MDM (Jamf, ansible, ...) so
+                        configs land in the real user's home. Files written
+                        as root are chowned back to the home dir's owner.
+  NPM_CONFIG_USERCONFIG Override the npm/pnpm config file path.
+  YARN_RC_FILENAME      Override the yarn config file path.
+  BUN_CONFIG_FILE       Override the bun config file path.
+  CARGO_HOME            Override the cargo dir; pmsec writes \$CARGO_HOME/config.toml.
+  MISE_GLOBAL_CONFIG_FILE Override the mise config file path.
+  UV_CONFIG_FILE        Override the uv config file path.
+  XDG_CONFIG_HOME       Override the XDG config root (affects mise, uv on linux/mac).
 EOF
 }
 

@@ -19,7 +19,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.6.0'
+$script:PmsecVersion = '0.7.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 3
@@ -296,6 +296,15 @@ function WriteAtomic([string]$Path, [string]$Content) {
   if ($dir -and -not (Test-Path -LiteralPath $dir)) {
     [void](New-Item -ItemType Directory -Force -Path $dir)
   }
+  # Mirror the bash port: refuse to follow a symlink (or junction/reparse point
+  # on Windows). The MDM threat model includes a malicious user planting a link
+  # that pmsec, possibly running elevated under Intune, would otherwise resolve.
+  if (Test-Path -LiteralPath $Path) {
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+      throw "refusing to write through symlink/reparse point $Path"
+    }
+  }
   $bak = "$Path.bak"
   if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-Path -LiteralPath $bak)) {
     Copy-Item -LiteralPath $Path -Destination $bak
@@ -400,7 +409,8 @@ function ToolExtras([string]$Tool) {
       # missing line is still in force under pnpm >= 11.
       return ,@(
         @{ Key = 'trust-policy'; Expected = 'no-downgrade'; Line = 'trust-policy=no-downgrade'; Sep = '='; Section = '' },
-        @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = ''; DefaultSinceMajor = 11 }
+        @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = ''; DefaultSinceMajor = 11 },
+        @{ Key = 'strict-dep-builds'; Expected = 'true'; Line = 'strict-dep-builds=true'; Sep = '='; Section = '' }
       )
     }
     'yarn' {
@@ -645,6 +655,18 @@ Examples:
   pmsec enable --days 1 --force
   pmsec check
   pmsec disable --tool npm
+
+Environment:
+  PMSEC_HOME              Home dir to operate on (overrides `$env:USERPROFILE`
+                          / `$env:HOME`). Set this when running as SYSTEM via
+                          Intune so configs land in the real user's profile.
+  NPM_CONFIG_USERCONFIG   Override the npm/pnpm config file path.
+  YARN_RC_FILENAME        Override the yarn config file path.
+  BUN_CONFIG_FILE         Override the bun config file path.
+  CARGO_HOME              Override the cargo dir; pmsec writes `$CARGO_HOME\config.toml`.
+  MISE_GLOBAL_CONFIG_FILE Override the mise config file path.
+  UV_CONFIG_FILE          Override the uv config file path.
+  XDG_CONFIG_HOME         Override the XDG config root (affects mise, uv on linux/mac).
 "@
 }
 
