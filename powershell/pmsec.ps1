@@ -19,10 +19,10 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.8.0'
+$script:PmsecVersion = '0.9.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
-$script:BundleDays = 3
+$script:BundleDays = 1
 $script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
 
 # ---------- scope / platform / paths ----------
@@ -631,7 +631,7 @@ Commands:
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
-  --days N              Override cooldown days (default 3)
+  --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --no-wsl              Skip the WSL pass; only configure the Windows host
   --json                Emit JSON output

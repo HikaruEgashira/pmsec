@@ -34,25 +34,25 @@ test("enable writes the bundle (cooldown + extras) for every tool", async () => 
   const { code } = await runCli(["enable"], home);
   assert.equal(code, 0);
   const npmrc = await readFile(join(home, ".npmrc"), "utf8");
-  assert.match(npmrc, /^min-release-age=3$/m);
+  assert.match(npmrc, /^min-release-age=1$/m);
   assert.match(npmrc, /^audit-level=high$/m);
   assert.doesNotMatch(npmrc, /minimum-release-age/, "pnpm keys must not leak into .npmrc");
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
-  assert.match(pnpmrc, /^minimum-release-age=4320$/m);
+  assert.match(pnpmrc, /^minimum-release-age=1440$/m);
   assert.match(pnpmrc, /^trust-policy=no-downgrade$/m);
   assert.match(pnpmrc, /^block-exotic-subdeps=true$/m);
   assert.match(pnpmrc, /^strict-dep-builds=true$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
-  assert.match(uvtoml, /^exclude-newer = "3 days"$/m);
+  assert.match(uvtoml, /^exclude-newer = "1 days"$/m);
   const bunfig = await readFile(join(home, ".bunfig.toml"), "utf8");
   assert.match(bunfig, /^\[install\]$/m);
-  assert.match(bunfig, /^minimumReleaseAge = 259200$/m);
+  assert.match(bunfig, /^minimumReleaseAge = 86400$/m);
   const yarnrc = await readFile(join(home, ".yarnrc.yml"), "utf8");
-  assert.match(yarnrc, /^npmMinimalAgeGate: "3d"$/m);
+  assert.match(yarnrc, /^npmMinimalAgeGate: "1d"$/m);
   assert.match(yarnrc, /^enableHardenedMode: true$/m);
   const mise = await readFile(join(home, ".config", "mise", "config.toml"), "utf8");
   assert.match(mise, /^\[settings\]$/m);
-  assert.match(mise, /^minimum_release_age = "3d"$/m);
+  assert.match(mise, /^minimum_release_age = "1d"$/m);
   assert.match(mise, /^paranoid = true$/m);
 });
 
@@ -91,11 +91,11 @@ test("disable preserves unrelated keys per file", async () => {
 
 test("enable upgrades values that are weaker than the request", async () => {
   const home = await setupHome();
-  await writeFile(join(home, ".npmrc"), "min-release-age=1\nregistry=https://r/\n");
-  await runCli(["enable", "--tool", "npm"], home);
+  await writeFile(join(home, ".npmrc"), "min-release-age=3\nregistry=https://r/\n");
+  await runCli(["enable", "--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=3\nregistry=https://r/\naudit-level=high\n"
+    "min-release-age=7\nregistry=https://r/\naudit-level=high\n"
   );
 });
 
@@ -144,7 +144,7 @@ test("Windows uv path uses APPDATA", async () => {
   const out = sink(), err = sink();
   await run(["enable", "--tool", "uv"], { env: { APPDATA: appdata }, home, platform: "win32", out, err });
   const text = await readFile(join(appdata, "uv", "uv.toml"), "utf8");
-  assert.match(text, /^exclude-newer = "3 days"$/m);
+  assert.match(text, /^exclude-newer = "1 days"$/m);
 });
 
 test("--json emits parseable JSON for check", async () => {
@@ -152,7 +152,7 @@ test("--json emits parseable JSON for check", async () => {
   const { out } = await runCli(["check", "--json"], home);
   const data = JSON.parse(out);
   assert.equal(data.ok, false);
-  assert.equal(data.bundleDays, 3);
+  assert.equal(data.bundleDays, 1);
   assert.equal(data.rows.length, 7);
   assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]);
 });
@@ -162,7 +162,7 @@ test("bun enable inserts key inside existing [install] section", async () => {
   await writeFile(join(home, ".bunfig.toml"), "[install]\nregistry = \"https://x/\"\n");
   await runCli(["enable", "--tool", "bun"], home);
   const text = await readFile(join(home, ".bunfig.toml"), "utf8");
-  assert.match(text, /^\[install\]\nminimumReleaseAge = 259200\nregistry = "https:\/\/x\/"$/m);
+  assert.match(text, /^\[install\]\nminimumReleaseAge = 86400\nregistry = "https:\/\/x\/"$/m);
 });
 
 test("bun enable creates [install] section if missing", async () => {
@@ -170,7 +170,7 @@ test("bun enable creates [install] section if missing", async () => {
   await writeFile(join(home, ".bunfig.toml"), "telemetry = false\n");
   await runCli(["enable", "--tool", "bun"], home);
   const text = await readFile(join(home, ".bunfig.toml"), "utf8");
-  assert.match(text, /^telemetry = false\n\n\[install\]\nminimumReleaseAge = 259200\n$/);
+  assert.match(text, /^telemetry = false\n\n\[install\]\nminimumReleaseAge = 86400\n$/);
 });
 
 test("yarn check parses npmMinimalAgeGate days correctly", async () => {
@@ -276,7 +276,7 @@ test("--days N overrides bundle cooldown for enable and check", async () => {
   assert.equal(r.code, 0);
   assert.equal(JSON.parse(r.out).bundleDays, 7);
 
-  // Default check (3 days) still passes since 7 >= 3.
+  // Default check (1 day) still passes since 7 >= 1.
   const r2 = await runCli(["check", "--json"], home);
   assert.equal(r2.code, 0);
 

@@ -12,7 +12,7 @@ import * as uv from "./tools/uv.mjs";
 const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv];
 // Default cooldown for the hardening bundle. Override per-invocation with
 // `--days N`; the default tracks the safest value we'd recommend.
-const BUNDLE_DAYS = 3;
+const BUNDLE_DAYS = 1;
 export const VERSION = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version;
@@ -31,7 +31,7 @@ Commands:
 
 Options:
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
-  --days N              Override cooldown days (default 3)
+  --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version

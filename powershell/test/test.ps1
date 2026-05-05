@@ -128,17 +128,17 @@ T 'enable writes the bundle for every tool' {
     if ($r.Code -ne 0) { $script:LastFail = "exit code $($r.Code)`n$($r.Out)"; return $false }
     $pnpmrcPath = PathJoin $h '.config' 'pnpm' 'rc'
     $ok = $true
-    $ok = $ok -and (AssertMatch 'npm key' '(?m)^min-release-age=3$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
-    $ok = $ok -and (AssertMatch 'pnpm key' '(?m)^minimum-release-age=4320$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
+    $ok = $ok -and (AssertMatch 'npm key' '(?m)^min-release-age=1$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'pnpm key' '(?m)^minimum-release-age=1440$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     if (([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))) -match 'minimum-release-age') {
       $script:LastFail = 'pnpm key leaked into .npmrc'; return $false
     }
     $ok = $ok -and (AssertMatch 'bun section' '(?m)^\[install\]$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
-    $ok = $ok -and (AssertMatch 'bun key' '(?m)^minimumReleaseAge = 259200$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
-    $ok = $ok -and (AssertMatch 'yarn key' '(?m)^npmMinimalAgeGate: "3d"$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
-    $ok = $ok -and (AssertMatch 'uv key' '(?m)^exclude-newer = "3 days"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
+    $ok = $ok -and (AssertMatch 'bun key' '(?m)^minimumReleaseAge = 86400$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
+    $ok = $ok -and (AssertMatch 'yarn key' '(?m)^npmMinimalAgeGate: "1d"$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
+    $ok = $ok -and (AssertMatch 'uv key' '(?m)^exclude-newer = "1 days"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
     $ok = $ok -and (AssertMatch 'mise section' '(?m)^\[settings\]$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
-    $ok = $ok -and (AssertMatch 'mise key' '(?m)^minimum_release_age = "3d"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
+    $ok = $ok -and (AssertMatch 'mise key' '(?m)^minimum_release_age = "1d"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'mise paranoid extra' '(?m)^paranoid = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'npm audit-level extra' '(?m)^audit-level=high$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'pnpm trust-policy extra' '(?m)^trust-policy=no-downgrade$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
@@ -195,9 +195,9 @@ T 'disable preserves unrelated keys per file' {
 T 'enable upgrades values that are weaker than the request' {
   $h = NewHome
   try {
-    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=1`nregistry=https://r/`n")
-    [void](InvokePmsec $h $null @('enable','--tool','npm'))
-    return (AssertFileEq '.npmrc' "min-release-age=3`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
+    [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`nregistry=https://r/`n")
+    [void](InvokePmsec $h $null @('enable','--tool','npm','--days','7'))
+    return (AssertFileEq '.npmrc' "min-release-age=7`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -249,7 +249,7 @@ T 'Windows uv path uses APPDATA' {
   try {
     $appdata = PathJoin $h 'AppData' 'Roaming'
     [void](InvokePmsec $h @{ APPDATA = $appdata; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','uv'))
-    return (AssertMatch 'uv key' '(?m)^exclude-newer = "3 days"$' ([System.IO.File]::ReadAllText((PathJoin $appdata 'uv' 'uv.toml'))))
+    return (AssertMatch 'uv key' '(?m)^exclude-newer = "1 days"$' ([System.IO.File]::ReadAllText((PathJoin $appdata 'uv' 'uv.toml'))))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -258,7 +258,7 @@ T 'Windows mise path uses LOCALAPPDATA' {
   try {
     $local = PathJoin $h 'AppData' 'Local'
     [void](InvokePmsec $h @{ LOCALAPPDATA = $local; PMSEC_FAKE_SCOPES = "windows|$h|win32" } @('enable','--tool','mise'))
-    return (AssertMatch 'mise key' '(?m)^minimum_release_age = "3d"$' ([System.IO.File]::ReadAllText((PathJoin $local 'mise' 'config.toml'))))
+    return (AssertMatch 'mise key' '(?m)^minimum_release_age = "1d"$' ([System.IO.File]::ReadAllText((PathJoin $local 'mise' 'config.toml'))))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -280,7 +280,7 @@ T '--json emits parseable JSON for check' {
     $data = $null
     try { $data = $r.Out | ConvertFrom-Json } catch { $script:LastFail = "json parse failed: $_`n$($r.Out)"; return $false }
     if ($data.ok -ne $false) { $script:LastFail = "expected ok=false, got $($data.ok)"; return $false }
-    if ($data.bundleDays -ne 3) { $script:LastFail = "expected bundleDays=3, got $($data.bundleDays)"; return $false }
+    if ($data.bundleDays -ne 1) { $script:LastFail = "expected bundleDays=1, got $($data.bundleDays)"; return $false }
     if ($data.rows.Count -ne 7) { $script:LastFail = "expected 7 rows, got $($data.rows.Count)"; return $false }
     $names = ($data.rows | ForEach-Object { $_.tool }) -join ','
     if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv') { $script:LastFail = "row order: $names"; return $false }
@@ -293,7 +293,7 @@ T 'bun enable inserts key inside existing [install] section' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "[install]`nregistry = ""https://x/""`n")
     [void](InvokePmsec $h $null @('enable','--tool','bun'))
-    return (AssertFileEq '.bunfig' "[install]`nminimumReleaseAge = 259200`nregistry = ""https://x/""`n" (Join-Path $h '.bunfig.toml'))
+    return (AssertFileEq '.bunfig' "[install]`nminimumReleaseAge = 86400`nregistry = ""https://x/""`n" (Join-Path $h '.bunfig.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -302,7 +302,7 @@ T 'bun enable creates [install] section if missing' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "telemetry = false`n")
     [void](InvokePmsec $h $null @('enable','--tool','bun'))
-    return (AssertFileEq '.bunfig' "telemetry = false`n`n[install]`nminimumReleaseAge = 259200`n" (Join-Path $h '.bunfig.toml'))
+    return (AssertFileEq '.bunfig' "telemetry = false`n`n[install]`nminimumReleaseAge = 86400`n" (Join-Path $h '.bunfig.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 

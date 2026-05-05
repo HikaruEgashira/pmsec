@@ -30,24 +30,24 @@ def test_enable_writes_bundle_for_every_tool(tmp_path):
     code, _, _ = run(["enable"], tmp_path)
     assert code == 0
     npmrc = (tmp_path / ".npmrc").read_text()
-    assert "min-release-age=3" in npmrc
+    assert "min-release-age=1" in npmrc
     assert "audit-level=high" in npmrc
     assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
-    assert "minimum-release-age=4320" in pnpmrc
+    assert "minimum-release-age=1440" in pnpmrc
     assert "trust-policy=no-downgrade" in pnpmrc
     assert "block-exotic-subdeps=true" in pnpmrc
     assert "strict-dep-builds=true" in pnpmrc
-    assert 'exclude-newer = "3 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
+    assert 'exclude-newer = "1 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     bunfig = (tmp_path / ".bunfig.toml").read_text()
     assert "[install]" in bunfig
-    assert "minimumReleaseAge = 259200" in bunfig
+    assert "minimumReleaseAge = 86400" in bunfig
     yarnrc = (tmp_path / ".yarnrc.yml").read_text()
-    assert 'npmMinimalAgeGate: "3d"' in yarnrc
+    assert 'npmMinimalAgeGate: "1d"' in yarnrc
     assert "enableHardenedMode: true" in yarnrc
     mise = (tmp_path / ".config" / "mise" / "config.toml").read_text()
     assert "[settings]" in mise
-    assert 'minimum_release_age = "3d"' in mise
+    assert 'minimum_release_age = "1d"' in mise
     assert "paranoid = true" in mise
 
 
@@ -91,10 +91,10 @@ def test_disable_preserves_other_keys(tmp_path):
 
 
 def test_enable_upgrades_weak_existing_value(tmp_path):
-    (tmp_path / ".npmrc").write_text("min-release-age=1\nregistry=https://r/\n")
-    run(["enable", "--tool", "npm"], tmp_path)
+    (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
+    run(["enable", "--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=3\nregistry=https://r/\naudit-level=high\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\n"
     )
 
 
@@ -134,14 +134,14 @@ def test_windows_uv_path(tmp_path):
     appdata = tmp_path / "AppData" / "Roaming"
     out, err = io.StringIO(), io.StringIO()
     main(["enable", "--tool", "uv"], env={"APPDATA": str(appdata)}, home=tmp_path, platform="win32", out=out, err=err)
-    assert (appdata / "uv" / "uv.toml").read_text().splitlines()[0] == 'exclude-newer = "3 days"'
+    assert (appdata / "uv" / "uv.toml").read_text().splitlines()[0] == 'exclude-newer = "1 days"'
 
 
 def test_check_json(tmp_path):
     _, out, _ = run(["check", "--json"], tmp_path)
     data = json.loads(out)
     assert data["ok"] is False
-    assert data["bundleDays"] == 3
+    assert data["bundleDays"] == 1
     assert len(data["rows"]) == 7
     assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]
 
@@ -150,14 +150,14 @@ def test_bun_section_insert(tmp_path):
     (tmp_path / ".bunfig.toml").write_text('[install]\nregistry = "https://x/"\n')
     run(["enable", "--tool", "bun"], tmp_path)
     text = (tmp_path / ".bunfig.toml").read_text()
-    assert text.startswith("[install]\nminimumReleaseAge = 259200\nregistry =")
+    assert text.startswith("[install]\nminimumReleaseAge = 86400\nregistry =")
 
 
 def test_bun_creates_section_if_missing(tmp_path):
     (tmp_path / ".bunfig.toml").write_text("telemetry = false\n")
     run(["enable", "--tool", "bun"], tmp_path)
     text = (tmp_path / ".bunfig.toml").read_text()
-    assert text == "telemetry = false\n\n[install]\nminimumReleaseAge = 259200\n"
+    assert text == "telemetry = false\n\n[install]\nminimumReleaseAge = 86400\n"
 
 
 def test_yarn_check_parses_days(tmp_path):

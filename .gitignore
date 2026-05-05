@@ -13,3 +13,5 @@ build/
 # repo when its sandboxed HOME points at the working tree.
 powershell/.cache/
 powershell/Library/
+.cache/
+Library/

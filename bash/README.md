@@ -47,7 +47,7 @@ PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec enable
 PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec check
 ```
 
-`pmsec check` exits `0` when every tool is at or above `--days` (default 3)
+`pmsec check` exits `0` when every tool is at or above `--days` (default 1)
 and every hardening extra is at the safe value, `1` otherwise — usable as a
 Jamf Extension Attribute or Ansible `assert`.
 
