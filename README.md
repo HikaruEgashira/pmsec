@@ -9,19 +9,19 @@
 </p>
 
 ```bash
-npx pmsec check
-npx pmsec enable
+npx pmsec
+npx pmsec --check
 ```
 
 ```bash
-uvx pmsec check
-uvx pmsec enable
+uvx pmsec
+uvx pmsec --check
 ```
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
-pmsec enable
+pmsec
 ```
 
 ```powershell
@@ -29,14 +29,18 @@ pmsec enable
 Invoke-WebRequest `
   -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
+pwsh -File $env:USERPROFILE\bin\pmsec.ps1
 ```
+
+The default action enables the hardening bundle for every detected tool.
+Pass `--check` to verify, `--disable` to remove. Common options:
+`--tool npm,pnpm`, `--days 7`, `--force`, `--json`.
 
 > Bootstrap: pmsec eats its own
 >
 > ```bash
-> npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec check
-> uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec check
+> npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec --check
+> uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec --check
 > ```
 
 ## Supported Package Managers
@@ -56,9 +60,5 @@ pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 | mise  | `~/.config/mise/config.toml`         | `[settings].minimum_release_age`   | `"1d"`         | filters out tool versions younger than 1 day                                                                  | mise ≥ 2026.4.22     |
 | mise  | `~/.config/mise/config.toml`         | `[settings].paranoid`              | `true`         | re-verifies SLSA / cosign / minisign / GitHub attestations even when lockfile checksums match                 | mise (any current)\* |
 | uv    | `~/.config/uv/uv.toml`               | `exclude-newer`                    | `"1 days"`     | filters out package versions published after `now − 1 day`                                                    | uv ≥ 0.9.17          |
-
-\* `paranoid` predates mise's published per-setting version metadata; no precise floor is documented. Any actively maintained mise honors it.
-
-bun, cargo, and uv have no extras: bun's script-execution defense lives in per-project `package.json`, cargo build scripts can't be disabled at config level, and uv's defaults (`index-strategy=first-index`, `keyring-provider=disabled`, `allow-insecure-host=[]`) are already safe.
 
 [MIT](LICENSE)

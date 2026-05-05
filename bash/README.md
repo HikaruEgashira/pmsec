@@ -9,17 +9,17 @@ coreutils.
 curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
 
-pmsec enable
-pmsec check
-pmsec disable
+pmsec
+pmsec --check
+pmsec --disable
 ```
 
 The CLI surface is identical to the npm and PyPI distributions:
 
 ```
-pmsec enable  [--tool TOOL[,TOOL]] [--days N] [--force] [--json]
-pmsec check   [--tool TOOL[,TOOL]] [--days N] [--json]
-pmsec disable [--tool TOOL[,TOOL]] [--json]
+pmsec            [--tool TOOL[,TOOL]] [--days N] [--force] [--json]
+pmsec --check    [--tool TOOL[,TOOL]] [--days N] [--json]
+pmsec --disable  [--tool TOOL[,TOOL]] [--json]
 pmsec --version
 ```
 
@@ -43,11 +43,11 @@ set -eu
 loggedInUser=$(stat -f%Su /dev/console)
 loggedInHome=$(dscl . -read "/Users/$loggedInUser" NFSHomeDirectory | awk '{print $2}')
 
-PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec enable
-PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec check
+PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec
+PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec --check
 ```
 
-`pmsec check` exits `0` when every tool is at or above `--days` (default 1)
+`pmsec --check` exits `0` when every tool is at or above `--days` (default 1)
 and every hardening extra is at the safe value, `1` otherwise — usable as a
 Jamf Extension Attribute or Ansible `assert`.
 

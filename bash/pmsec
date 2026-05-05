@@ -8,7 +8,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.9.0"
+PMSEC_VERSION="0.10.0"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=1
@@ -615,19 +615,16 @@ json_bool() { if [ "$1" = "1" ]; then printf 'true'; else printf 'false'; fi; }
 
 USAGE() {
   cat <<EOF
-pmsec <command> [options]
+pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. \`enable\` flips on every safe-by-default key each
-tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+bun, cargo, mise, uv. Default action enables every safe-by-default key
+each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
-Commands:
-  enable                Apply the hardening bundle to all selected tools
-  disable               Remove the hardening bundle from selected tools
-  check                 Verify the bundle is in place (exit 1 if anything missing)
-
 Options:
+  --check               Verify the bundle is in place (exit 1 if anything missing)
+  --disable             Remove the hardening bundle from selected tools
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -636,11 +633,11 @@ Options:
   -h, --help            Show this help
 
 Examples:
-  pmsec enable
-  pmsec enable --days 7
-  pmsec enable --days 1 --force
-  pmsec check
-  pmsec disable --tool npm
+  pmsec
+  pmsec --days 7
+  pmsec --days 1 --force
+  pmsec --check
+  pmsec --disable --tool npm
 
 Environment:
   PMSEC_HOME            Home dir to operate on (overrides \$HOME). Set this
@@ -657,9 +654,11 @@ Environment:
 EOF
 }
 
-# parse_args populates: CMD, OPT_JSON, OPT_ONLY (csv), OPT_DAYS, OPT_FORCE, OPT_HELP, OPT_VERSION.
+# parse_args populates: MODE (enable|check|disable), OPT_JSON, OPT_ONLY (csv),
+# OPT_DAYS, OPT_FORCE, OPT_HELP, OPT_VERSION.
 parse_args() {
-  CMD=""; OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
+  MODE="enable"; MODE_SET=0
+  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -667,6 +666,16 @@ parse_args() {
       -V|--version) OPT_VERSION=1 ;;
       --json)       OPT_JSON=1 ;;
       --force)      OPT_FORCE=1 ;;
+      --check)
+        if [ "$MODE_SET" = "1" ] && [ "$MODE" != "check" ]; then
+          printf 'pmsec: --check and --disable are mutually exclusive\n' >&2; return 2
+        fi
+        MODE="check"; MODE_SET=1 ;;
+      --disable)
+        if [ "$MODE_SET" = "1" ] && [ "$MODE" != "disable" ]; then
+          printf 'pmsec: --check and --disable are mutually exclusive\n' >&2; return 2
+        fi
+        MODE="disable"; MODE_SET=1 ;;
       --tool)       shift; OPT_ONLY="$1" ;;
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
       --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
@@ -677,9 +686,8 @@ parse_args() {
     esac
     shift
   done
-  CMD="${POS[0]:-}"
-  if [ "${#POS[@]}" -gt 1 ]; then
-    printf 'pmsec: unexpected argument: %s\n' "${POS[1]}" >&2
+  if [ "${#POS[@]}" -gt 0 ]; then
+    printf 'pmsec: unexpected argument: %s\n' "${POS[0]}" >&2
     return 2
   fi
   return 0
@@ -807,8 +815,8 @@ cmd_check() {
     { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && ok="false"
     printf '{\n  "bundleDays": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_DAYS" "$rows_json" "$ok"
   fi
-  [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec enable`\n' "$failing" "$OPT_DAYS" >&2
-  [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec enable`\n' "$failing_extras" >&2
+  [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec`\n' "$failing" "$OPT_DAYS" >&2
+  [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec`\n' "$failing_extras" >&2
   { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
   return 0
 }
@@ -936,13 +944,11 @@ main() {
   parse_args "$@" || return $?
   if [ "$OPT_VERSION" = "1" ]; then printf 'pmsec %s\n' "$PMSEC_VERSION"; return 0; fi
   if [ "$OPT_HELP" = "1" ]; then USAGE; return 0; fi
-  if [ -z "$CMD" ]; then USAGE; return 2; fi
   select_tools || return $?
-  case "$CMD" in
+  case "$MODE" in
     check)   cmd_check ;;
-    enable)  cmd_enable ;;
     disable) cmd_disable ;;
-    *)       printf 'pmsec: unknown command "%s"\n' "$CMD" >&2; return 2 ;;
+    enable)  cmd_enable ;;
   esac
 }
 

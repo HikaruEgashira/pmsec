@@ -19,7 +19,7 @@
 $Argv = $args
 
 $ErrorActionPreference = 'Stop'
-$script:PmsecVersion = '0.9.0'
+$script:PmsecVersion = '0.10.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 1
@@ -617,19 +617,16 @@ function Pad4([string]$S) {
 
 function PrintUsage {
 @"
-pmsec <command> [options]
+pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. ``enable`` flips on every safe-by-default key each
-tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+bun, cargo, mise, uv. Default action enables every safe-by-default key
+each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
-Commands:
-  enable                Apply the hardening bundle to all selected tools
-  disable               Remove the hardening bundle from selected tools
-  check                 Verify the bundle is in place (exit 1 if anything missing)
-
 Options:
+  --check               Verify the bundle is in place (exit 1 if anything missing)
+  --disable             Remove the hardening bundle from selected tools
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -639,11 +636,11 @@ Options:
   -h, --help            Show this help
 
 Examples:
-  pmsec enable
-  pmsec enable --days 7
-  pmsec enable --days 1 --force
-  pmsec check
-  pmsec disable --tool npm
+  pmsec
+  pmsec --days 7
+  pmsec --days 1 --force
+  pmsec --check
+  pmsec --disable --tool npm
 
 Environment:
   PMSEC_HOME              Home dir to operate on (overrides `$env:USERPROFILE`
@@ -669,11 +666,12 @@ function ParseDays($Raw) {
 
 function ParseArgs($Argv) {
   $opts = @{
-    Command = ''
+    Mode = 'enable'
     Json = $false; Only = $null; Days = $script:BundleDays; Force = $false
     NoWsl = ($env:PMSEC_NO_WSL -eq '1')
     Help = $false; Version = $false
   }
+  $modeSet = $false
   $positional = New-Object System.Collections.Generic.List[string]
   $i = 0
   $n = if ($null -eq $Argv) { 0 } else { $Argv.Count }
@@ -684,6 +682,14 @@ function ParseArgs($Argv) {
     elseif ($a -eq '--json') { $opts.Json = $true }
     elseif ($a -eq '--force') { $opts.Force = $true }
     elseif ($a -eq '--no-wsl') { $opts.NoWsl = $true }
+    elseif ($a -eq '--check') {
+      if ($modeSet -and $opts.Mode -ne 'check') { throw '--check and --disable are mutually exclusive' }
+      $opts.Mode = 'check'; $modeSet = $true
+    }
+    elseif ($a -eq '--disable') {
+      if ($modeSet -and $opts.Mode -ne 'disable') { throw '--check and --disable are mutually exclusive' }
+      $opts.Mode = 'disable'; $modeSet = $true
+    }
     elseif ($a -eq '--tool') { $i++; $opts.Only = $Argv[$i] -split ',' }
     elseif ($a -like '--tool=*') { $opts.Only = $a.Substring(7) -split ',' }
     elseif ($a -eq '--days') { $i++; $opts.Days = ParseDays $Argv[$i] }
@@ -692,8 +698,7 @@ function ParseArgs($Argv) {
     else { $positional.Add($a) }
     $i++
   }
-  if ($positional.Count -gt 0) { $opts.Command = $positional[0] }
-  if ($positional.Count -gt 1) { throw "unexpected argument: $($positional[1])" }
+  if ($positional.Count -gt 0) { throw "unexpected argument: $($positional[0])" }
   return $opts
 }
 
@@ -782,8 +787,8 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
       }
     }
   }
-  if ($failing -gt 0) { StdErr ("pmsec: $failing tool(s) below $Days days " + $script:EmDash + " run ``pmsec enable``") }
-  if ($failingExtras -gt 0) { StdErr ("pmsec: $failingExtras hardening setting(s) not at safe value " + $script:EmDash + " run ``pmsec enable``") }
+  if ($failing -gt 0) { StdErr ("pmsec: $failing tool(s) below $Days days " + $script:EmDash + " run ``pmsec``") }
+  if ($failingExtras -gt 0) { StdErr ("pmsec: $failingExtras hardening setting(s) not at safe value " + $script:EmDash + " run ``pmsec``") }
   if ($failing -gt 0 -or $failingExtras -gt 0) { return 1 }
   return 0
 }
@@ -960,7 +965,6 @@ try {
 
 if ($opts.Version) { Write-Output "pmsec $($script:PmsecVersion)"; exit 0 }
 if ($opts.Help) { PrintUsage; exit 0 }
-if ([string]::IsNullOrEmpty($opts.Command)) { PrintUsage; exit 2 }
 
 try {
   $targets = SelectTools $opts.Only
@@ -976,11 +980,10 @@ if ($scopes.Count -eq 0) {
 }
 
 try {
-  switch ($opts.Command) {
+  switch ($opts.Mode) {
     'check'   { exit (CmdCheck $targets $opts.Json $opts.Days $scopes) }
-    'enable'  { exit (CmdEnable $targets $opts.Json $opts.Days $opts.Force $scopes) }
     'disable' { exit (CmdDisable $targets $opts.Json $scopes) }
-    default   { StdErr ("pmsec: unknown command ""{0}""" -f $opts.Command); exit 2 }
+    default   { exit (CmdEnable $targets $opts.Json $opts.Days $opts.Force $scopes) }
   }
 } catch {
   StdErr "pmsec: $_"

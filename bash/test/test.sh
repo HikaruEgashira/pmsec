@@ -88,7 +88,7 @@ T() {
 
 t_enable_writes_all() {
   local home; home=$(setup_home)
-  run_pmsec "$home" -- enable >/dev/null
+  run_pmsec "$home" -- >/dev/null
   local npmrc pnpmrc bunfig yarnrc uvtoml mise
   npmrc=$(cat "$home/.npmrc")
   pnpmrc=$(cat "$home/.config/pnpm/rc")
@@ -118,8 +118,8 @@ t_enable_writes_all() {
 
 t_check_passes_after_enable() {
   local home; home=$(setup_home)
-  run_pmsec "$home" -- enable >/dev/null
-  run_pmsec "$home" -- check >/dev/null
+  run_pmsec "$home" -- >/dev/null
+  run_pmsec "$home" -- --check >/dev/null
   local rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "0" "$rc"
@@ -128,7 +128,7 @@ t_check_passes_after_enable() {
 t_check_fails_when_missing() {
   local home; home=$(setup_home)
   local out rc
-  out=$(run_pmsec "$home" -- check 2>/dev/null)
+  out=$(run_pmsec "$home" -- --check 2>/dev/null)
   rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "1" "$rc" || return
@@ -146,7 +146,7 @@ t_disable_preserves_unrelated_keys() {
   printf 'exclude-newer = "3 days"\nindex-strategy = "unsafe-best-match"\n' > "$home/.config/uv/uv.toml"
   printf '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
   printf 'npmMinimalAgeGate: "3d"\nnpmRegistryServer: "https://r/"\n' > "$home/.yarnrc.yml"
-  run_pmsec "$home" -- disable >/dev/null
+  run_pmsec "$home" -- --disable >/dev/null
   assert_file_eq "npmrc" 'registry=https://r/
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   assert_file_eq "pnpm rc" 'store-dir=/tmp/pstore
@@ -164,7 +164,7 @@ registry = "https://x/"
 t_enable_upgrades_weak_existing_value() {
   local home; home=$(setup_home)
   printf 'min-release-age=3\nregistry=https://r/\n' > "$home/.npmrc"
-  run_pmsec "$home" -- enable --tool npm --days 7 >/dev/null
+  run_pmsec "$home" -- --tool npm --days 7 >/dev/null
   assert_file_eq "npmrc" 'min-release-age=7
 registry=https://r/
 audit-level=high
@@ -176,7 +176,7 @@ t_enable_preserves_stricter_existing_cooldown() {
   local home; home=$(setup_home)
   printf 'min-release-age=99\nregistry=https://r/\n' > "$home/.npmrc"
   local out
-  out=$(run_pmsec "$home" -- enable --tool npm)
+  out=$(run_pmsec "$home" -- --tool npm)
   assert_match "keep line printed" '^keep ' "$out" || { rm -rf "$home"; return 1; }
   assert_file_eq "npmrc preserves 99" 'min-release-age=99
 registry=https://r/
@@ -188,7 +188,7 @@ audit-level=high
 t_enable_force_overwrites_stricter_existing() {
   local home; home=$(setup_home)
   printf 'min-release-age=99\n' > "$home/.npmrc"
-  run_pmsec "$home" -- enable --tool npm --days 1 --force >/dev/null
+  run_pmsec "$home" -- --tool npm --days 1 --force >/dev/null
   assert_match "force downgraded to 1" '^min-release-age=1$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -196,14 +196,14 @@ t_enable_force_overwrites_stricter_existing() {
 t_enable_days_upgrades_when_request_exceeds_existing() {
   local home; home=$(setup_home)
   printf 'min-release-age=3\n' > "$home/.npmrc"
-  run_pmsec "$home" -- enable --tool npm --days 14 >/dev/null
+  run_pmsec "$home" -- --tool npm --days 14 >/dev/null
   assert_match "upgraded to 14" '^min-release-age=14$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
 t_tool_filter_restricts() {
   local home; home=$(setup_home)
-  run_pmsec "$home" -- enable --tool npm,bun >/dev/null
+  run_pmsec "$home" -- --tool npm,bun >/dev/null
   [ -f "$home/.npmrc" ] || { LAST_FAIL=".npmrc not written"; rm -rf "$home"; return 1; }
   [ -f "$home/.bunfig.toml" ] || { LAST_FAIL=".bunfig.toml not written"; rm -rf "$home"; return 1; }
   [ ! -f "$home/.config/uv/uv.toml" ] || { LAST_FAIL="uv.toml unexpectedly written"; rm -rf "$home"; return 1; }
@@ -214,7 +214,7 @@ t_windows_uv_path() {
   local home; home=$(setup_home)
   local appdata="$home/AppData/Roaming"
   env -i PATH="$PATH" HOME="$home" APPDATA="$appdata" PMSEC_PLATFORM=win32 \
-    bash "$PMSEC" enable --tool uv >/dev/null
+    bash "$PMSEC" --tool uv >/dev/null
   assert_match "uv key" '^exclude-newer = "1 days"$' "$(cat "$appdata/uv/uv.toml")" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -222,7 +222,7 @@ t_windows_uv_path() {
 t_json_check() {
   local home; home=$(setup_home)
   local out
-  out=$(run_pmsec "$home" -- check --json)
+  out=$(run_pmsec "$home" -- --check --json)
   rm -rf -- "$home"
   assert_match "ok false" '"ok": false' "$out" || return
   assert_match "bundleDays 1" '"bundleDays": 1' "$out" || return
@@ -233,7 +233,7 @@ t_json_check() {
 t_bun_inserts_into_existing_section() {
   local home; home=$(setup_home)
   printf '[install]\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
-  run_pmsec "$home" -- enable --tool bun >/dev/null
+  run_pmsec "$home" -- --tool bun >/dev/null
   assert_file_eq "bunfig" '[install]
 minimumReleaseAge = 86400
 registry = "https://x/"
@@ -244,7 +244,7 @@ registry = "https://x/"
 t_bun_creates_section_if_missing() {
   local home; home=$(setup_home)
   printf 'telemetry = false\n' > "$home/.bunfig.toml"
-  run_pmsec "$home" -- enable --tool bun >/dev/null
+  run_pmsec "$home" -- --tool bun >/dev/null
   assert_file_eq "bunfig" 'telemetry = false
 
 [install]
@@ -257,7 +257,7 @@ t_yarn_check_parses_days() {
   local home; home=$(setup_home)
   printf 'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\n' > "$home/.yarnrc.yml"
   local out
-  out=$(run_pmsec "$home" -- check --json --tool yarn)
+  out=$(run_pmsec "$home" -- --check --json --tool yarn)
   rm -rf -- "$home"
   assert_match "yarn ok" '"ok": true' "$out" || return
   assert_match "yarn days" '"days": 14' "$out" || return
@@ -268,7 +268,7 @@ t_pnpm_normalizes_minutes() {
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=20160\n' > "$home/.config/pnpm/rc"
   local out
-  out=$(run_pmsec "$home" -- check --json --tool pnpm)
+  out=$(run_pmsec "$home" -- --check --json --tool pnpm)
   rm -rf -- "$home"
   assert_match "pnpm days" '"days": 14' "$out" || return
 }
@@ -276,9 +276,9 @@ t_pnpm_normalizes_minutes() {
 t_bak_created_once() {
   local home; home=$(setup_home)
   printf 'registry=https://original/\n' > "$home/.npmrc"
-  run_pmsec "$home" -- enable --tool npm >/dev/null
-  run_pmsec "$home" -- disable --tool npm >/dev/null
-  run_pmsec "$home" -- enable --tool npm >/dev/null
+  run_pmsec "$home" -- --tool npm >/dev/null
+  run_pmsec "$home" -- --disable --tool npm >/dev/null
+  run_pmsec "$home" -- --tool npm >/dev/null
   assert_file_eq "bak" 'registry=https://original/
 ' "$home/.npmrc.bak" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
@@ -286,21 +286,21 @@ t_bak_created_once() {
 
 t_days_overrides_bundle_cooldown() {
   local home; home=$(setup_home)
-  run_pmsec "$home" -- enable --days 7 >/dev/null
+  run_pmsec "$home" -- --days 7 >/dev/null
   assert_match "npm cooldown 7" '^min-release-age=7$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   assert_match "pnpm cooldown 10080m" '^minimum-release-age=10080$' "$(cat "$home/.config/pnpm/rc")" || { rm -rf "$home"; return 1; }
   assert_match "uv 7 days" 'exclude-newer = "7 days"' "$(cat "$home/.config/uv/uv.toml")" || { rm -rf "$home"; return 1; }
   assert_match "bun 7d secs" 'minimumReleaseAge = 604800' "$(cat "$home/.bunfig.toml")" || { rm -rf "$home"; return 1; }
 
   local out rc
-  out=$(run_pmsec "$home" -- check --json --days 7); rc=$?
+  out=$(run_pmsec "$home" -- --check --json --days 7); rc=$?
   assert_eq "check days=7 exit" "0" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "json days=7" '"bundleDays": 7' "$out" || { rm -rf "$home"; return 1; }
 
-  run_pmsec "$home" -- check >/dev/null; rc=$?
+  run_pmsec "$home" -- --check >/dev/null; rc=$?
   assert_eq "default check still passes" "0" "$rc" || { rm -rf "$home"; return 1; }
 
-  run_pmsec "$home" -- check --days 30 >/dev/null 2>&1; rc=$?
+  run_pmsec "$home" -- --check --days 30 >/dev/null 2>&1; rc=$?
   assert_eq "stricter check fails" "1" "$rc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -309,7 +309,7 @@ t_days_rejects_invalid() {
   local home; home=$(setup_home)
   local rc
   for bad in 0 -1 abc ""; do
-    run_pmsec "$home" -- enable --days "$bad" >/dev/null 2>&1; rc=$?
+    run_pmsec "$home" -- --days "$bad" >/dev/null 2>&1; rc=$?
     assert_eq "days=$bad exit 2" "2" "$rc" || { rm -rf "$home"; return 1; }
   done
   rm -rf -- "$home"
@@ -318,11 +318,21 @@ t_days_rejects_invalid() {
 t_enable_rejects_positional_arg() {
   local home; home=$(setup_home)
   local err rc
-  err=$(run_pmsec "$home" -- enable 7 2>&1 1>/dev/null)
+  err=$(run_pmsec "$home" -- enable 2>&1 1>/dev/null)
   rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "2" "$rc" || return 1
-  assert_match "msg" "unexpected argument: 7" "$err"
+  assert_match "msg" "unexpected argument: enable" "$err"
+}
+
+t_check_and_disable_mutually_exclusive() {
+  local home; home=$(setup_home)
+  local err rc
+  err=$(run_pmsec "$home" -- --check --disable 2>&1 1>/dev/null)
+  rc=$?
+  rm -rf -- "$home"
+  assert_eq "exit code" "2" "$rc" || return 1
+  assert_match "msg" "mutually exclusive" "$err"
 }
 
 t_version_flag() {
@@ -344,17 +354,17 @@ t_hardening_extras_roundtrip() {
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=20160\n' > "$pnpmrc"
   local out rc
-  out=$(run_pmsec "$home" -- check --json --tool pnpm 2>/dev/null); rc=$?
+  out=$(run_pmsec "$home" -- --check --json --tool pnpm 2>/dev/null); rc=$?
   assert_eq "extras-missing exit" "1" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "extras-missing ok=false" '"ok": false' "$out" || { rm -rf "$home"; return 1; }
-  run_pmsec "$home" -- enable --tool pnpm >/dev/null
+  run_pmsec "$home" -- --tool pnpm >/dev/null
   assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
   assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
   assert_match "strict-dep-builds written" '^strict-dep-builds=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
-  out=$(run_pmsec "$home" -- check --json --tool pnpm); rc=$?
+  out=$(run_pmsec "$home" -- --check --json --tool pnpm); rc=$?
   assert_eq "after-enable exit" "0" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "after-enable ok=true" '"ok": true' "$out" || { rm -rf "$home"; return 1; }
-  run_pmsec "$home" -- disable --tool pnpm >/dev/null
+  run_pmsec "$home" -- --disable --tool pnpm >/dev/null
   local after; after=$(cat "$pnpmrc")
   ! printf '%s' "$after" | grep -q 'trust-policy' || { LAST_FAIL="trust-policy not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'block-exotic-subdeps' || { LAST_FAIL="block-exotic-subdeps not removed"; rm -rf "$home"; return 1; }
@@ -380,14 +390,15 @@ T "pnpm check normalizes minutes to days" t_pnpm_normalizes_minutes
 T ".bak is created once and never overwritten" t_bak_created_once
 T "--days N overrides bundle cooldown for enable and check" t_days_overrides_bundle_cooldown
 T "--days rejects non-positive integers with exit 2" t_days_rejects_invalid
-T "enable rejects positional argument with exit 2" t_enable_rejects_positional_arg
+T "rejects positional argument with exit 2" t_enable_rejects_positional_arg
+T "--check and --disable are mutually exclusive" t_check_and_disable_mutually_exclusive
 T "--version prints PMSEC_VERSION" t_version_flag
 t_pnpm_11_default_enforced() {
   local home; home=$(setup_home)
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=4320\n' > "$home/.config/pnpm/rc"
   local out rc
-  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=11.0.0 -- check --json --tool pnpm 2>/dev/null); rc=$?
+  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=11.0.0 -- --check --json --tool pnpm 2>/dev/null); rc=$?
   rm -rf -- "$home"
   # block-exotic-subdeps should be reported as ok+defaultEnforced; trust-policy still missing.
   assert_match "block-exotic-subdeps default-enforced" '"key": "block-exotic-subdeps", "configured": null,[^}]*"ok": true,[^}]*"defaultEnforced": true' "$out" || return 1
@@ -400,7 +411,7 @@ t_pnpm_pre11_no_default_enforcement() {
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=4320\n' > "$home/.config/pnpm/rc"
   local out
-  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=10.26.0 -- check --json --tool pnpm 2>/dev/null)
+  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=10.26.0 -- --check --json --tool pnpm 2>/dev/null)
   rm -rf -- "$home"
   # No defaultEnforced field, ok must be false.
   ! printf '%s' "$out" | grep -q 'defaultEnforced' || { LAST_FAIL="pnpm 10 must not set defaultEnforced"; return 1; }
@@ -418,7 +429,7 @@ t_pmsec_home_redirects() {
   # HOME points at $real but PMSEC_HOME redirects everything to $fake.
   env -i PATH="$PATH" HOME="$real" XDG_CONFIG_HOME="$fake/.config" \
     PMSEC_PNPM_VERSION=none PMSEC_HOME="$fake" \
-    bash "$PMSEC" enable >/dev/null 2>&1
+    bash "$PMSEC" >/dev/null 2>&1
   local rc=$?
   local has_real=0 has_fake=0
   [ -e "$real/.npmrc" ] && has_real=1

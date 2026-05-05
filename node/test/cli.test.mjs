@@ -29,9 +29,9 @@ async function runCli(argv, home, platform = "linux", envOverrides = {}) {
   return { code, out: out.text(), err: err.text() };
 }
 
-test("enable writes the bundle (cooldown + extras) for every tool", async () => {
+test("default invocation writes the bundle (cooldown + extras) for every tool", async () => {
   const home = await setupHome();
-  const { code } = await runCli(["enable"], home);
+  const { code } = await runCli([], home);
   assert.equal(code, 0);
   const npmrc = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(npmrc, /^min-release-age=1$/m);
@@ -56,23 +56,23 @@ test("enable writes the bundle (cooldown + extras) for every tool", async () => 
   assert.match(mise, /^paranoid = true$/m);
 });
 
-test("check passes after enable across all tools", async () => {
+test("--check passes after default enable across all tools", async () => {
   const home = await setupHome();
-  await runCli(["enable"], home);
-  const { code } = await runCli(["check"], home);
+  await runCli([], home);
+  const { code } = await runCli(["--check"], home);
   assert.equal(code, 0);
 });
 
-test("check fails when the bundle is missing", async () => {
+test("--check fails when the bundle is missing", async () => {
   const home = await setupHome();
-  const { code, out } = await runCli(["check"], home);
+  const { code, out } = await runCli(["--check"], home);
   assert.equal(code, 1);
   for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]) {
     assert.match(out, new RegExp(`MISSING ${t}`));
   }
 });
 
-test("disable preserves unrelated keys per file", async () => {
+test("--disable preserves unrelated keys per file", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "registry=https://r/\nmin-release-age=3\n");
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
@@ -81,7 +81,7 @@ test("disable preserves unrelated keys per file", async () => {
   await writeFile(join(home, ".config", "uv", "uv.toml"), 'exclude-newer = "3 days"\nindex-strategy = "unsafe-best-match"\n');
   await writeFile(join(home, ".bunfig.toml"), "[install]\nminimumReleaseAge = 259200\nregistry = \"https://x/\"\n");
   await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"3d\"\nnpmRegistryServer: \"https://r/\"\n");
-  await runCli(["disable"], home);
+  await runCli(["--disable"], home);
   assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://r/\n");
   assert.equal(await readFile(join(home, ".config", "pnpm", "rc"), "utf8"), "store-dir=/tmp/pstore\n");
   assert.equal(await readFile(join(home, ".config", "uv", "uv.toml"), "utf8"), 'index-strategy = "unsafe-best-match"\n');
@@ -92,7 +92,7 @@ test("disable preserves unrelated keys per file", async () => {
 test("enable upgrades values that are weaker than the request", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=3\nregistry=https://r/\n");
-  await runCli(["enable", "--tool", "npm", "--days", "7"], home);
+  await runCli(["--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
     "min-release-age=7\nregistry=https://r/\naudit-level=high\n"
@@ -102,7 +102,7 @@ test("enable upgrades values that are weaker than the request", async () => {
 test("enable preserves stricter existing cooldowns", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=99\nregistry=https://r/\n");
-  const { code, out } = await runCli(["enable", "--tool", "npm"], home);
+  const { code, out } = await runCli(["--tool", "npm"], home);
   assert.equal(code, 0);
   assert.match(out, /^keep\s+npm\s/m);
   assert.equal(
@@ -111,26 +111,26 @@ test("enable preserves stricter existing cooldowns", async () => {
   );
 });
 
-test("enable --force overwrites stricter existing values", async () => {
+test("--force overwrites stricter existing values", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=99\n");
-  const { code } = await runCli(["enable", "--tool", "npm", "--days", "1", "--force"], home);
+  const { code } = await runCli(["--tool", "npm", "--days", "1", "--force"], home);
   assert.equal(code, 0);
   const text = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(text, /^min-release-age=1$/m);
 });
 
-test("enable --days upgrades when request exceeds existing", async () => {
+test("--days upgrades when request exceeds existing", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=3\n");
-  await runCli(["enable", "--tool", "npm", "--days", "14"], home);
+  await runCli(["--tool", "npm", "--days", "14"], home);
   const text = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(text, /^min-release-age=14$/m);
 });
 
 test("--tool restricts which tools get written", async () => {
   const home = await setupHome();
-  await runCli(["enable", "--tool", "npm,bun"], home);
+  await runCli(["--tool", "npm,bun"], home);
   await readFile(join(home, ".npmrc"), "utf8");
   await readFile(join(home, ".bunfig.toml"), "utf8");
   let threw = false;
@@ -142,14 +142,14 @@ test("Windows uv path uses APPDATA", async () => {
   const home = await mkdtemp(join(tmpdir(), "pmsec-win-"));
   const appdata = join(home, "AppData", "Roaming");
   const out = sink(), err = sink();
-  await run(["enable", "--tool", "uv"], { env: { APPDATA: appdata }, home, platform: "win32", out, err });
+  await run(["--tool", "uv"], { env: { APPDATA: appdata }, home, platform: "win32", out, err });
   const text = await readFile(join(appdata, "uv", "uv.toml"), "utf8");
   assert.match(text, /^exclude-newer = "1 days"$/m);
 });
 
-test("--json emits parseable JSON for check", async () => {
+test("--json emits parseable JSON for --check", async () => {
   const home = await setupHome();
-  const { out } = await runCli(["check", "--json"], home);
+  const { out } = await runCli(["--check", "--json"], home);
   const data = JSON.parse(out);
   assert.equal(data.ok, false);
   assert.equal(data.bundleDays, 1);
@@ -160,7 +160,7 @@ test("--json emits parseable JSON for check", async () => {
 test("bun enable inserts key inside existing [install] section", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".bunfig.toml"), "[install]\nregistry = \"https://x/\"\n");
-  await runCli(["enable", "--tool", "bun"], home);
+  await runCli(["--tool", "bun"], home);
   const text = await readFile(join(home, ".bunfig.toml"), "utf8");
   assert.match(text, /^\[install\]\nminimumReleaseAge = 86400\nregistry = "https:\/\/x\/"$/m);
 });
@@ -168,7 +168,7 @@ test("bun enable inserts key inside existing [install] section", async () => {
 test("bun enable creates [install] section if missing", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".bunfig.toml"), "telemetry = false\n");
-  await runCli(["enable", "--tool", "bun"], home);
+  await runCli(["--tool", "bun"], home);
   const text = await readFile(join(home, ".bunfig.toml"), "utf8");
   assert.match(text, /^telemetry = false\n\n\[install\]\nminimumReleaseAge = 86400\n$/);
 });
@@ -176,7 +176,7 @@ test("bun enable creates [install] section if missing", async () => {
 test("yarn check parses npmMinimalAgeGate days correctly", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"14d\"\nenableHardenedMode: true\n");
-  const { out } = await runCli(["check", "--json", "--tool", "yarn"], home);
+  const { out } = await runCli(["--check", "--json", "--tool", "yarn"], home);
   const data = JSON.parse(out);
   assert.equal(data.ok, true);
   assert.equal(data.rows[0].days, 14);
@@ -186,7 +186,7 @@ test("pnpm check normalizes minutes to days", async () => {
   const home = await setupHome();
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=20160\n");
-  const { out } = await runCli(["check", "--json", "--tool", "pnpm"], home);
+  const { out } = await runCli(["--check", "--json", "--tool", "pnpm"], home);
   const data = JSON.parse(out);
   assert.equal(data.rows[0].days, 14);
 });
@@ -194,35 +194,35 @@ test("pnpm check normalizes minutes to days", async () => {
 test(".bak is created once and never overwritten", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "registry=https://original/\n");
-  await runCli(["enable", "--tool", "npm"], home);
-  await runCli(["disable", "--tool", "npm"], home);
-  await runCli(["enable", "--tool", "npm"], home);
+  await runCli(["--tool", "npm"], home);
+  await runCli(["--disable", "--tool", "npm"], home);
+  await runCli(["--tool", "npm"], home);
   const bak = await readFile(join(home, ".npmrc.bak"), "utf8");
   assert.equal(bak, "registry=https://original/\n");
 });
 
-test("hardening extras: check fails when extras missing, enable fixes them, disable removes them", async () => {
+test("hardening extras: --check fails when extras missing, default enable fixes them, --disable removes them", async () => {
   const home = await setupHome();
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   const pnpmrc = join(home, ".config", "pnpm", "rc");
   await writeFile(pnpmrc, "minimum-release-age=20160\n");
-  const r1 = await runCli(["check", "--json", "--tool", "pnpm"], home);
+  const r1 = await runCli(["--check", "--json", "--tool", "pnpm"], home);
   const d1 = JSON.parse(r1.out);
   assert.equal(r1.code, 1, "extras missing should fail check");
   assert.equal(d1.rows[0].extras.length, 3);
   assert.equal(d1.rows[0].extras.every(e => !e.ok), true);
 
-  await runCli(["enable", "--tool", "pnpm"], home);
+  await runCli(["--tool", "pnpm"], home);
   const after1 = await readFile(pnpmrc, "utf8");
   assert.match(after1, /^trust-policy=no-downgrade$/m);
   assert.match(after1, /^block-exotic-subdeps=true$/m);
   assert.match(after1, /^strict-dep-builds=true$/m);
 
-  const r2 = await runCli(["check", "--json", "--tool", "pnpm"], home);
+  const r2 = await runCli(["--check", "--json", "--tool", "pnpm"], home);
   assert.equal(r2.code, 0);
   assert.equal(JSON.parse(r2.out).ok, true);
 
-  await runCli(["disable", "--tool", "pnpm"], home);
+  await runCli(["--disable", "--tool", "pnpm"], home);
   const after2 = await readFile(pnpmrc, "utf8");
   assert.doesNotMatch(after2, /trust-policy/);
   assert.doesNotMatch(after2, /block-exotic-subdeps/);
@@ -237,7 +237,7 @@ test("pnpm 11 treats missing block-exotic-subdeps as default-enforced (ok=true)"
   // than MISSING (trust-policy stays MISSING — no default change there).
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=4320\n");
-  const { code, out } = await runCli(["check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "11.0.0" });
+  const { code, out } = await runCli(["--check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "11.0.0" });
   const data = JSON.parse(out);
   const beSub = data.rows[0].extras.find(e => e.key === "block-exotic-subdeps");
   const trust = data.rows[0].extras.find(e => e.key === "trust-policy");
@@ -252,7 +252,7 @@ test("pnpm <11 still flags missing block-exotic-subdeps as STALE", async () => {
   const home = await setupHome();
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=4320\n");
-  const { out } = await runCli(["check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "10.26.0" });
+  const { out } = await runCli(["--check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "10.26.0" });
   const beSub = JSON.parse(out).rows[0].extras.find(e => e.key === "block-exotic-subdeps");
   assert.equal(beSub.ok, false);
   assert.equal(beSub.defaultEnforced ?? false, false);
@@ -260,7 +260,7 @@ test("pnpm <11 still flags missing block-exotic-subdeps as STALE", async () => {
 
 test("--days N overrides bundle cooldown for enable and check", async () => {
   const home = await setupHome();
-  const { code: enableCode } = await runCli(["enable", "--days", "7"], home);
+  const { code: enableCode } = await runCli(["--days", "7"], home);
   assert.equal(enableCode, 0);
   const npmrc = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(npmrc, /^min-release-age=7$/m);
@@ -272,32 +272,39 @@ test("--days N overrides bundle cooldown for enable and check", async () => {
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=10080$/m);
 
-  const r = await runCli(["check", "--json", "--days", "7"], home);
+  const r = await runCli(["--check", "--json", "--days", "7"], home);
   assert.equal(r.code, 0);
   assert.equal(JSON.parse(r.out).bundleDays, 7);
 
   // Default check (1 day) still passes since 7 >= 1.
-  const r2 = await runCli(["check", "--json"], home);
+  const r2 = await runCli(["--check", "--json"], home);
   assert.equal(r2.code, 0);
 
   // But raising the bar above the configured value flips check to fail.
-  const r3 = await runCli(["check", "--days", "30"], home);
+  const r3 = await runCli(["--check", "--days", "30"], home);
   assert.equal(r3.code, 1);
 });
 
 test("--days rejects non-positive integers with exit 2", async () => {
   const home = await setupHome();
   for (const bad of ["0", "-1", "abc", ""]) {
-    const { code } = await runCli(["enable", "--days", bad], home);
+    const { code } = await runCli(["--days", bad], home);
     assert.equal(code, 2, `expected exit 2 for --days ${JSON.stringify(bad)}`);
   }
 });
 
-test("enable rejects positional arguments with exit 2", async () => {
+test("rejects positional arguments with exit 2", async () => {
   const home = await setupHome();
-  const { code, err } = await runCli(["enable", "7"], home);
+  const { code, err } = await runCli(["enable"], home);
   assert.equal(code, 2);
-  assert.match(err, /unexpected argument: 7/);
+  assert.match(err, /unexpected argument: enable/);
+});
+
+test("--check and --disable are mutually exclusive", async () => {
+  const home = await setupHome();
+  const { code, err } = await runCli(["--check", "--disable"], home);
+  assert.equal(code, 2);
+  assert.match(err, /mutually exclusive/);
 });
 
 test("--version prints package.json version and exits 0", async () => {

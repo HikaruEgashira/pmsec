@@ -17,19 +17,16 @@ export const VERSION = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version;
 
-const USAGE = `pmsec <command> [options]
+const USAGE = `pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. \`set\` flips on every safe-by-default key each
-tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+bun, cargo, mise, uv. Default action enables every safe-by-default key
+each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
-Commands:
-  enable                Apply the hardening bundle to all selected tools
-  disable               Remove the hardening bundle from selected tools
-  check                 Verify the bundle is in place (exit 1 if anything missing)
-
 Options:
+  --check               Verify the bundle is in place (exit 1 if anything missing)
+  --disable             Remove the hardening bundle from selected tools
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -38,11 +35,11 @@ Options:
   -h, --help            Show this help
 
 Examples:
-  npx pmsec enable
-  npx pmsec enable --days 7
-  npx pmsec enable --days 1 --force
-  npx pmsec check
-  npx pmsec disable --tool npm
+  npx pmsec
+  npx pmsec --days 7
+  npx pmsec --days 1 --force
+  npx pmsec --check
+  npx pmsec --disable --tool npm
 `;
 
 function parseDays(raw) {
@@ -52,7 +49,13 @@ function parseDays(raw) {
 }
 
 function parse(argv) {
-  const opts = { command: null, json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false };
+  const opts = { mode: "enable", json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false };
+  let modeSet = false;
+  const setMode = (m) => {
+    if (modeSet && opts.mode !== m) throw new Error(`--check and --disable are mutually exclusive`);
+    opts.mode = m;
+    modeSet = true;
+  };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -60,6 +63,8 @@ function parse(argv) {
     else if (a === "-V" || a === "--version") opts.version = true;
     else if (a === "--json") opts.json = true;
     else if (a === "--force") opts.force = true;
+    else if (a === "--check") setMode("check");
+    else if (a === "--disable") setMode("disable");
     else if (a === "--tool") opts.only = argv[++i].split(",");
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
     else if (a === "--days") opts.days = parseDays(argv[++i]);
@@ -67,8 +72,7 @@ function parse(argv) {
     else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
     else positional.push(a);
   }
-  opts.command = positional[0] ?? null;
-  if (positional.length > 1) throw new Error(`unexpected argument: ${positional[1]}`);
+  if (positional.length) throw new Error(`unexpected argument: ${positional[0]}`);
   return opts;
 }
 
@@ -121,8 +125,8 @@ async function runCheck(targets, { json, days }, ctx, out, err) {
   const ok = failingPrimary.length === 0 && failingExtras.length === 0;
   if (json) out.write(JSON.stringify({ bundleDays: days, rows, ok }, null, 2) + "\n");
   else out.write(renderHuman(rows, days));
-  if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec enable\`\n`);
-  if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec enable\`\n`);
+  if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec\`\n`);
+  if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec\`\n`);
   return ok ? 0 : 1;
 }
 
@@ -204,17 +208,15 @@ export async function run(argv, {
   try { opts = parse(argv); }
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
   if (opts.version) { out.write(`pmsec ${VERSION}\n`); return 0; }
-  if (opts.help || !opts.command) { out.write(USAGE); return opts.help ? 0 : 2; }
+  if (opts.help) { out.write(USAGE); return 0; }
   let targets;
   try { targets = selectTools(opts.only); }
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
   const ctx = { env, home, platform };
   try {
-    if (opts.command === "check") return await runCheck(targets, opts, ctx, out, err);
-    if (opts.command === "enable") return await runEnable(targets, opts.json, opts.days, opts.force, ctx, out, err);
-    if (opts.command === "disable") return await runDisable(targets, opts.json, ctx, out, err);
-    err.write(`pmsec: unknown command "${opts.command}"\n`);
-    return 2;
+    if (opts.mode === "check") return await runCheck(targets, opts, ctx, out, err);
+    if (opts.mode === "disable") return await runDisable(targets, opts.json, ctx, out, err);
+    return await runEnable(targets, opts.json, opts.days, opts.force, ctx, out, err);
   } catch (e) {
     err.write(`pmsec: ${e.message}\n`);
     return 1;
