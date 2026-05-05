@@ -137,12 +137,10 @@ function explainFsError(e, tool) {
 }
 
 async function runEnable(targets, json, days, force, ctx, out, err) {
-  const results = [];
-  const failures = [];
-  const warnings = [];
-  for (const t of targets) {
+  // Each tool writes a different config file; safe to run in parallel.
+  // Promise.all preserves input order in the results array.
+  const results = await Promise.all(targets.map(async t => {
     const warn = preflightWarn(t, ctx);
-    if (warn) warnings.push({ tool: t.name, warn });
     try {
       let effective = days;
       let kept = false;
@@ -153,12 +151,13 @@ async function runEnable(targets, json, days, force, ctx, out, err) {
         kept = currentDays >= days && currentDays > 0;
       }
       const r = await t.write(effective, ctx);
-      results.push({ tool: t.name, path: r.path, days: effective, requested: days, kept, forced: force, ok: true, warn });
+      return { tool: t.name, path: r.path, days: effective, requested: days, kept, forced: force, ok: true, warn };
     } catch (e) {
-      failures.push({ tool: t.name, error: explainFsError(e, t.name) });
-      results.push({ tool: t.name, path: e?.path ?? null, days, requested: days, kept: false, forced: force, ok: false, error: explainFsError(e, t.name), warn });
+      return { tool: t.name, path: e?.path ?? null, days, requested: days, kept: false, forced: force, ok: false, error: explainFsError(e, t.name), warn };
     }
-  }
+  }));
+  const failures = results.filter(r => !r.ok).map(r => ({ tool: r.tool, error: r.error }));
+  const warnings = results.filter(r => r.warn).map(r => ({ tool: r.tool, warn: r.warn }));
   if (json) out.write(JSON.stringify({ enabled: true, bundleDays: days, results, warnings, ok: failures.length === 0 }, null, 2) + "\n");
   else for (const r of results) {
     if (r.ok) {
@@ -176,17 +175,15 @@ async function runEnable(targets, json, days, force, ctx, out, err) {
 }
 
 async function runDisable(targets, json, ctx, out, err) {
-  const results = [];
-  const failures = [];
-  for (const t of targets) {
+  const results = await Promise.all(targets.map(async t => {
     try {
       const r = await t.unset(ctx);
-      results.push({ tool: t.name, path: r.path, removed: r.removed, ok: true });
+      return { tool: t.name, path: r.path, removed: r.removed, ok: true };
     } catch (e) {
-      failures.push({ tool: t.name, error: explainFsError(e, t.name) });
-      results.push({ tool: t.name, path: e?.path ?? null, removed: false, ok: false, error: explainFsError(e, t.name) });
+      return { tool: t.name, path: e?.path ?? null, removed: false, ok: false, error: explainFsError(e, t.name) };
     }
-  }
+  }));
+  const failures = results.filter(r => !r.ok).map(r => ({ tool: r.tool, error: r.error }));
   if (json) out.write(JSON.stringify({ results, ok: failures.length === 0 }, null, 2) + "\n");
   else for (const r of results) {
     if (!r.ok) out.write(`FAIL    ${r.tool.padEnd(4)} ${r.error}\n`);
