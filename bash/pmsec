@@ -8,7 +8,7 @@
 # License: MIT.
 set +u
 
-PMSEC_VERSION="0.6.0"
+PMSEC_VERSION="0.7.0"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=3
@@ -334,6 +334,7 @@ tool_extras() {
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
       printf 'block-exotic-subdeps|true|block-exotic-subdeps=true|=|\n'
+      printf 'strict-dep-builds|true|strict-dep-builds=true|=|\n'
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'

@@ -13,7 +13,8 @@ export const minBin = [10, 6, 0];
 // `read()` reports it as ok with `defaultEnforced: true`.
 export const extras = [
   { key: "trust-policy", expected: "no-downgrade", line: "trust-policy=no-downgrade" },
-  { key: "block-exotic-subdeps", expected: "true", line: "block-exotic-subdeps=true", defaultSinceMajor: 11 }
+  { key: "block-exotic-subdeps", expected: "true", line: "block-exotic-subdeps=true", defaultSinceMajor: 11 },
+  { key: "strict-dep-builds", expected: "true", line: "strict-dep-builds=true" }
 ];
 
 export function path(env, home) { return npmrcPath(env, home); }

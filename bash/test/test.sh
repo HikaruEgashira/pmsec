@@ -107,6 +107,7 @@ t_enable_writes_all() {
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$npmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$npmrc" || return
+  assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$npmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   rm -rf -- "$home"
 }
@@ -339,6 +340,7 @@ t_hardening_extras_roundtrip() {
   run_pmsec "$home" -- enable --tool pnpm >/dev/null
   assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "strict-dep-builds written" '^strict-dep-builds=true$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   out=$(run_pmsec "$home" -- check --json --tool pnpm); rc=$?
   assert_eq "after-enable exit" "0" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "after-enable ok=true" '"ok": true' "$out" || { rm -rf "$home"; return 1; }
@@ -346,6 +348,7 @@ t_hardening_extras_roundtrip() {
   local after; after=$(cat "$home/.npmrc")
   ! printf '%s' "$after" | grep -q 'trust-policy' || { LAST_FAIL="trust-policy not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'block-exotic-subdeps' || { LAST_FAIL="block-exotic-subdeps not removed"; rm -rf "$home"; return 1; }
+  ! printf '%s' "$after" | grep -q 'strict-dep-builds' || { LAST_FAIL="strict-dep-builds not removed"; rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 

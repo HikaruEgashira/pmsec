@@ -35,6 +35,7 @@ def test_enable_writes_bundle_for_every_tool(tmp_path):
     assert "audit-level=high" in npmrc
     assert "trust-policy=no-downgrade" in npmrc
     assert "block-exotic-subdeps=true" in npmrc
+    assert "strict-dep-builds=true" in npmrc
     assert 'exclude-newer = "3 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     bunfig = (tmp_path / ".bunfig.toml").read_text()
     assert "[install]" in bunfig
@@ -183,13 +184,14 @@ def test_hardening_extras_roundtrip(tmp_path):
     code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
-    assert len(data["rows"][0]["extras"]) == 2
+    assert len(data["rows"][0]["extras"]) == 3
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
     run(["enable", "--tool", "pnpm"], tmp_path)
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "trust-policy=no-downgrade" in npmrc
     assert "block-exotic-subdeps=true" in npmrc
+    assert "strict-dep-builds=true" in npmrc
 
     code, out, _ = run(["check", "--json", "--tool", "pnpm"], tmp_path)
     assert code == 0
@@ -199,6 +201,7 @@ def test_hardening_extras_roundtrip(tmp_path):
     after = (tmp_path / ".npmrc").read_text()
     assert "trust-policy" not in after
     assert "block-exotic-subdeps" not in after
+    assert "strict-dep-builds" not in after
     assert "minimum-release-age" not in after
 
 

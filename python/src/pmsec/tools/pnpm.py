@@ -18,6 +18,7 @@ MIN_BIN = (10, 6, 0)
 EXTRAS = [
     {"key": "trust-policy", "expected": "no-downgrade", "line": "trust-policy=no-downgrade"},
     {"key": "block-exotic-subdeps", "expected": "true", "line": "block-exotic-subdeps=true", "default_since_major": 11},
+    {"key": "strict-dep-builds", "expected": "true", "line": "strict-dep-builds=true"},
 ]
 
 
