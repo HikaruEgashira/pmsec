@@ -396,5 +396,25 @@ T "hardening extras roundtrip (check / enable / disable)" t_hardening_extras_rou
 T "pnpm 11 default-enforces missing block-exotic-subdeps" t_pnpm_11_default_enforced
 T "pnpm <11 still flags missing block-exotic-subdeps" t_pnpm_pre11_no_default_enforcement
 
+# PMSEC_HOME redirects writes off of $HOME so MDM root wrappers can target the
+# logged-in user's home without overriding every per-tool env var.
+t_pmsec_home_redirects() {
+  local real fake; real=$(setup_home); fake=$(setup_home)
+  # HOME points at $real but PMSEC_HOME redirects everything to $fake.
+  env -i PATH="$PATH" HOME="$real" XDG_CONFIG_HOME="$fake/.config" \
+    PMSEC_PNPM_VERSION=none PMSEC_HOME="$fake" \
+    bash "$PMSEC" enable >/dev/null 2>&1
+  local rc=$?
+  local has_real=0 has_fake=0
+  [ -e "$real/.npmrc" ] && has_real=1
+  [ -e "$fake/.npmrc" ] && has_fake=1
+  rm -rf -- "$real" "$fake"
+  assert_eq "exit code 0" "0" "$rc" || return 1
+  assert_eq "$HOME/.npmrc untouched" "0" "$has_real" || return 1
+  assert_eq "PMSEC_HOME/.npmrc written" "1" "$has_fake" || return 1
+}
+
+T "PMSEC_HOME overrides \$HOME" t_pmsec_home_redirects
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

@@ -24,19 +24,25 @@ uvx pmsec enable
 ```
 
 ```bash
-# no npm/uv on the box? grab the bash port:
-curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/bash/pmsec \
+# no npm/uv on the box? grab the bash port (pin a tag for production):
+curl -fsSL https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/bash/pmsec \
   -o /usr/local/bin/pmsec && chmod +x /usr/local/bin/pmsec
 pmsec enable
 ```
 
 ```powershell
-# Windows? grab the PowerShell port:
+# Windows? grab the PowerShell port (pin a tag for production):
 Invoke-WebRequest `
-  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
+  -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/v0.6.0/powershell/pmsec.ps1 `
   -OutFile $env:USERPROFILE\bin\pmsec.ps1
 pwsh -File $env:USERPROFILE\bin\pmsec.ps1 enable
 ```
+
+> Deploying via **Jamf** or **Intune**? The bash and PowerShell ports honor
+> `PMSEC_HOME` so a root / SYSTEM-context wrapper can target the logged-in
+> user's profile. See [`bash/README.md`](bash/README.md#mdm-deployment-jamf-ansible-)
+> and [`powershell/README.md`](powershell/README.md#mdm-deployment-intune)
+> for ready-to-paste wrapper scripts.
 
 > Bootstrap: pmsec eats its own dog food — once a cooldown is in place,
 > the very first install may be filtered out. Override just for that call:

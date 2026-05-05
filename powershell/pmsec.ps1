@@ -223,6 +223,15 @@ function WriteAtomic([string]$Path, [string]$Content) {
   if ($dir -and -not (Test-Path -LiteralPath $dir)) {
     [void](New-Item -ItemType Directory -Force -Path $dir)
   }
+  # Mirror the bash port: refuse to follow a symlink (or junction/reparse point
+  # on Windows). The MDM threat model includes a malicious user planting a link
+  # that pmsec, possibly running elevated under Intune, would otherwise resolve.
+  if (Test-Path -LiteralPath $Path) {
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+      throw "refusing to write through symlink/reparse point $Path"
+    }
+  }
   $bak = "$Path.bak"
   if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-Path -LiteralPath $bak)) {
     Copy-Item -LiteralPath $Path -Destination $bak
@@ -564,6 +573,18 @@ Examples:
   pmsec enable --days 1 --force
   pmsec check
   pmsec disable --tool npm
+
+Environment:
+  PMSEC_HOME              Home dir to operate on (overrides `$env:USERPROFILE`
+                          / `$env:HOME`). Set this when running as SYSTEM via
+                          Intune so configs land in the real user's profile.
+  NPM_CONFIG_USERCONFIG   Override the npm/pnpm config file path.
+  YARN_RC_FILENAME        Override the yarn config file path.
+  BUN_CONFIG_FILE         Override the bun config file path.
+  CARGO_HOME              Override the cargo dir; pmsec writes `$CARGO_HOME\config.toml`.
+  MISE_GLOBAL_CONFIG_FILE Override the mise config file path.
+  UV_CONFIG_FILE          Override the uv config file path.
+  XDG_CONFIG_HOME         Override the XDG config root (affects mise, uv on linux/mac).
 "@
 }
 
