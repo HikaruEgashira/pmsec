@@ -306,9 +306,19 @@ function LinesRemoveKey([string]$Key, [string]$Sep = '=', [string]$Section = '')
 # ---------- atomic write ----------
 
 function WriteAtomic([string]$Path, [string]$Content) {
+  # Wrap each step (mkdir / refuse-symlink / backup-copy / body-write /
+  # rename) so failures throw with a `WriteAtomic <step>` prefix. AV/EDR
+  # tends to block the rename, while UNC ACLs flip the body-write — a
+  # labeled exception lets the MDM operator skip straight to the right
+  # check (Defender exclusion vs. \\wsl$ ACL vs. the Linux side's mode
+  # bits) without re-running the script under tracing.
   $dir = Split-Path -Parent $Path
   if ($dir -and -not (Test-Path -LiteralPath $dir)) {
-    [void](New-Item -ItemType Directory -Force -Path $dir)
+    try {
+      [void](New-Item -ItemType Directory -Force -Path $dir)
+    } catch {
+      throw "WriteAtomic mkdir failed for ${dir}: $($_.Exception.Message)"
+    }
   }
   # Mirror the bash port: refuse to follow a symlink (or junction/reparse point
   # on Windows). The MDM threat model includes a malicious user planting a link
@@ -321,13 +331,25 @@ function WriteAtomic([string]$Path, [string]$Content) {
   }
   $bak = "$Path.bak"
   if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-Path -LiteralPath $bak)) {
-    Copy-Item -LiteralPath $Path -Destination $bak
+    try {
+      Copy-Item -LiteralPath $Path -Destination $bak
+    } catch {
+      throw "WriteAtomic backup-copy failed for ${bak}: $($_.Exception.Message)"
+    }
   }
   $tmp = "$Path." + [guid]::NewGuid().ToString('N').Substring(0,8) + '.tmp'
   $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
   try {
-    [System.IO.File]::WriteAllText($tmp, $Content, $utf8NoBom)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    try {
+      [System.IO.File]::WriteAllText($tmp, $Content, $utf8NoBom)
+    } catch {
+      throw "WriteAtomic body-write failed for ${tmp}: $($_.Exception.Message)"
+    }
+    try {
+      Move-Item -LiteralPath $tmp -Destination $Path -Force
+    } catch {
+      throw "WriteAtomic rename failed for ${Path}: $($_.Exception.Message)"
+    }
   } catch {
     Remove-Item -LiteralPath $tmp -Force -ErrorAction Ignore
     throw
@@ -628,6 +650,7 @@ attestation re-verification, ...). No knobs.
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
+  --doctor              Diagnose effective paths/owner/uid (read-only; for MDM debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -684,12 +707,16 @@ function ParseArgs($Argv) {
     elseif ($a -eq '--force') { $opts.Force = $true }
     elseif ($a -eq '--no-wsl') { $opts.NoWsl = $true }
     elseif ($a -eq '--check') {
-      if ($modeSet -and $opts.Mode -ne 'check') { throw '--check and --disable are mutually exclusive' }
+      if ($modeSet -and $opts.Mode -ne 'check') { throw '--check, --disable, and --doctor are mutually exclusive' }
       $opts.Mode = 'check'; $modeSet = $true
     }
     elseif ($a -eq '--disable') {
-      if ($modeSet -and $opts.Mode -ne 'disable') { throw '--check and --disable are mutually exclusive' }
+      if ($modeSet -and $opts.Mode -ne 'disable') { throw '--check, --disable, and --doctor are mutually exclusive' }
       $opts.Mode = 'disable'; $modeSet = $true
+    }
+    elseif ($a -eq '--doctor') {
+      if ($modeSet -and $opts.Mode -ne 'doctor') { throw '--check, --disable, and --doctor are mutually exclusive' }
+      $opts.Mode = 'doctor'; $modeSet = $true
     }
     elseif ($a -eq '--tool') { $i++; $opts.Only = $Argv[$i] -split ',' }
     elseif ($a -like '--tool=*') { $opts.Only = $a.Substring(7) -split ',' }
@@ -795,7 +822,29 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
 }
 
 function ExplainFsError([string]$Tool, $Err) {
-  return ("$Tool" + ': ' + $Err.ToString())
+  # Mirror node's explainFsError. PowerShell error records carry an
+  # exception type — UnauthorizedAccessException covers EACCES/EPERM and
+  # IOException with HResult 0x80070013 covers a read-only volume. AV/EDR
+  # blocks tend to surface as IOException too, but we leave them generic
+  # because the right remediation is "investigate Defender / Sophos logs"
+  # rather than a CLI hint. Path comes from the WriteAtomic step prefix
+  # we added; we extract it for the ownership hint.
+  $msg = $Err.Exception.Message
+  $exType = $Err.Exception.GetType().FullName
+  $path = $null
+  if ($msg -match 'for ([^:]+):') { $path = $Matches[1] }
+  if ($exType -eq 'System.UnauthorizedAccessException' -or $msg -match 'Access to the path .* is denied') {
+    $hint = if ($path) {
+      "cannot write $path (UnauthorizedAccessException). Check ACL: ``Get-Acl '$path' | Format-List`` — if owned by SYSTEM/Administrators, run pmsec from an elevated prompt or fix the ACL"
+    } else {
+      'access denied'
+    }
+    return "${Tool}: ${hint}. [${msg}]"
+  }
+  if ($Err.Exception -is [System.IO.IOException] -and $Err.Exception.HResult -eq -2147024864) {
+    return "${Tool}: ${path} is read-only or shared (IOException). [${msg}]"
+  }
+  return "${Tool}: ${msg}"
 }
 
 function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scopes) {
@@ -955,6 +1004,138 @@ function CmdDisable($Targets, [bool]$Json, [array]$Scopes) {
   return 0
 }
 
+# `pmsec --doctor` runs read-only and reports the same path resolution that
+# enable/check/disable would do, plus identity (uid/euid where applicable) and
+# parent-dir writability — the smallest set of facts an MDM operator needs to
+# diagnose "pmsec ran but wrote to nowhere" or "wrote a file no one can read"
+# (e.g. AV/EDR blocking the rename, or a UNC ACL flip on a WSL distro). Never
+# mutates the filesystem.
+function ProbePath([string]$Path) {
+  $parent = Split-Path -Parent $Path
+  $exists = Test-Path -LiteralPath $Path -PathType Leaf
+  $writable = $false
+  $owner = $null
+  if ($exists) {
+    try {
+      $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::ReadWrite)
+      $fs.Dispose()
+      $writable = $true
+    } catch { $writable = $false }
+    try { $owner = (Get-Acl -LiteralPath $Path).Owner } catch { $owner = $null }
+  }
+  $parentExists = if ($parent) { Test-Path -LiteralPath $parent -PathType Container } else { $false }
+  # Walk up to the deepest existing ancestor — pmsec runs New-Item -Force, so
+  # what matters is whether that ancestor is writable, not the literal parent.
+  $probe = $parent
+  $ancestor = $null
+  while ($probe) {
+    if (Test-Path -LiteralPath $probe -PathType Container) { $ancestor = $probe; break }
+    $next = Split-Path -Parent $probe
+    if (-not $next -or $next -eq $probe) { break }
+    $probe = $next
+  }
+  $parentWritable = $false
+  if ($ancestor) {
+    # Best-effort: try creating a sentinel file under the ancestor. This costs
+    # one syscall and reflects what New-Item would actually do, including ACL
+    # nuances on UNC paths to WSL.
+    $sentinel = Join-Path $ancestor (".pmsec-doctor." + [guid]::NewGuid().ToString('N').Substring(0,8) + '.tmp')
+    try {
+      [System.IO.File]::WriteAllBytes($sentinel, [byte[]]@())
+      Remove-Item -LiteralPath $sentinel -Force -ErrorAction Ignore
+      $parentWritable = $true
+    } catch { $parentWritable = $false }
+  }
+  return @{
+    Path = $Path; Parent = $parent
+    Exists = $exists; Writable = $writable
+    ParentExists = $parentExists; ParentWritable = $parentWritable
+    Owner = $owner
+  }
+}
+
+function CmdDoctor($Targets, [bool]$Json, [array]$Scopes) {
+  $rows = New-Object System.Collections.Generic.List[hashtable]
+  foreach ($scope in $Scopes) {
+    $script:Scope = $scope
+    foreach ($t in $Targets) {
+      $p = ToolPath $t
+      $probe = ProbePath $p
+      $rows.Add(@{
+        Scope = $scope.Label
+        Tool = $t; Key = (ToolKey $t)
+        Path = $probe.Path; Parent = $probe.Parent
+        Exists = $probe.Exists; Writable = $probe.Writable
+        ParentExists = $probe.ParentExists; ParentWritable = $probe.ParentWritable
+        Owner = $probe.Owner
+      })
+    }
+  }
+  $script:Scope = $null
+  $okFlag = $true
+  foreach ($r in $rows) { if (-not $r.ParentWritable) { $okFlag = $false } }
+  $multiScope = $Scopes.Count -gt 1
+  $username = $null
+  try { $username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name } catch {}
+  $isAdmin = $false
+  try {
+    $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($id)
+    $isAdmin = $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+  } catch {}
+  $pmsecHome = $env:PMSEC_HOME
+  $pmsecHomeSrc = if ($pmsecHome) { 'PMSEC_HOME' } elseif ($env:USERPROFILE) { 'USERPROFILE' } else { 'HOME' }
+  $homePath = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+  if ($Json) {
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('{')
+    [void]$sb.AppendLine('  "doctor": true,')
+    [void]$sb.AppendLine("  ""version"": $(JsonString $script:PmsecVersion),")
+    [void]$sb.AppendLine('  "platform": "win32",')
+    [void]$sb.AppendLine("  ""username"": $(JsonStrOrNull $username),")
+    [void]$sb.AppendLine("  ""isAdministrator"": $(JsonBool $isAdmin),")
+    [void]$sb.AppendLine("  ""home"": $(JsonString $homePath),")
+    [void]$sb.AppendLine("  ""pmsecHome"": $(JsonStrOrNull $pmsecHome),")
+    [void]$sb.AppendLine("  ""pmsecHomeSource"": $(JsonString $pmsecHomeSrc),")
+    [void]$sb.AppendLine('  "tools": [')
+    for ($i = 0; $i -lt $rows.Count; $i++) {
+      $r = $rows[$i]
+      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""parent"": $(JsonString $r.Parent), ""exists"": $(JsonBool $r.Exists), ""writable"": $(JsonBool $r.Writable), ""parentExists"": $(JsonBool $r.ParentExists), ""parentWritable"": $(JsonBool $r.ParentWritable), ""owner"": $(JsonStrOrNull $r.Owner)}"
+      if ($i -lt $rows.Count - 1) { $entry += ',' }
+      [void]$sb.AppendLine($entry)
+    }
+    [void]$sb.AppendLine('  ],')
+    [void]$sb.AppendLine("  ""ok"": $(JsonBool $okFlag)")
+    [void]$sb.Append('}')
+    StdOut $sb.ToString()
+  } else {
+    StdOut ("pmsec $($script:PmsecVersion)  doctor")
+    StdOut '  platform   : win32'
+    if ($username) { StdOut "  user       : $username (admin=$isAdmin)" } else { StdOut "  user       : (unknown) (admin=$isAdmin)" }
+    StdOut "  HOME       : $homePath"
+    if ($pmsecHome) { StdOut "  PMSEC_HOME : $pmsecHome" } else { StdOut "  PMSEC_HOME : (unset $($script:EmDash) using $pmsecHomeSrc)" }
+    StdOut ''
+    $lastScope = ''
+    foreach ($r in $rows) {
+      if ($multiScope -and $r.Scope -ne $lastScope) {
+        StdOut ('[' + $r.Scope + ']')
+        $lastScope = $r.Scope
+      }
+      $flag = if ($r.ParentWritable) { 'ok    ' } else { 'BLOCK ' }
+      $ownerSuffix = if ($r.Exists -and $r.Owner) { " (owner=$($r.Owner))" } else { '' }
+      StdOut ('{0} {1} {2}{3}' -f $flag, (Pad4 $r.Tool), $r.Path, $ownerSuffix)
+      if (-not $r.ParentWritable) {
+        StdOut ('         no writable ancestor for ' + $r.Parent)
+      }
+    }
+    if (-not $okFlag) {
+      StdOut ''
+      StdErr "pmsec doctor: at least one parent directory is not writable for $username."
+    }
+  }
+  if ($okFlag) { return 0 } else { return 1 }
+}
+
 # ---------- entry ----------
 
 try {
@@ -984,6 +1165,7 @@ try {
   switch ($opts.Mode) {
     'check'   { exit (CmdCheck $targets $opts.Json $opts.Days $scopes) }
     'disable' { exit (CmdDisable $targets $opts.Json $scopes) }
+    'doctor'  { exit (CmdDoctor $targets $opts.Json $scopes) }
     default   { exit (CmdEnable $targets $opts.Json $opts.Days $opts.Force $scopes) }
   }
 } catch {

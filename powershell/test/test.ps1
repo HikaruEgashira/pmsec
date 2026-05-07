@@ -580,6 +580,67 @@ T 'single-scope output has no scope header (back-compat)' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+# `pmsec --doctor --json` is the read-only diagnostic — it must report a
+# stable shape so MDM operators can consume it as an Intune Detection rule.
+T 'doctor --json reports per-tool writability on a fresh home' {
+  $h = NewHome
+  try {
+    $r = InvokePmsec $h $null @('--doctor','--json')
+    if ($r.Code -ne 0) { $script:LastFail = "exit code $($r.Code)`n$($r.Out)`n$($r.Err)"; return $false }
+    $data = $r.Out | ConvertFrom-Json
+    if ($data.doctor -ne $true) { $script:LastFail = 'doctor flag missing'; return $false }
+    if ($data.ok -ne $true) { $script:LastFail = "ok=false on fresh home: $($r.Out)"; return $false }
+    if ($data.platform -ne 'win32') { $script:LastFail = "platform=$($data.platform)"; return $false }
+    $tools = @($data.tools | ForEach-Object { $_.tool })
+    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','uv')) {
+      if ($tools -notcontains $t) { $script:LastFail = "tool $t missing from doctor output"; return $false }
+    }
+    foreach ($row in $data.tools) {
+      foreach ($field in @('path','parent','exists','writable','parentExists','parentWritable','owner')) {
+        if (-not ($row.PSObject.Properties.Name -contains $field)) {
+          $script:LastFail = "tool $($row.tool) missing field $field"
+          return $false
+        }
+      }
+      if ($row.parentWritable -ne $true) {
+        $script:LastFail = "tool $($row.tool) parentWritable=false on fresh home"
+        return $false
+      }
+    }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+# WriteAtomic must surface a labeled error when refusing to follow a
+# reparse point — that prefix is what makes MDM logs actionable.
+T 'write_atomic refuses to follow a reparse point with a labeled error' {
+  $h = NewHome
+  try {
+    # Simulate a reparse point by creating a directory junction at the .npmrc
+    # path. New-Item -ItemType Junction works on Windows; on macOS pwsh we
+    # fall back to a symlink which carries the same ReparsePoint attribute
+    # check from the runtime point of view.
+    $target = Join-Path $h 'real.target'
+    [void](New-Item -ItemType Directory -Path $target -Force)
+    $linkPath = Join-Path $h '.npmrc'
+    try {
+      [void](New-Item -ItemType SymbolicLink -Path $linkPath -Target $target -Force)
+    } catch {
+      # Some runtimes block symlink creation without admin — skip rather
+      # than fail the suite; the labeled-error guarantee is asserted by
+      # the bash and node suites too.
+      Write-Host "SKIP  write_atomic reparse refusal (symlink creation blocked)"
+      return $true
+    }
+    $r = InvokePmsec $h $null @('--tool','npm')
+    if ($r.Out -notmatch 'refusing to write through symlink' -and $r.Err -notmatch 'refusing to write through symlink') {
+      $script:LastFail = "expected reparse-point refusal in output:`n$($r.Out)`n--err--`n$($r.Err)"
+      return $false
+    }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
 # ---------- summary ----------
 
 Write-Host ""

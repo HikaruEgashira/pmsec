@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -52,6 +53,7 @@ def _parser() -> argparse.ArgumentParser:
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="verify the bundle is in place (exit 1 if anything missing)")
     mode.add_argument("--disable", action="store_true", help="remove the hardening bundle from selected tools")
+    mode.add_argument("--doctor", action="store_true", help="diagnose effective paths/owner/uid (read-only; for MDM debugging)")
     p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
     p.add_argument("--json", action="store_true", help="emit JSON output")
     p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
@@ -127,6 +129,100 @@ def _check(args, targets, ctx: Context, out, err):
     if failing_extras:
         err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value — run `pmsec`\n")
     return 0 if ok else 1
+
+
+# `pmsec doctor` runs read-only and reports the same path resolution that
+# enable/check/disable would do, plus identity (uid/euid) and parent-dir
+# writability — the smallest set of facts an MDM operator needs to diagnose
+# "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one can
+# read" (chown failed under SIP/SELinux). Never mutates the filesystem.
+def _probe_path(p: Path, uid: int | None) -> dict:
+    parent = p.parent
+    exists = p.exists()
+    writable = False
+    owner: int | None = None
+    if exists:
+        writable = os.access(str(p), os.W_OK)
+        try:
+            st = p.stat()
+            owner = uid if uid is None else st.st_uid
+        except OSError:
+            pass
+    parent_exists = parent.exists()
+    # Walk up to the deepest existing ancestor — pmsec runs mkdir -p, so what
+    # matters is whether that ancestor is writable, not the literal parent.
+    probe = parent
+    ancestor: Path | None = None
+    while True:
+        if probe.exists():
+            ancestor = probe
+            break
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    parent_writable = bool(ancestor) and os.access(str(ancestor), os.W_OK)
+    return {
+        "path": str(p),
+        "parent": str(parent),
+        "exists": exists,
+        "writable": writable,
+        "parentExists": parent_exists,
+        "parentWritable": parent_writable,
+        "owner": owner,
+    }
+
+
+def _doctor(args, targets, ctx: Context, out) -> int:
+    is_posix = ctx.platform != "win32" and hasattr(os, "geteuid")
+    uid = os.getuid() if is_posix else None
+    euid = os.geteuid() if is_posix else uid
+    try:
+        import pwd
+        username = pwd.getpwuid(euid).pw_name if is_posix and euid is not None else None
+    except (ImportError, KeyError):
+        username = None
+    tools = []
+    for t in targets:
+        p = Path(t.path(ctx))
+        probe = _probe_path(p, uid)
+        tools.append({"tool": t.NAME, "key": t.KEY, **probe})
+    # doctor.ok is intentionally narrow: parent must be writable as the
+    # running uid. Everything else is informational.
+    ok_flag = all(t["parentWritable"] for t in tools)
+    pmsec_home = ctx.env.get("PMSEC_HOME")
+    report = {
+        "doctor": True,
+        "version": __version__,
+        "platform": ctx.platform,
+        "uid": uid,
+        "euid": euid,
+        "username": username,
+        "home": str(ctx.home),
+        "pmsecHome": pmsec_home,
+        "pmsecHomeSource": "PMSEC_HOME" if pmsec_home else "HOME",
+        "tools": tools,
+        "ok": ok_flag,
+    }
+    if args.json:
+        out.write(json.dumps(report, indent=2) + "\n")
+        return 0 if ok_flag else 1
+    out.write(f"pmsec {__version__}  doctor\n")
+    out.write(f"  platform   : {ctx.platform}\n")
+    if is_posix:
+        suffix = f" ({username})" if username else ""
+        out.write(f"  uid/euid   : {uid}/{euid}{suffix}\n")
+    out.write(f"  HOME       : {ctx.home}\n")
+    out.write(f"  PMSEC_HOME : {pmsec_home or '(unset — using HOME)'}\n\n")
+    for t in tools:
+        flag = "ok    " if t["parentWritable"] else "BLOCK "
+        owner_suffix = f" (uid={t['owner']})" if t["exists"] and t["owner"] is not None else ""
+        out.write(f"{flag} {t['tool']:<4} {t['path']}{owner_suffix}\n")
+        if not t["parentWritable"]:
+            out.write(f"         no writable ancestor for {t['parent']}\n")
+    if not ok_flag:
+        uid_label = uid if uid is not None else "(non-POSIX)"
+        out.write(f"\npmsec doctor: at least one parent directory is not writable as uid {uid_label}.\n")
+    return 0 if ok_flag else 1
 
 
 def _explain_fs_error(exc: BaseException, tool: str) -> str:
@@ -236,4 +332,6 @@ def main(
         return _check(args, targets, ctx, out, err)
     if args.disable:
         return _disable(args, targets, ctx, out, err)
+    if args.doctor:
+        return _doctor(args, targets, ctx, out)
     return _enable(args, targets, ctx, out, err)

@@ -442,5 +442,75 @@ t_pmsec_home_redirects() {
 
 T "PMSEC_HOME overrides \$HOME" t_pmsec_home_redirects
 
+# `pmsec --doctor --json` reports per-tool path resolution and parent-dir
+# writability — the read-only diagnostic command an MDM operator runs to
+# figure out where pmsec would land before they care about the actual write.
+t_doctor_json_shape() {
+  local home; home=$(setup_home)
+  local out rc
+  out=$(run_pmsec "$home" -- --doctor --json); rc=$?
+  rm -rf -- "$home"
+  assert_eq "exit code 0 on fresh home" "0" "$rc" || return 1
+  assert_match "doctor=true" '"doctor": true' "$out" || return 1
+  assert_match "ok=true" '"ok": true' "$out" || return 1
+  assert_match "pmsecHomeSource=HOME" '"pmsecHomeSource": "HOME"' "$out" || return 1
+  for tool in npm pnpm yarn bun cargo mise uv; do
+    assert_match "$tool entry present" "\"tool\": \"$tool\"" "$out" || return 1
+  done
+  assert_match "parentWritable surfaced" '"parentWritable": true' "$out" || return 1
+}
+
+T "doctor --json reports per-tool writability on fresh home" t_doctor_json_shape
+
+# When the parent dir is read-only, doctor must flip ok=false and exit 1.
+t_doctor_blocks_on_unwritable_parent() {
+  local home; home=$(setup_home)
+  local ro="$home/ro"
+  mkdir -p "$ro"
+  chmod 500 "$ro"
+  local out rc
+  out=$(env -i PATH="$PATH" HOME="$ro" XDG_CONFIG_HOME="$ro/.config" \
+    NPM_CONFIG_USERCONFIG="$ro/.npmrc" PMSEC_PNPM_VERSION=none \
+    bash "$PMSEC" --doctor --json --tool npm); rc=$?
+  chmod 700 "$ro"
+  rm -rf -- "$home"
+  assert_eq "exit code 1 when parent read-only" "1" "$rc" || return 1
+  assert_match "ok=false" '"ok": false' "$out" || return 1
+  assert_match "parentWritable=false" '"parentWritable": false' "$out" || return 1
+}
+
+T "doctor blocks when parent directory is not writable" t_doctor_blocks_on_unwritable_parent
+
+# explain_fs_error must surface a chown hint when the underlying write fails
+# with Permission denied. We force this by chmod 500-ing the home dir so the
+# atomic rename inside write_atomic fails.
+t_explain_chown_hint_on_eacces() {
+  local home; home=$(setup_home)
+  printf 'registry=https://r/\n' > "$home/.npmrc"
+  chmod 400 "$home/.npmrc"
+  chmod 500 "$home"
+  local err
+  err=$(run_pmsec "$home" -- --tool npm 2>&1 >/dev/null)
+  chmod 700 "$home"
+  chmod 600 "$home/.npmrc"
+  rm -rf -- "$home"
+  assert_match "chown hint present" 'Check file ownership' "$err"
+}
+
+T "explain_fs_error emits chown hint on EACCES" t_explain_chown_hint_on_eacces
+
+# write_atomic step labels: when the target file is a symlink we refuse and
+# emit a labeled error. Use that to verify the prefix exists.
+t_write_atomic_step_label_on_symlink() {
+  local home; home=$(setup_home)
+  ln -s /nonexistent-target "$home/.npmrc"
+  local err
+  err=$(run_pmsec "$home" -- --tool npm 2>&1 >/dev/null)
+  rm -rf -- "$home"
+  assert_match "symlink refusal labeled" 'refusing to write through symlink' "$err"
+}
+
+T "write_atomic refuses to follow a symlink with a labeled error" t_write_atomic_step_label_on_symlink
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

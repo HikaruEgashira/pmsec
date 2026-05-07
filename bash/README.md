@@ -51,6 +51,33 @@ PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec --check
 and every hardening extra is at the safe value, `1` otherwise — usable as a
 Jamf Extension Attribute or Ansible `assert`.
 
+### Debugging an MDM-side failure
+
+When an enable run from Jamf / Ansible reports nothing visible to the user,
+run the read-only diagnostic and inspect the output:
+
+```bash
+PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec --doctor --json
+```
+
+The JSON includes effective `uid`, `home`, `pmsecHome`, and per-tool
+`{path, parent, exists, writable, parentExists, parentWritable, owner}`.
+`ok: false` means at least one parent directory is not writable — the
+common Jamf failure mode is `PMSEC_HOME` unset under `root`, which lands
+configs in `/var/root` instead of the user's profile.
+
+If `pmsec` still fails after `doctor` reports `ok: true`, the actual write
+errors are now tagged: stderr lines begin with `pmsec: write_atomic <step>
+failed for <path>: <reason>` (`mkdir`, `mktemp`, `body-write`, or
+`rename`). `EACCES` failures additionally surface a `Check file ownership:
+ls -la …` hint identifying the file to chown back to the user.
+
+`chown` failures during the post-write hand-back (SIP, SELinux, TCC, NFS
+mounts that don't honor ownership) are surfaced as
+`pmsec: warning: chown <user> <path> failed (...)` — exit code stays `0`
+because the bundle is in place, but the warning means the resulting file
+is still root-owned and the user cannot edit it.
+
 ## Environment overrides
 
 | variable | effect |

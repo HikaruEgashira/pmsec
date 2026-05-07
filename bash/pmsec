@@ -249,7 +249,11 @@ lines_remove_key() {
 # ---------- atomic write ----------
 
 write_atomic() {
-  # write stdin to $1 atomically; create one-shot $1.bak from the existing file.
+  # Write stdin to $1 atomically; create one-shot $1.bak from the existing
+  # file. On failure, prepend `pmsec: write_atomic <step>` so MDM logs reveal
+  # which step (mkdir/cp/mktemp/write/mv) blew up. The step label is what
+  # turned MDM debugging from "permission denied somewhere" into a one-line
+  # diagnosis. The lower command's own stderr is preserved alongside.
   local path="$1" dir tmp bak mode top_created=""
   dir=$(dirname -- "$path")
   if [ ! -d "$dir" ]; then
@@ -261,7 +265,10 @@ write_atomic() {
           && [ ! -d "$(dirname -- "$top_created")" ]; do
       top_created=$(dirname -- "$top_created")
     done
-    mkdir -p -- "$dir"
+    if ! mkdir -p -- "$dir"; then
+      printf 'pmsec: write_atomic mkdir failed for %s\n' "$dir" >&2
+      return 1
+    fi
   fi
   if [ -L "$path" ]; then
     printf 'pmsec: refusing to write through symlink %s\n' "$path" >&2
@@ -269,10 +276,20 @@ write_atomic() {
   fi
   bak="$path.bak"
   if [ -e "$path" ] && [ ! -e "$bak" ]; then
-    cp -p -- "$path" "$bak"
+    if ! cp -p -- "$path" "$bak"; then
+      printf 'pmsec: write_atomic backup-copy failed for %s\n' "$bak" >&2
+      return 1
+    fi
   fi
-  tmp=$(mktemp "$path.XXXXXX") || return 1
-  cat > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  if ! tmp=$(mktemp "$path.XXXXXX"); then
+    printf 'pmsec: write_atomic mktemp failed in %s\n' "$dir" >&2
+    return 1
+  fi
+  if ! cat > "$tmp"; then
+    printf 'pmsec: write_atomic body-write failed for %s\n' "$tmp" >&2
+    rm -f -- "$tmp"
+    return 1
+  fi
   if [ -e "$path" ]; then
     # An existing .npmrc / .yarnrc may carry a registry token under 600.
     mode=$(_pmsec_stat '%Lp' '%a' "$path")
@@ -281,21 +298,43 @@ write_atomic() {
     # mktemp creates 600; under root that would be unreadable post-chown.
     chmod 644 "$tmp" 2>/dev/null || true
   fi
-  mv -f -- "$tmp" "$path" || { rm -f -- "$tmp"; return 1; }
+  if ! mv -f -- "$tmp" "$path"; then
+    printf 'pmsec: write_atomic rename failed for %s\n' "$path" >&2
+    rm -f -- "$tmp"
+    return 1
+  fi
   _pmsec_handback "$path" "$bak" "$top_created"
 }
 
 # Hand the freshly-written file (and dirs we created) back to the home owner
 # when running as root. Caller must always invoke; the function decides.
+#
+# When chown fails (SIP, SELinux, TCC, mounted volume that doesn't honor
+# ownership) we WARN to stderr instead of swallowing — silent chown failure
+# was the worst MDM bug to debug, since enable would report success but
+# leave a root-owned file the user can't read or modify. Exit code stays 0
+# because the bundle is in place; the warning tells the operator to fix
+# ownership manually.
 _pmsec_handback() {
   [ "$(id -u)" = "0" ] || return 0
   local path="$1" bak="$2" top_created="$3"
   local owner; owner=$(_pmsec_owner_of "$(_pmsec_home)")
   [ -n "$owner" ] || return 0
-  chown "$owner" "$path" 2>/dev/null || true
-  [ -e "$bak" ] && chown "$owner" "$bak" 2>/dev/null || true
-  [ -n "$top_created" ] && [ -d "$top_created" ] && \
-    chown -R "$owner" "$top_created" 2>/dev/null || true
+  local err
+  if ! err=$(chown "$owner" "$path" 2>&1); then
+    printf 'pmsec: warning: chown %s %s failed (%s); file may be unreadable for the user\n' \
+      "$owner" "$path" "$err" >&2
+  fi
+  if [ -e "$bak" ]; then
+    if ! err=$(chown "$owner" "$bak" 2>&1); then
+      printf 'pmsec: warning: chown %s %s failed (%s)\n' "$owner" "$bak" "$err" >&2
+    fi
+  fi
+  if [ -n "$top_created" ] && [ -d "$top_created" ]; then
+    if ! err=$(chown -R "$owner" "$top_created" 2>&1); then
+      printf 'pmsec: warning: chown -R %s %s failed (%s)\n' "$owner" "$top_created" "$err" >&2
+    fi
+  fi
   return 0
 }
 
@@ -626,6 +665,7 @@ attestation re-verification, ...). No knobs.
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
+  --doctor              Diagnose effective paths/owner/uid (read-only; for MDM debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -669,14 +709,19 @@ parse_args() {
       --force)      OPT_FORCE=1 ;;
       --check)
         if [ "$MODE_SET" = "1" ] && [ "$MODE" != "check" ]; then
-          printf 'pmsec: --check and --disable are mutually exclusive\n' >&2; return 2
+          printf 'pmsec: --check, --disable, and --doctor are mutually exclusive\n' >&2; return 2
         fi
         MODE="check"; MODE_SET=1 ;;
       --disable)
         if [ "$MODE_SET" = "1" ] && [ "$MODE" != "disable" ]; then
-          printf 'pmsec: --check and --disable are mutually exclusive\n' >&2; return 2
+          printf 'pmsec: --check, --disable, and --doctor are mutually exclusive\n' >&2; return 2
         fi
         MODE="disable"; MODE_SET=1 ;;
+      --doctor)
+        if [ "$MODE_SET" = "1" ] && [ "$MODE" != "doctor" ]; then
+          printf 'pmsec: --check, --disable, and --doctor are mutually exclusive\n' >&2; return 2
+        fi
+        MODE="doctor"; MODE_SET=1 ;;
       --tool)       shift; OPT_ONLY="$1" ;;
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
       --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
@@ -822,6 +867,36 @@ cmd_check() {
   return 0
 }
 
+explain_fs_error() {
+  # Mirror node's explainFsError. We don't have an errno, but the OS error
+  # text reliably contains "Permission denied" (POSIX standard EACCES/EPERM
+  # message) or "Read-only file system" (EROFS). Match those and prepend a
+  # remediation hint pointing the operator at the file ownership / mount
+  # state — the two failure modes that bite Jamf/ansible scripts. The raw
+  # cause is collapsed into a single-line summary (last line only) so the
+  # message fits a JSON `error` field.
+  local tool="$1" raw="$2" path="$3"
+  local q="" cause
+  cause=$(printf '%s' "$raw" | tail -n 1)
+  if [ -n "$path" ]; then q="'${path//\'/\'\\\'\'}'"; fi
+  case "$raw" in
+    *"Permission denied"*|*"Operation not permitted"*)
+      if [ -n "$path" ]; then
+        printf '%s: cannot write %s (Permission denied). Check file ownership: `ls -la %s` — if owned by root, run `sudo chown -h $(id -u):$(id -g) %s`. [%s]' \
+          "$tool" "$path" "$q" "$q" "$cause"
+      else
+        printf '%s: Permission denied. [%s]' "$tool" "$cause"
+      fi
+      return 0
+      ;;
+    *"Read-only file system"*)
+      printf '%s: %s is on a read-only filesystem (EROFS). [%s]' "$tool" "$path" "$cause"
+      return 0
+      ;;
+  esac
+  printf '%s: %s' "$tool" "$cause"
+}
+
 cmd_enable() {
   local results_json="" warns_json="" first_r=1 first_w=1 failures=0 warn_count=0
   local tool path warn err cur_days effective kept r
@@ -844,7 +919,8 @@ cmd_enable() {
       fi
     fi
     if ! out=$(tool_write "$tool" "$effective" 2>&1); then
-      err="$out"; failures=$((failures+1))
+      err=$(explain_fs_error "$tool" "$out" "$path")
+      failures=$((failures+1))
     fi
     if [ -n "$warn" ]; then warn_count=$((warn_count+1)); fi
     if [ "$OPT_JSON" = "1" ]; then
@@ -907,7 +983,7 @@ cmd_disable() {
     if out=$(tool_unset "$tool" 2>&1); then
       removed="$out"
     else
-      err="$out"; failures=$((failures+1))
+      err=$(explain_fs_error "$tool" "$out" "$path"); failures=$((failures+1))
     fi
     if [ "$OPT_JSON" = "1" ]; then
       local ok_json rm_json
@@ -941,6 +1017,133 @@ cmd_disable() {
   return 0
 }
 
+# `pmsec --doctor` runs read-only and reports the same path resolution that
+# enable/check/disable would do, plus identity (uid/euid) and parent-dir
+# writability — the smallest set of facts an MDM operator needs to diagnose
+# "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one can
+# read" (chown failed under SIP/SELinux). Never mutates the filesystem.
+_pmsec_deepest_existing() {
+  # Walk up to the deepest existing ancestor — pmsec runs mkdir -p, so what
+  # matters is whether that ancestor is writable, not the literal parent.
+  local p="$1"
+  while [ -n "$p" ] && [ "$p" != "/" ] && [ ! -d "$p" ]; do
+    p=$(dirname -- "$p")
+  done
+  [ -d "$p" ] && printf '%s' "$p" || printf ''
+}
+
+# Echo "exists writable parent_exists parent_writable owner_uid"
+# (each token "0"/"1" except owner_uid which is "" when not detected).
+_pmsec_probe_path() {
+  local p="$1" parent exists=0 writable=0 parent_exists=0 parent_writable=0 owner=""
+  parent=$(dirname -- "$p")
+  if [ -e "$p" ]; then
+    exists=1
+    [ -w "$p" ] && writable=1
+    owner=$(_pmsec_stat '%u' '%u' "$p")
+  fi
+  [ -d "$parent" ] && parent_exists=1
+  local anc; anc=$(_pmsec_deepest_existing "$parent")
+  [ -n "$anc" ] && [ -w "$anc" ] && parent_writable=1
+  printf '%d %d %d %d %s' "$exists" "$writable" "$parent_exists" "$parent_writable" "$owner"
+}
+
+cmd_doctor() {
+  local uid euid username home pmsec_home pmsec_home_src
+  uid=$(id -u 2>/dev/null || echo "")
+  euid=$(id -u 2>/dev/null || echo "")  # bash has no portable euid; id -u returns euid on POSIX
+  username=$(id -un 2>/dev/null || echo "")
+  home="$HOME"
+  if [ -n "${PMSEC_HOME:-}" ]; then
+    pmsec_home="$PMSEC_HOME"; pmsec_home_src="PMSEC_HOME"
+  else
+    pmsec_home=""; pmsec_home_src="HOME"
+  fi
+  local rows_json="" first=1 ok_flag=1 t path probe
+  local exists writable parent_exists parent_writable owner
+  for t in "${SELECTED[@]}"; do
+    path=$(tool_path "$t")
+    probe=$(_pmsec_probe_path "$path")
+    set -- $probe
+    exists="$1"; writable="$2"; parent_exists="$3"; parent_writable="$4"; owner="${5:-}"
+    [ "$parent_writable" = "0" ] && ok_flag=0
+    if [ "$OPT_JSON" = "1" ]; then
+      local owner_json
+      if [ -z "$owner" ]; then owner_json="null"; else owner_json="$owner"; fi
+      [ "$first" = "1" ] || rows_json+=','$'\n'
+      first=0
+      rows_json+=$'    {'
+      rows_json+="\"tool\": $(json_str "$t"), "
+      rows_json+="\"key\": $(json_str "$(tool_key "$t")"), "
+      rows_json+="\"path\": $(json_str "$path"), "
+      rows_json+="\"parent\": $(json_str "$(dirname -- "$path")"), "
+      rows_json+="\"exists\": $(json_bool "$exists"), "
+      rows_json+="\"writable\": $(json_bool "$writable"), "
+      rows_json+="\"parentExists\": $(json_bool "$parent_exists"), "
+      rows_json+="\"parentWritable\": $(json_bool "$parent_writable"), "
+      rows_json+="\"owner\": $owner_json}"
+    else
+      local flag owner_suffix=""
+      if [ "$parent_writable" = "1" ]; then flag="ok    "; else flag="BLOCK "; fi
+      [ "$exists" = "1" ] && [ -n "$owner" ] && owner_suffix=" (uid=$owner)"
+      printf '%s %s %s%s\n' "$flag" "$(pad4 "$t")" "$path" "$owner_suffix"
+      [ "$parent_writable" = "0" ] && \
+        printf '         no writable ancestor for %s\n' "$(dirname -- "$path")"
+    fi
+  done
+  if [ "$OPT_JSON" = "1" ]; then
+    local pmsec_home_json ok_json
+    if [ -z "$pmsec_home" ]; then pmsec_home_json="null"; else pmsec_home_json=$(json_str "$pmsec_home"); fi
+    if [ "$ok_flag" = "1" ]; then ok_json="true"; else ok_json="false"; fi
+    local username_json
+    if [ -z "$username" ]; then username_json="null"; else username_json=$(json_str "$username"); fi
+    local platform="${PMSEC_PLATFORM:-}"
+    [ -z "$platform" ] && platform=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    printf '{\n'
+    printf '  "doctor": true,\n'
+    printf '  "version": %s,\n' "$(json_str "$PMSEC_VERSION")"
+    printf '  "platform": %s,\n' "$(json_str "$platform")"
+    printf '  "uid": %s,\n' "${uid:-null}"
+    printf '  "euid": %s,\n' "${euid:-null}"
+    printf '  "username": %s,\n' "$username_json"
+    printf '  "home": %s,\n' "$(json_str "$home")"
+    printf '  "pmsecHome": %s,\n' "$pmsec_home_json"
+    printf '  "pmsecHomeSource": %s,\n' "$(json_str "$pmsec_home_src")"
+    printf '  "tools": [\n%s\n  ],\n' "$rows_json"
+    printf '  "ok": %s\n}\n' "$ok_json"
+  else
+    # Render the header before the per-tool rows we already printed — the
+    # human renderer is two-pass to avoid buffering, so prepend nothing now.
+    :
+  fi
+  [ "$ok_flag" = "1" ] && return 0 || return 1
+}
+
+# Two-pass human renderer for doctor: print header first, then re-run the
+# per-tool loop. Cheap, avoids buffering, keeps cmd_doctor symmetric with
+# cmd_check / cmd_enable. Called only in human mode.
+_doctor_print_header() {
+  local platform="${PMSEC_PLATFORM:-}"
+  [ -z "$platform" ] && platform=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  printf 'pmsec %s  doctor\n' "$PMSEC_VERSION"
+  printf '  platform   : %s\n' "$platform"
+  local uid_str euid_str username
+  uid_str=$(id -u 2>/dev/null || echo "?")
+  euid_str="$uid_str"
+  username=$(id -un 2>/dev/null || echo "")
+  if [ -n "$username" ]; then
+    printf '  uid/euid   : %s/%s (%s)\n' "$uid_str" "$euid_str" "$username"
+  else
+    printf '  uid/euid   : %s/%s\n' "$uid_str" "$euid_str"
+  fi
+  printf '  HOME       : %s\n' "$HOME"
+  if [ -n "${PMSEC_HOME:-}" ]; then
+    printf '  PMSEC_HOME : %s\n\n' "$PMSEC_HOME"
+  else
+    printf '  PMSEC_HOME : (unset \xe2\x80\x94 using HOME)\n\n'
+  fi
+}
+
 main() {
   parse_args "$@" || return $?
   if [ "$OPT_VERSION" = "1" ]; then printf 'pmsec %s\n' "$PMSEC_VERSION"; return 0; fi
@@ -950,6 +1153,9 @@ main() {
     check)   cmd_check ;;
     disable) cmd_disable ;;
     enable)  cmd_enable ;;
+    doctor)
+      [ "$OPT_JSON" = "1" ] || _doctor_print_header
+      cmd_doctor ;;
   esac
 }
 

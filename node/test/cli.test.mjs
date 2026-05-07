@@ -317,3 +317,42 @@ test("--version prints package.json version and exits 0", async () => {
     assert.equal(err, "");
   }
 });
+
+test("--doctor --json reports per-tool writability and exits 0 on a fresh home", async () => {
+  const home = await setupHome();
+  const { code, out } = await runCli(["--doctor", "--json"], home);
+  const data = JSON.parse(out);
+  assert.equal(data.doctor, true);
+  assert.equal(data.ok, true);
+  assert.equal(code, 0);
+  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]);
+  for (const t of data.tools) {
+    for (const key of ["path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"]) {
+      assert.ok(key in t, `${t.tool} missing ${key}`);
+    }
+    assert.equal(t.parentWritable, true, `${t.tool} parent should be writable in fresh tmp`);
+  }
+  assert.equal(data.pmsecHomeSource, "HOME");
+});
+
+test("--doctor blocks when the parent directory is not writable", async () => {
+  const { chmod, mkdir: mk } = await import("node:fs/promises");
+  const home = await setupHome();
+  const ro = join(home, "ro");
+  await mk(ro);
+  await chmod(ro, 0o500);
+  try {
+    const { code, out } = await runCli(
+      ["--doctor", "--json", "--tool", "npm"],
+      ro,
+      "linux",
+      { NPM_CONFIG_USERCONFIG: join(ro, ".npmrc") },
+    );
+    const data = JSON.parse(out);
+    assert.equal(data.ok, false);
+    assert.equal(code, 1);
+    assert.equal(data.tools[0].parentWritable, false);
+  } finally {
+    await chmod(ro, 0o700);
+  }
+});
