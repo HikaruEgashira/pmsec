@@ -821,30 +821,36 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
   return 0
 }
 
-function ExplainFsError([string]$Tool, $Err) {
-  # Mirror node's explainFsError. PowerShell error records carry an
-  # exception type — UnauthorizedAccessException covers EACCES/EPERM and
-  # IOException with HResult 0x80070013 covers a read-only volume. AV/EDR
-  # blocks tend to surface as IOException too, but we leave them generic
-  # because the right remediation is "investigate Defender / Sophos logs"
-  # rather than a CLI hint. Path comes from the WriteAtomic step prefix
-  # we added; we extract it for the ownership hint.
-  $msg = $Err.Exception.Message
-  $exType = $Err.Exception.GetType().FullName
-  $path = $null
-  if ($msg -match 'for ([^:]+):') { $path = $Matches[1] }
+function ExplainFsError([string]$Tool, $ErrorRec) {
+  # Mirror node's explainFsError. UnauthorizedAccessException covers
+  # EACCES/EPERM, and IOException with HResult 0x80070013 covers a
+  # read-only volume. AV/EDR blocks surface as IOException too but we
+  # keep those generic because the right remediation is "investigate
+  # Defender/Sophos logs", not a CLI hint. Path comes from the
+  # WriteAtomic step prefix we added; we extract it for the hint.
+  #
+  # Built with simple string concatenation only — Windows PowerShell 5.1
+  # is finicky about embedded backticks and apostrophes inside expandable
+  # strings, so we side-step interpolation entirely.
+  $msg = $ErrorRec.Exception.Message
+  $exType = $ErrorRec.Exception.GetType().FullName
+  $extracted = ''
+  # Match `for <path>: <reason>` where `<path>` may contain a Windows drive
+  # letter (`C:\…`). `(.+?): [^:]` lets us greedily-but-non-globally consume
+  # everything up to the FINAL `: ` separator the WriteAtomic prefix uses.
+  if ($msg -match 'for (.+?): [^:]') { $extracted = $Matches[1] }
   if ($exType -eq 'System.UnauthorizedAccessException' -or $msg -match 'Access to the path .* is denied') {
-    $hint = if ($path) {
-      "cannot write $path (UnauthorizedAccessException). Check ACL: ``Get-Acl '$path' | Format-List`` — if owned by SYSTEM/Administrators, run pmsec from an elevated prompt or fix the ACL"
+    if ($extracted) {
+      $hint = 'cannot write ' + $extracted + ' (UnauthorizedAccessException). Run Get-Acl on the path to inspect the owner; if owned by SYSTEM/Administrators, run pmsec elevated or fix the ACL'
     } else {
-      'access denied'
+      $hint = 'access denied'
     }
-    return "${Tool}: ${hint}. [${msg}]"
+    return $Tool + ': ' + $hint + '. [' + $msg + ']'
   }
-  if ($Err.Exception -is [System.IO.IOException] -and $Err.Exception.HResult -eq -2147024864) {
-    return "${Tool}: ${path} is read-only or shared (IOException). [${msg}]"
+  if ($ErrorRec.Exception -is [System.IO.IOException] -and $ErrorRec.Exception.HResult -eq -2147024864) {
+    return $Tool + ': ' + $extracted + ' is read-only or shared (IOException). [' + $msg + ']'
   }
-  return "${Tool}: ${msg}"
+  return $Tool + ': ' + $msg
 }
 
 function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scopes) {
@@ -1023,7 +1029,8 @@ function ProbePath([string]$Path) {
     } catch { $writable = $false }
     try { $owner = (Get-Acl -LiteralPath $Path).Owner } catch { $owner = $null }
   }
-  $parentExists = if ($parent) { Test-Path -LiteralPath $parent -PathType Container } else { $false }
+  $parentExists = $false
+  if ($parent) { $parentExists = Test-Path -LiteralPath $parent -PathType Container }
   # Walk up to the deepest existing ancestor — pmsec runs New-Item -Force, so
   # what matters is whether that ancestor is writable, not the literal parent.
   $probe = $parent
