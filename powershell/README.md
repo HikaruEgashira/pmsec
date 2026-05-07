@@ -75,6 +75,30 @@ exit $LASTEXITCODE
 Intune detection scripts treat exit `0` as compliant and any other code as
 "needs remediation" — that maps directly onto `pmsec --check`.
 
+### Debugging a failing remediation
+
+When an Intune remediation reports failure with no obvious cause, run the
+read-only diagnostic in the same context (SYSTEM or user) and inspect the
+JSON:
+
+```powershell
+& "$PSScriptRoot\pmsec.ps1" --doctor --json
+```
+
+The output lists the resolved `username`, `isAdministrator`, `home`,
+`pmsecHome`, and per-tool `{path, parent, exists, writable, parentExists,
+parentWritable, owner}` for every scope (Windows host plus each WSL
+distro). `ok: false` means at least one parent is not writable — typical
+on SYSTEM when `PMSEC_HOME` is unset (the script falls back to
+`systemprofile`) or when a UNC path to a stopped WSL distro fails.
+
+If `pmsec` still fails after `doctor` reports `ok: true`, write errors are
+now tagged: failures throw with a `WriteAtomic <step>` prefix
+(`mkdir`, `backup-copy`, `body-write`, `rename`). AV/EDR commonly blocks
+the `rename` step — that prefix narrows the investigation to a Defender /
+Sophos exclusion. `UnauthorizedAccessException` failures additionally
+surface a `Get-Acl` hint identifying the file to inspect.
+
 ## Environment overrides
 
 | variable | effect |

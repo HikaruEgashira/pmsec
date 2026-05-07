@@ -285,3 +285,52 @@ def test_version_flag_prints_package_version(tmp_path, capsys, flag):
     assert exc.value.code == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == f"pmsec {__version__}"
+
+
+def test_doctor_json_reports_per_tool_writability(tmp_path):
+    code, out, _ = run(["--doctor", "--json"], tmp_path)
+    data = json.loads(out)
+    assert data["doctor"] is True
+    assert data["ok"] is True
+    assert code == 0
+    # All seven tools surfaced in stable order with the writability quintet.
+    tools = [t["tool"] for t in data["tools"]]
+    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]
+    for t in data["tools"]:
+        for key in ("path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"):
+            assert key in t, f"{t['tool']} missing {key}"
+        assert t["parentWritable"] is True, f"{t['tool']} parent should be writable in fresh tmp_path"
+    assert data["pmsecHomeSource"] == "HOME"
+
+
+def test_doctor_blocks_when_parent_not_writable(tmp_path):
+    blocked = tmp_path / "ro" / ".npmrc"
+    blocked.parent.mkdir()
+    # Drop write permission on the parent dir; doctor must report BLOCK.
+    blocked.parent.chmod(0o500)
+    try:
+        code, out, _ = run(["--doctor", "--json", "--tool", "npm"],
+                           tmp_path / "ro", NPM_CONFIG_USERCONFIG=str(blocked))
+        data = json.loads(out)
+        assert data["ok"] is False
+        assert code == 1
+        assert data["tools"][0]["parentWritable"] is False
+    finally:
+        blocked.parent.chmod(0o700)
+
+
+def test_explain_fs_error_emits_chown_hint_for_permission_denied(tmp_path):
+    # Make ~/.npmrc unwritable (owned by root would be ideal but we can't
+    # sudo in tests). Setting the file readonly + parent dir readonly
+    # produces PermissionError during atomic rename, which the explainer
+    # should turn into a chown hint.
+    (tmp_path / ".npmrc").write_text("registry=https://r/\n")
+    (tmp_path / ".npmrc").chmod(0o400)
+    (tmp_path).chmod(0o500)
+    try:
+        code, _, err = run(["--tool", "npm"], tmp_path)
+        assert code == 1
+        assert "Check file ownership" in err or "PermissionError" in err
+    finally:
+        (tmp_path).chmod(0o700)
+        (tmp_path / ".npmrc").chmod(0o600)

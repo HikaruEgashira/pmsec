@@ -36,6 +36,13 @@ The default action enables the hardening bundle for every detected tool.
 Pass `--check` to verify, `--disable` to remove. Common options:
 `--tool npm,pnpm`, `--days 7`, `--force`, `--json`.
 
+`pmsec --doctor` (read-only) prints the resolved per-tool config path,
+running `uid`/`euid`, `HOME` / `PMSEC_HOME` source, parent-directory
+writability, and the existing file's owner — the diagnostic to run from a
+Jamf / Intune / Ansible wrapper when an enable run reports nothing visible
+to the user. `pmsec --doctor --json` is consumable as an Intune Detection
+rule or Jamf Extension Attribute.
+
 > Bootstrap: pmsec eats its own
 >
 > ```bash

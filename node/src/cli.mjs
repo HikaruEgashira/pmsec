@@ -1,5 +1,6 @@
-import { homedir } from "node:os";
-import { readFileSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
+import { readFileSync, accessSync, constants as fsConstants, statSync } from "node:fs";
+import { dirname } from "node:path";
 import { shellQuote } from "./util/io.mjs";
 import * as npm from "./tools/npm.mjs";
 import * as pnpm from "./tools/pnpm.mjs";
@@ -27,6 +28,7 @@ attestation re-verification, ...). No knobs.
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
+  --doctor              Diagnose effective paths/owner/uid (read-only; for MDM debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -52,7 +54,7 @@ function parse(argv) {
   const opts = { mode: "enable", json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false };
   let modeSet = false;
   const setMode = (m) => {
-    if (modeSet && opts.mode !== m) throw new Error(`--check and --disable are mutually exclusive`);
+    if (modeSet && opts.mode !== m) throw new Error(`--check, --disable, and --doctor are mutually exclusive`);
     opts.mode = m;
     modeSet = true;
   };
@@ -65,6 +67,7 @@ function parse(argv) {
     else if (a === "--force") opts.force = true;
     else if (a === "--check") setMode("check");
     else if (a === "--disable") setMode("disable");
+    else if (a === "--doctor") setMode("doctor");
     else if (a === "--tool") opts.only = argv[++i].split(",");
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
     else if (a === "--days") opts.days = parseDays(argv[++i]);
@@ -128,6 +131,86 @@ async function runCheck(targets, { json, days }, ctx, out, err) {
   if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec\`\n`);
   if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec\`\n`);
   return ok ? 0 : 1;
+}
+
+// `pmsec doctor` runs read-only and reports the same path resolution that
+// enable/check/disable would do, plus identity (uid/euid) and parent-dir
+// writability — the smallest set of facts an MDM operator needs to diagnose
+// "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one can
+// read" (chown failed under SIP/SELinux). Never mutates the filesystem.
+function probePath(p, uid) {
+  const parent = dirname(p);
+  let exists = false, writable = false, parentExists = false, owner = null;
+  try { accessSync(p, fsConstants.F_OK); exists = true; } catch {}
+  if (exists) {
+    try { accessSync(p, fsConstants.W_OK); writable = true; } catch {}
+    try {
+      const st = statSync(p);
+      // Only POSIX uids are meaningful; on win32 st.uid is 0 and ignored downstream.
+      owner = uid === null ? null : st.uid;
+    } catch {}
+  }
+  try { accessSync(parent, fsConstants.F_OK); parentExists = true; } catch {}
+  // Walk up to the deepest existing ancestor — pmsec runs mkdir -p, so what
+  // matters is whether that ancestor is writable, not the literal parent.
+  let probe = parent, ancestor = null;
+  while (probe && probe !== dirname(probe)) {
+    try { accessSync(probe, fsConstants.F_OK); ancestor = probe; break; } catch {}
+    probe = dirname(probe);
+  }
+  let parentWritable = false;
+  if (ancestor) {
+    try { accessSync(ancestor, fsConstants.W_OK); parentWritable = true; } catch {}
+  }
+  return { path: p, parent, exists, writable, parentExists, parentWritable, owner };
+}
+
+function runDoctor(targets, json, ctx, out) {
+  const isPosix = ctx.platform !== "win32" && typeof process.getuid === "function";
+  const uid = isPosix ? process.getuid() : null;
+  const euid = isPosix && typeof process.geteuid === "function" ? process.geteuid() : uid;
+  let username = null;
+  try { username = userInfo().username; } catch {}
+  const tools = targets.map(t => {
+    const p = t.path(ctx);
+    const probe = probePath(p, uid);
+    return { tool: t.name, key: t.key, ...probe };
+  });
+  // doctor.ok is intentionally narrow: the parent directory must be writable
+  // by the running uid. Everything else is informational.
+  const okFlag = tools.every(t => t.parentWritable);
+  const report = {
+    doctor: true,
+    version: VERSION,
+    platform: ctx.platform,
+    uid, euid, username,
+    home: ctx.home,
+    pmsecHome: ctx.env.PMSEC_HOME ?? null,
+    pmsecHomeSource: ctx.env.PMSEC_HOME ? "PMSEC_HOME" : "HOME",
+    tools,
+    ok: okFlag,
+  };
+  if (json) {
+    out.write(JSON.stringify(report, null, 2) + "\n");
+    return okFlag ? 0 : 1;
+  }
+  out.write(`pmsec ${VERSION}  doctor\n`);
+  out.write(`  platform   : ${ctx.platform}\n`);
+  if (isPosix) out.write(`  uid/euid   : ${uid}/${euid}${username ? ` (${username})` : ""}\n`);
+  out.write(`  HOME       : ${ctx.home}\n`);
+  out.write(`  PMSEC_HOME : ${ctx.env.PMSEC_HOME ?? "(unset — using HOME)"}\n\n`);
+  for (const t of tools) {
+    const flag = t.parentWritable ? "ok    " : "BLOCK ";
+    const ownerSuffix = t.exists && t.owner !== null ? ` (uid=${t.owner})` : "";
+    out.write(`${flag} ${t.tool.padEnd(4)} ${t.path}${ownerSuffix}\n`);
+    if (!t.parentWritable) {
+      // Only surface noise when there's a real problem. "parent missing but
+      // mkdir -p can fix it" is the common case and isn't worth a line.
+      out.write(`         no writable ancestor for ${t.parent}\n`);
+    }
+  }
+  if (!okFlag) out.write(`\npmsec doctor: at least one parent directory is not writable as uid ${uid ?? "(non-POSIX)"}.\n`);
+  return okFlag ? 0 : 1;
 }
 
 function explainFsError(e, tool) {
@@ -216,6 +299,7 @@ export async function run(argv, {
   try {
     if (opts.mode === "check") return await runCheck(targets, opts, ctx, out, err);
     if (opts.mode === "disable") return await runDisable(targets, opts.json, ctx, out, err);
+    if (opts.mode === "doctor") return runDoctor(targets, opts.json, ctx, out);
     return await runEnable(targets, opts.json, opts.days, opts.force, ctx, out, err);
   } catch (e) {
     err.write(`pmsec: ${e.message}\n`);
