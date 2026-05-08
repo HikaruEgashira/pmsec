@@ -252,10 +252,8 @@ lines_remove_key() {
 write_atomic() {
   # Write stdin to $1 atomically; create one-shot $1.bak from the existing
   # file. On failure, prepend `pmsec: write_atomic <step>` so orchestrator
-  # logs reveal which step (mkdir/cp/mktemp/write/mv) blew up. The step label
-  # is what turned unattended-deployment debugging from "permission denied
-  # somewhere" into a one-line diagnosis. The lower command's own stderr is
-  # preserved alongside.
+  # logs reveal which step (mkdir/cp/mktemp/write/mv) blew up. The lower
+  # command's own stderr is preserved alongside.
   local path="$1" dir tmp bak mode top_created=""
   dir=$(dirname -- "$path")
   if [ ! -d "$dir" ]; then
@@ -1022,11 +1020,9 @@ cmd_disable() {
 
 # `pmsec --doctor` runs read-only and reports the same path resolution that
 # enable/check/disable would do, plus identity (uid/euid) and parent-dir
-# writability — the smallest set of facts an operator running pmsec under an
-# orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …) needs to
-# diagnose "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file
-# no one can read" (chown failed under SIP/SELinux). Never mutates the
-# filesystem.
+# writability — the smallest set of facts an operator needs to diagnose
+# "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one
+# can read" (chown failed under SIP/SELinux). Never mutates the filesystem.
 _pmsec_deepest_existing() {
   # Walk up to the deepest existing ancestor — pmsec runs mkdir -p, so what
   # matters is whether that ancestor is writable, not the literal parent.

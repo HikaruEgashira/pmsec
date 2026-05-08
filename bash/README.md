@@ -44,9 +44,8 @@ exit-code consumer.
 
 ### Examples
 
-The pattern is always the same: resolve the target user's home, export
-`PMSEC_HOME`, invoke `pmsec`. The tool below is just the host of the
-orchestration; pmsec itself is unaware of which one called it.
+Same pattern in every host — resolve the target user's home, export
+`PMSEC_HOME`, invoke `pmsec`. pmsec is unaware of which orchestrator called it.
 
 **Jamf policy (macOS, runs as root):**
 

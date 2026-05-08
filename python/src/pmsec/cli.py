@@ -133,11 +133,9 @@ def _check(args, targets, ctx: Context, out, err):
 
 # `pmsec doctor` runs read-only and reports the same path resolution that
 # enable/check/disable would do, plus identity (uid/euid) and parent-dir
-# writability — the smallest set of facts an operator running pmsec under an
-# orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …) needs to
-# diagnose "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file
-# no one can read" (chown failed under SIP/SELinux). Never mutates the
-# filesystem.
+# writability — the smallest set of facts an operator needs to diagnose
+# "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one
+# can read" (chown failed under SIP/SELinux). Never mutates the filesystem.
 def _probe_path(p: Path, uid: int | None) -> dict:
     parent = p.parent
     exists = p.exists()

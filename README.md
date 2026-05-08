@@ -42,8 +42,7 @@ writability, and the existing file's owner — the diagnostic to run from
 any orchestrator (Jamf, Intune, Ansible, SCCM, Munki, GPO logon scripts,
 Salt, …) when an enable run reports nothing visible to the user.
 `pmsec --doctor --json` is consumable by any orchestrator that ingests a
-JSON exit-code signal: Intune detection rule, Jamf Extension Attribute,
-Ansible `register` + `assert`, osquery, CI step.
+JSON exit-code signal (Intune detection rule, Ansible `assert`, CI step).
 
 > Bootstrap: pmsec eats its own
 >

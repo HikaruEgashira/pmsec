@@ -1014,8 +1014,7 @@ function CmdDisable($Targets, [bool]$Json, [array]$Scopes) {
 
 # `pmsec --doctor` runs read-only and reports the same path resolution that
 # enable/check/disable would do, plus identity (uid/euid where applicable) and
-# parent-dir writability — the smallest set of facts an operator running pmsec
-# under an orchestrator (Intune, SCCM, GPO, scheduled task, RMM, …) needs to
+# parent-dir writability — the smallest set of facts an operator needs to
 # diagnose "pmsec ran but wrote to nowhere" or "wrote a file no one can read"
 # (e.g. AV/EDR blocking the rename, or a UNC ACL flip on a WSL distro). Never
 # mutates the filesystem.
