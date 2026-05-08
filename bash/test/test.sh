@@ -422,7 +422,8 @@ T "hardening extras roundtrip (check / enable / disable)" t_hardening_extras_rou
 T "pnpm 11 default-enforces missing block-exotic-subdeps" t_pnpm_11_default_enforced
 T "pnpm <11 still flags missing block-exotic-subdeps" t_pnpm_pre11_no_default_enforcement
 
-# PMSEC_HOME redirects writes off of $HOME so MDM root wrappers can target the
+# PMSEC_HOME redirects writes off of $HOME so root-context orchestrators
+# (Jamf, Intune, Ansible, SCCM, scheduled tasks, RMM, …) can target the
 # logged-in user's home without overriding every per-tool env var.
 t_pmsec_home_redirects() {
   local real fake; real=$(setup_home); fake=$(setup_home)
@@ -443,8 +444,10 @@ t_pmsec_home_redirects() {
 T "PMSEC_HOME overrides \$HOME" t_pmsec_home_redirects
 
 # `pmsec --doctor --json` reports per-tool path resolution and parent-dir
-# writability — the read-only diagnostic command an MDM operator runs to
-# figure out where pmsec would land before they care about the actual write.
+# writability — the read-only diagnostic command an operator running pmsec
+# under any orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …)
+# runs to figure out where pmsec would land before they care about the actual
+# write.
 t_doctor_json_shape() {
   local home; home=$(setup_home)
   local out rc

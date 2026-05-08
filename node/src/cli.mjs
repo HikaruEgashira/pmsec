@@ -28,7 +28,7 @@ attestation re-verification, ...). No knobs.
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
-  --doctor              Diagnose effective paths/owner/uid (read-only; for MDM debugging)
+  --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -135,9 +135,10 @@ async function runCheck(targets, { json, days }, ctx, out, err) {
 
 // `pmsec doctor` runs read-only and reports the same path resolution that
 // enable/check/disable would do, plus identity (uid/euid) and parent-dir
-// writability — the smallest set of facts an MDM operator needs to diagnose
-// "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one can
-// read" (chown failed under SIP/SELinux). Never mutates the filesystem.
+// writability — the smallest set of facts an operator running pmsec under an
+// orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …) needs to
+// diagnose "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no
+// one can read" (chown failed under SIP/SELinux). Never mutates the filesystem.
 function probePath(p, uid) {
   const parent = dirname(p);
   let exists = false, writable = false, parentExists = false, owner = null;

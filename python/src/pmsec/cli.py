@@ -53,7 +53,7 @@ def _parser() -> argparse.ArgumentParser:
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="verify the bundle is in place (exit 1 if anything missing)")
     mode.add_argument("--disable", action="store_true", help="remove the hardening bundle from selected tools")
-    mode.add_argument("--doctor", action="store_true", help="diagnose effective paths/owner/uid (read-only; for MDM debugging)")
+    mode.add_argument("--doctor", action="store_true", help="diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)")
     p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv)")
     p.add_argument("--json", action="store_true", help="emit JSON output")
     p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
@@ -133,9 +133,11 @@ def _check(args, targets, ctx: Context, out, err):
 
 # `pmsec doctor` runs read-only and reports the same path resolution that
 # enable/check/disable would do, plus identity (uid/euid) and parent-dir
-# writability — the smallest set of facts an MDM operator needs to diagnose
-# "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one can
-# read" (chown failed under SIP/SELinux). Never mutates the filesystem.
+# writability — the smallest set of facts an operator running pmsec under an
+# orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …) needs to
+# diagnose "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file
+# no one can read" (chown failed under SIP/SELinux). Never mutates the
+# filesystem.
 def _probe_path(p: Path, uid: int | None) -> dict:
     parent = p.parent
     exists = p.exists()

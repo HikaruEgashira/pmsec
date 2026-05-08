@@ -25,20 +25,33 @@ pmsec --version
 
 Supported tools, files, and units match the root `README.md`.
 
-## MDM deployment (Jamf, Ansible, ...)
+## Running as root against another user's profile
 
-`pmsec` writes per-user config files. When a Jamf policy runs as `root`, the
-default `$HOME` is `/var/root`, not the logged-in user's home — so vanilla
-`pmsec enable` would write configs no one will ever load.
+`pmsec` writes per-user config files. When an orchestrator (Jamf, Ansible,
+SCCM, Munki, Salt, Chef, …) runs `pmsec` as `root`, the default `$HOME` is
+`/var/root` (or `/root` on Linux), not the logged-in user's home — so
+vanilla `pmsec enable` would write configs no one will ever load.
 
 Set `PMSEC_HOME` to redirect every per-tool path at the real user's home in
 one shot. When pmsec runs as root, it also chowns the resulting files (and
 any directories it created) back to that home's owner so the user can read
 and edit them afterwards.
 
+`pmsec --check` exits `0` when every tool is at or above `--days` (default 1)
+and every hardening extra is at the safe value, `1` otherwise — usable as a
+Jamf Extension Attribute, Ansible `assert`, Salt requisite, or any
+exit-code consumer.
+
+### Examples
+
+The pattern is always the same: resolve the target user's home, export
+`PMSEC_HOME`, invoke `pmsec`. The tool below is just the host of the
+orchestration; pmsec itself is unaware of which one called it.
+
+**Jamf policy (macOS, runs as root):**
+
 ```bash
 #!/usr/bin/env bash
-# Jamf policy script (runs as root).
 set -eu
 loggedInUser=$(stat -f%Su /dev/console)
 loggedInHome=$(dscl . -read "/Users/$loggedInUser" NFSHomeDirectory | awk '{print $2}')
@@ -47,14 +60,34 @@ PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec
 PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec --check
 ```
 
-`pmsec --check` exits `0` when every tool is at or above `--days` (default 1)
-and every hardening extra is at the safe value, `1` otherwise — usable as a
-Jamf Extension Attribute or Ansible `assert`.
+**Ansible (any host, becomes root, targets one user):**
 
-### Debugging an MDM-side failure
+```yaml
+- name: harden package managers for {{ target_user }}
+  ansible.builtin.command: /usr/local/bin/pmsec --check
+  environment:
+    PMSEC_HOME: "{{ ansible_facts.getent_passwd[target_user][4] }}"
+  become: true
+  register: pmsec
+  changed_when: false
+  failed_when: pmsec.rc not in [0, 1]
 
-When an enable run from Jamf / Ansible reports nothing visible to the user,
-run the read-only diagnostic and inspect the output:
+- name: assert hardening present
+  ansible.builtin.assert:
+    that: pmsec.rc == 0
+```
+
+**Plain shell (sudo wrapping a different user):**
+
+```bash
+sudo PMSEC_HOME="$(getent passwd alice | cut -d: -f6)" /usr/local/bin/pmsec
+```
+
+### Debugging a failed deployment
+
+When an enable run from any orchestrator reports nothing visible to the
+user, run the read-only diagnostic in the same context and inspect the
+output:
 
 ```bash
 PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec --doctor --json
@@ -63,7 +96,7 @@ PMSEC_HOME="$loggedInHome" /usr/local/bin/pmsec --doctor --json
 The JSON includes effective `uid`, `home`, `pmsecHome`, and per-tool
 `{path, parent, exists, writable, parentExists, parentWritable, owner}`.
 `ok: false` means at least one parent directory is not writable — the
-common Jamf failure mode is `PMSEC_HOME` unset under `root`, which lands
+common failure mode is `PMSEC_HOME` unset under `root`, which lands
 configs in `/var/root` instead of the user's profile.
 
 If `pmsec` still fails after `doctor` reports `ok: true`, the actual write
