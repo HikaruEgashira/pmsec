@@ -52,10 +52,14 @@ def gte(v: tuple[int, int, int, str] | None, target: tuple[int, int, int]) -> bo
 
 
 def build_preflight(name: str, min_bin: tuple[int, int, int], suffix: str):
-    # ctx is accepted for signature uniformity with pnpm.preflight; this
-    # helper detects against the local PATH and ignores ctx.
-    def _pf(_ctx=None) -> dict:
-        v = detect_version(name)
+    # `PMSEC_<NAME>_VERSION` ("X.Y.Z" or "none") forces the detection result
+    # without spawning the real binary — mirrors the bash and powershell ports
+    # so version-aware preflight is deterministic across all four impls.
+    override_key = f"PMSEC_{name.upper()}_VERSION"
+
+    def _pf(ctx=None) -> dict:
+        env = getattr(ctx, "env", None) if ctx is not None else None
+        v = detect_version(name, env=env, override_key=override_key)
         if v is None:
             return {"ok": True, "message": None}
         if gte(v, min_bin):

@@ -27,6 +27,26 @@ def run(argv, home, platform="linux", **env_overrides):
     return code, out.getvalue(), err.getvalue()
 
 
+# Catches a class of formatting bug where the human-readable output
+# leaks unresolved placeholders ({N}) because of a string-construction
+# mistake. Walks every code path that emits a formatted line.
+def test_human_output_has_no_unresolved_placeholders(tmp_path):
+    scenarios = [
+        ("enable", lambda h: None, ["--tool", "npm", "--days", "7"]),
+        ("keep", lambda h: (h / ".npmrc").write_text("min-release-age=99\n"), ["--tool", "npm"]),
+        ("upgrade", lambda h: (h / ".npmrc").write_text("min-release-age=3\n"), ["--tool", "npm", "--days", "7"]),
+        ("check_fail", lambda h: None, ["--check"]),
+        ("check_pass", lambda h: run([], h), ["--check"]),
+        ("disable", lambda h: run(["--tool", "npm"], h), ["--disable", "--tool", "npm"]),
+    ]
+    for name, setup, argv in scenarios:
+        h = tmp_path / name
+        h.mkdir()
+        setup(h)
+        _, out, err = run(argv, h)
+        assert not re.search(r"\{[0-9]+\}", out + err), f"{name} leaked placeholder: {out}{err}"
+
+
 def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     code, _, _ = run([], tmp_path)
     assert code == 0

@@ -34,8 +34,9 @@ export function gte(v, target) {
 }
 
 export function buildPreflight(name, minBin, suffix) {
-  return () => {
-    const v = detectVersion(name);
+  const overrideKey = `PMSEC_${name.toUpperCase()}_VERSION`;
+  return (ctx) => {
+    const v = detectVersion(name, ["--version"], { env: ctx?.env, overrideKey });
     if (v === null) return { ok: true, message: null };
     if (gte(v, minBin)) return { ok: true, version: v.raw, message: null };
     return { ok: true, warn: true, version: v.raw,

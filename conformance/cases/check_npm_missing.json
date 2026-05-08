@@ -1,0 +1,17 @@
+{
+  "args": ["--tool", "npm", "--check", "--json"],
+  "expected_exit": 1,
+  "expected_json": {
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "npm", "key": "min-release-age", "path": "<HOME>/.npmrc",
+        "configured": null, "days": null, "warn": null,
+        "extras": [
+          {"key": "audit-level", "configured": null, "expected": "high", "ok": false}
+        ]
+      }
+    ],
+    "ok": false
+  }
+}
