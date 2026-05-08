@@ -206,7 +206,7 @@ T 'enable preserves stricter existing cooldowns' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`nregistry=https://r/`n")
     $r = InvokePmsec $h $null @('--tool','npm')
-    if ($r.Out -notmatch '(?m)^keep ') { $script:LastFail = "expected keep line, got: $($r.Out)"; return $false }
+    if ($r.Out -notmatch '(?m)^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)$') { $script:LastFail = "expected fully-formatted keep line, got: $($r.Out)"; return $false }
     return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
