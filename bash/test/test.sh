@@ -444,10 +444,8 @@ t_pmsec_home_redirects() {
 T "PMSEC_HOME overrides \$HOME" t_pmsec_home_redirects
 
 # `pmsec --doctor --json` reports per-tool path resolution and parent-dir
-# writability — the read-only diagnostic command an operator running pmsec
-# under any orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …)
-# runs to figure out where pmsec would land before they care about the actual
-# write.
+# writability — the read-only diagnostic an operator runs to figure out
+# where pmsec would land before they care about the actual write.
 t_doctor_json_shape() {
   local home; home=$(setup_home)
   local out rc

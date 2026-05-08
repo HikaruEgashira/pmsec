@@ -60,10 +60,9 @@ account instead of `SYSTEM`). With that on, pmsec falls back to
 `$env:USERPROFILE` of the calling user — no further work.
 
 **2. Stay as SYSTEM and target a specific profile.** Resolve the active
-user's profile yourself and pass it via `PMSEC_HOME`. The pattern is
-orchestrator-agnostic — the snippet below works in Intune Proactive
-Remediations, SCCM scripts, scheduled tasks, GPO startup scripts, or any
-RMM agent that runs PowerShell as SYSTEM:
+user's profile yourself and pass it via `PMSEC_HOME`. The snippet below
+works in any orchestrator that runs PowerShell as SYSTEM (Intune
+Proactive Remediations, SCCM, scheduled tasks, GPO, RMM agents):
 
 ```powershell
 # Runs as SYSTEM. Resolve the active interactive user, then hand off to pmsec.
