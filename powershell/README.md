@@ -44,27 +44,35 @@ field on every row.
 
 Supported tools, files, and units match the root `README.md`.
 
-## MDM deployment (Intune)
+## Running as SYSTEM against another user's profile
 
-`pmsec` writes per-user config files. Intune scripts and remediations run as
-`SYSTEM` by default, where `$env:USERPROFILE` resolves to
-`C:\Windows\system32\config\systemprofile` — not the logged-in user's profile.
-Two options:
+`pmsec` writes per-user config files. When an orchestrator (Intune, SCCM,
+GPO startup script, Configuration Manager, third-party RMM, …) invokes the
+script as `SYSTEM`, `$env:USERPROFILE` resolves to
+`C:\Windows\system32\config\systemprofile` — not the logged-in user's
+profile. Two options:
 
-**1. Run in the logged-on user's context.** In the Intune script settings
-toggle "Run this script using the logged-on credentials" to `Yes`. No further
-work needed: pmsec falls back to `$env:USERPROFILE` of the calling user.
+**1. Run in the logged-on user's context.** Most orchestrators expose a
+toggle to invoke scripts as the calling user (Intune: "Run this script
+using the logged-on credentials"; SCCM Configuration Items: "Run scripts
+by using the logged on user credentials"; scheduled tasks: pick the user
+account instead of `SYSTEM`). With that on, pmsec falls back to
+`$env:USERPROFILE` of the calling user — no further work.
 
-**2. Stay as SYSTEM and target a specific profile.** Resolve the active user's
-profile yourself and pass it via `PMSEC_HOME`:
+**2. Stay as SYSTEM and target a specific profile.** Resolve the active
+user's profile yourself and pass it via `PMSEC_HOME`. The pattern is
+orchestrator-agnostic — the snippet below works in Intune Proactive
+Remediations, SCCM scripts, scheduled tasks, GPO startup scripts, or any
+RMM agent that runs PowerShell as SYSTEM:
 
 ```powershell
-# Intune remediation script (runs as SYSTEM).
+# Runs as SYSTEM. Resolve the active interactive user, then hand off to pmsec.
 $user = (Get-CimInstance Win32_ComputerSystem).UserName  # DOMAIN\user
+if (-not $user) { exit 1 }   # nobody logged in — let the orchestrator retry later
 $sam  = ($user -split '\\')[-1]
 $prof = (Get-CimInstance Win32_UserProfile |
          Where-Object { $_.LocalPath -like "*\$sam" -and -not $_.Special }).LocalPath
-if (-not $prof) { exit 1 }   # nobody logged in — let Intune retry later
+if (-not $prof) { exit 1 }
 
 $env:PMSEC_HOME = $prof
 & "$PSScriptRoot\pmsec.ps1"
@@ -72,14 +80,14 @@ $env:PMSEC_HOME = $prof
 exit $LASTEXITCODE
 ```
 
-Intune detection scripts treat exit `0` as compliant and any other code as
-"needs remediation" — that maps directly onto `pmsec --check`.
+`pmsec --check` exits `0` when compliant, `1` otherwise — that maps
+directly onto Intune detection scripts, SCCM Configuration Item compliance
+rules, scheduled-task return-code checks, or any other exit-code consumer.
 
-### Debugging a failing remediation
+### Debugging a failed deployment
 
-When an Intune remediation reports failure with no obvious cause, run the
-read-only diagnostic in the same context (SYSTEM or user) and inspect the
-JSON:
+When a deployment reports failure with no obvious cause, run the read-only
+diagnostic in the same context (SYSTEM or user) and inspect the JSON:
 
 ```powershell
 & "$PSScriptRoot\pmsec.ps1" --doctor --json

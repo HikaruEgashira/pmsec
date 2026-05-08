@@ -18,8 +18,9 @@ TOOLS=(npm pnpm yarn bun cargo mise uv)
 # ---------- paths ----------
 
 # `PMSEC_HOME` wins over `$HOME` so a single env var can redirect every
-# per-tool path — MDM wrappers (Jamf, Intune) need this when running as
-# root/SYSTEM against another user's profile.
+# per-tool path — orchestrators (Jamf, Intune, Ansible, SCCM, scheduled
+# tasks, …) need this when running as root/SYSTEM against another user's
+# profile.
 _pmsec_home() {
   if [ -n "${PMSEC_HOME:-}" ]; then printf '%s' "$PMSEC_HOME"; return; fi
   printf '%s' "$HOME"
@@ -250,10 +251,11 @@ lines_remove_key() {
 
 write_atomic() {
   # Write stdin to $1 atomically; create one-shot $1.bak from the existing
-  # file. On failure, prepend `pmsec: write_atomic <step>` so MDM logs reveal
-  # which step (mkdir/cp/mktemp/write/mv) blew up. The step label is what
-  # turned MDM debugging from "permission denied somewhere" into a one-line
-  # diagnosis. The lower command's own stderr is preserved alongside.
+  # file. On failure, prepend `pmsec: write_atomic <step>` so orchestrator
+  # logs reveal which step (mkdir/cp/mktemp/write/mv) blew up. The step label
+  # is what turned unattended-deployment debugging from "permission denied
+  # somewhere" into a one-line diagnosis. The lower command's own stderr is
+  # preserved alongside.
   local path="$1" dir tmp bak mode top_created=""
   dir=$(dirname -- "$path")
   if [ ! -d "$dir" ]; then
@@ -311,10 +313,10 @@ write_atomic() {
 #
 # When chown fails (SIP, SELinux, TCC, mounted volume that doesn't honor
 # ownership) we WARN to stderr instead of swallowing — silent chown failure
-# was the worst MDM bug to debug, since enable would report success but
-# leave a root-owned file the user can't read or modify. Exit code stays 0
-# because the bundle is in place; the warning tells the operator to fix
-# ownership manually.
+# was the worst unattended-deployment bug to debug, since enable would
+# report success but leave a root-owned file the user can't read or modify.
+# Exit code stays 0 because the bundle is in place; the warning tells the
+# operator to fix ownership manually.
 _pmsec_handback() {
   [ "$(id -u)" = "0" ] || return 0
   local path="$1" bak="$2" top_created="$3"
@@ -665,7 +667,7 @@ attestation re-verification, ...). No knobs.
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
-  --doctor              Diagnose effective paths/owner/uid (read-only; for MDM debugging)
+  --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -682,7 +684,8 @@ Examples:
 
 Environment:
   PMSEC_HOME            Home dir to operate on (overrides \$HOME). Set this
-                        when running as root via MDM (Jamf, ansible, ...) so
+                        when running as root via an orchestrator (Jamf,
+                        Intune, Ansible, SCCM, scheduled task, RMM, …) so
                         configs land in the real user's home. Files written
                         as root are chowned back to the home dir's owner.
   NPM_CONFIG_USERCONFIG Override the npm/pnpm config file path.
@@ -1019,9 +1022,11 @@ cmd_disable() {
 
 # `pmsec --doctor` runs read-only and reports the same path resolution that
 # enable/check/disable would do, plus identity (uid/euid) and parent-dir
-# writability — the smallest set of facts an MDM operator needs to diagnose
-# "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file no one can
-# read" (chown failed under SIP/SELinux). Never mutates the filesystem.
+# writability — the smallest set of facts an operator running pmsec under an
+# orchestrator (Jamf, Intune, Ansible, SCCM, scheduled task, RMM, …) needs to
+# diagnose "pmsec ran but wrote to nowhere" (root's $HOME) or "wrote a file
+# no one can read" (chown failed under SIP/SELinux). Never mutates the
+# filesystem.
 _pmsec_deepest_existing() {
   # Walk up to the deepest existing ancestor — pmsec runs mkdir -p, so what
   # matters is whether that ancestor is writable, not the literal parent.

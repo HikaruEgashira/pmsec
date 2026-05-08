@@ -38,10 +38,12 @@ Pass `--check` to verify, `--disable` to remove. Common options:
 
 `pmsec --doctor` (read-only) prints the resolved per-tool config path,
 running `uid`/`euid`, `HOME` / `PMSEC_HOME` source, parent-directory
-writability, and the existing file's owner — the diagnostic to run from a
-Jamf / Intune / Ansible wrapper when an enable run reports nothing visible
-to the user. `pmsec --doctor --json` is consumable as an Intune Detection
-rule or Jamf Extension Attribute.
+writability, and the existing file's owner — the diagnostic to run from
+any orchestrator (Jamf, Intune, Ansible, SCCM, Munki, GPO logon scripts,
+Salt, …) when an enable run reports nothing visible to the user.
+`pmsec --doctor --json` is consumable by any orchestrator that ingests a
+JSON exit-code signal: Intune detection rule, Jamf Extension Attribute,
+Ansible `register` + `assert`, osquery, CI step.
 
 > Bootstrap: pmsec eats its own
 >

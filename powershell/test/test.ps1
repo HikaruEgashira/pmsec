@@ -581,7 +581,8 @@ T 'single-scope output has no scope header (back-compat)' {
 }
 
 # `pmsec --doctor --json` is the read-only diagnostic — it must report a
-# stable shape so MDM operators can consume it as an Intune Detection rule.
+# stable shape so any orchestrator (Intune Detection rule, SCCM CI, scheduled
+# task, RMM agent, …) can consume it via JSON exit-code parsing.
 T 'doctor --json reports per-tool writability on a fresh home' {
   $h = NewHome
   try {
@@ -612,7 +613,7 @@ T 'doctor --json reports per-tool writability on a fresh home' {
 }
 
 # WriteAtomic must surface a labeled error when refusing to follow a
-# reparse point — that prefix is what makes MDM logs actionable.
+# reparse point — that prefix is what makes orchestrator logs actionable.
 T 'write_atomic refuses to follow a reparse point with a labeled error' {
   $h = NewHome
   try {

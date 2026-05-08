@@ -309,7 +309,7 @@ function WriteAtomic([string]$Path, [string]$Content) {
   # Wrap each step (mkdir / refuse-symlink / backup-copy / body-write /
   # rename) so failures throw with a `WriteAtomic <step>` prefix. AV/EDR
   # tends to block the rename, while UNC ACLs flip the body-write — a
-  # labeled exception lets the MDM operator skip straight to the right
+  # labeled exception lets the deployment operator skip straight to the right
   # check (Defender exclusion vs. \\wsl$ ACL vs. the Linux side's mode
   # bits) without re-running the script under tracing.
   $dir = Split-Path -Parent $Path
@@ -321,8 +321,9 @@ function WriteAtomic([string]$Path, [string]$Content) {
     }
   }
   # Mirror the bash port: refuse to follow a symlink (or junction/reparse point
-  # on Windows). The MDM threat model includes a malicious user planting a link
-  # that pmsec, possibly running elevated under Intune, would otherwise resolve.
+  # on Windows). The unattended-deployment threat model includes a malicious
+  # user planting a link that pmsec, possibly running elevated under an
+  # orchestrator (Intune, SCCM, GPO, …), would otherwise resolve.
   if (Test-Path -LiteralPath $Path) {
     $item = Get-Item -LiteralPath $Path -Force
     if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
@@ -650,7 +651,7 @@ attestation re-verification, ...). No knobs.
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
-  --doctor              Diagnose effective paths/owner/uid (read-only; for MDM debugging)
+  --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
@@ -669,7 +670,8 @@ Examples:
 Environment:
   PMSEC_HOME              Home dir to operate on (overrides `$env:USERPROFILE`
                           / `$env:HOME`). Set this when running as SYSTEM via
-                          Intune so configs land in the real user's profile.
+                          an orchestrator (Intune, SCCM, GPO, scheduled task,
+                          RMM, …) so configs land in the real user's profile.
   NPM_CONFIG_USERCONFIG   Override the npm/pnpm config file path.
   YARN_RC_FILENAME        Override the yarn config file path.
   BUN_CONFIG_FILE         Override the bun config file path.
@@ -1012,7 +1014,8 @@ function CmdDisable($Targets, [bool]$Json, [array]$Scopes) {
 
 # `pmsec --doctor` runs read-only and reports the same path resolution that
 # enable/check/disable would do, plus identity (uid/euid where applicable) and
-# parent-dir writability — the smallest set of facts an MDM operator needs to
+# parent-dir writability — the smallest set of facts an operator running pmsec
+# under an orchestrator (Intune, SCCM, GPO, scheduled task, RMM, …) needs to
 # diagnose "pmsec ran but wrote to nowhere" or "wrote a file no one can read"
 # (e.g. AV/EDR blocking the rename, or a UNC ACL flip on a WSL distro). Never
 # mutates the filesystem.
