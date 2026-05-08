@@ -57,10 +57,20 @@ def env_for(impl: str, home: Path) -> dict[str, str]:
 
 
 def normalize(obj, home: Path):
-    """Replace tmpdir paths with the literal token <HOME> so cases are portable."""
+    """Replace tmpdir paths with the literal token <HOME> so cases are portable.
+
+    Also collapses Windows backslash separators inside <HOME>-rooted paths
+    to forward slashes — the four ports otherwise differ only in this
+    purely cosmetic layer and we don't want it to drown out real drift.
+    """
     home_s = str(home)
     if isinstance(obj, str):
-        return obj.replace(home_s, "<HOME>")
+        s = obj.replace(home_s, "<HOME>")
+        # also handle a backslash-quoted form that may appear inside JSON
+        s = s.replace(home_s.replace("\\", "/"), "<HOME>")
+        # any path separator immediately after <HOME> is normalized
+        s = re.sub(r"<HOME>\\+", "<HOME>/", s)
+        return s
     if isinstance(obj, list):
         return [normalize(v, home) for v in obj]
     if isinstance(obj, dict):

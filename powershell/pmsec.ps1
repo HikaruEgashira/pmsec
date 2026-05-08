@@ -789,7 +789,8 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
         $extrasJson += $extraEntry
       }
       $extrasJson += ']'
-      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
+      $scopePrefix = if ($multiScope) { """scope"": $(JsonString $r.Scope), " } else { '' }
+      $entry = "    {$scopePrefix""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
       if ($i -lt $rows.Count - 1) { $entry += ',' }
       [void]$sb.AppendLine($entry)
     }
