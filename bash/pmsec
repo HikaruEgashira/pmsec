@@ -929,6 +929,7 @@ cmd_enable() {
       if [ -z "$err" ]; then ok_json="true"; else ok_json="false"; fi
       if [ -z "$warn" ]; then warn_json="null"; else warn_json=$(json_str "$warn"); fi
       if [ "$kept" = "1" ]; then kept_json="true"; else kept_json="false"; fi
+      local forced_json="false"; [ "$OPT_FORCE" = "1" ] && forced_json="true"
       [ "$first_r" = "1" ] || results_json+=','$'\n'
       first_r=0
       results_json+=$'    {'
@@ -937,6 +938,7 @@ cmd_enable() {
       results_json+="\"days\": $effective, "
       results_json+="\"requested\": $OPT_DAYS, "
       results_json+="\"kept\": $kept_json, "
+      results_json+="\"forced\": $forced_json, "
       results_json+="\"ok\": $ok_json, "
       results_json+="\"warn\": $warn_json"
       if [ -n "$err" ]; then

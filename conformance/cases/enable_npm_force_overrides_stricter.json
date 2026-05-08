@@ -1,0 +1,16 @@
+{
+  "setup": {
+    ".npmrc": "min-release-age=99\n"
+  },
+  "args": ["--tool", "npm", "--days", "1", "--force", "--json"],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true,
+    "bundleDays": 1,
+    "results": [
+      {"tool": "npm", "path": "<HOME>/.npmrc", "days": 1, "requested": 1, "kept": false, "forced": true, "ok": true, "warn": null}
+    ],
+    "warnings": [],
+    "ok": true
+  }
+}

@@ -121,6 +121,34 @@ function T([string]$Name, [scriptblock]$Body) {
 
 # ---------- tests ----------
 
+# Catches a class of formatting bug where the human-readable output
+# leaks unresolved placeholders ({N}) because of operator-precedence
+# mistakes between string concatenation and -f. Walks every code path
+# that emits a formatted line.
+T 'human output never leaks unresolved placeholders' {
+  $scenarios = @(
+    @{ name='enable';     setup={};                                                              args=@('--tool','npm','--days','7') },
+    @{ name='keep';       setup={ param($h) [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`n") }; args=@('--tool','npm') },
+    @{ name='upgrade';    setup={ param($h) [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`n") };  args=@('--tool','npm','--days','7') },
+    @{ name='check_fail'; setup={};                                                              args=@('--check') },
+    @{ name='check_pass'; setup={ param($h) [void](InvokePmsec $h $null @()) };                  args=@('--check') },
+    @{ name='disable';    setup={ param($h) [void](InvokePmsec $h $null @('--tool','npm')) };    args=@('--disable','--tool','npm') }
+  )
+  foreach ($s in $scenarios) {
+    $h = NewHome
+    try {
+      & $s.setup $h
+      $r = InvokePmsec $h $null $s.args
+      $combined = [string]$r.Out + [string]$r.Err
+      if ($combined -match '\{[0-9]+\}') {
+        $script:LastFail = "scenario=$($s.name) leaked placeholder. output: $combined"
+        return $false
+      }
+    } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+  }
+  return $true
+}
+
 T 'enable writes the bundle for every tool' {
   $h = NewHome
   try {

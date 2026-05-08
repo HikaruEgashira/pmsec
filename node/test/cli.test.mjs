@@ -99,6 +99,26 @@ test("enable upgrades values that are weaker than the request", async () => {
   );
 });
 
+// Catches a class of formatting bug where the human-readable output
+// leaks unresolved placeholders ({N}) because of a string-construction
+// mistake. Walks every code path that emits a formatted line.
+test("human output never leaks unresolved placeholders", async () => {
+  const scenarios = [
+    { name: "enable", setup: async () => {}, args: ["--tool", "npm", "--days", "7"] },
+    { name: "keep", setup: async (h) => writeFile(join(h, ".npmrc"), "min-release-age=99\n"), args: ["--tool", "npm"] },
+    { name: "upgrade", setup: async (h) => writeFile(join(h, ".npmrc"), "min-release-age=3\n"), args: ["--tool", "npm", "--days", "7"] },
+    { name: "check_fail", setup: async () => {}, args: ["--check"] },
+    { name: "check_pass", setup: async (h, runCli) => { await runCli([], h); }, args: ["--check"] },
+    { name: "disable", setup: async (h, runCli) => { await runCli(["--tool", "npm"], h); }, args: ["--disable", "--tool", "npm"] },
+  ];
+  for (const s of scenarios) {
+    const home = await setupHome();
+    await s.setup(home, runCli);
+    const { out, err } = await runCli(s.args, home);
+    assert.doesNotMatch(out + err, /\{[0-9]+\}/, `${s.name} leaked placeholder: ${out}${err}`);
+  }
+});
+
 test("enable preserves stricter existing cooldowns", async () => {
   const home = await setupHome();
   await writeFile(join(home, ".npmrc"), "min-release-age=99\nregistry=https://r/\n");

@@ -7,6 +7,7 @@ on:
       - 'python/**'
       - 'bash/**'
       - 'powershell/**'
+      - 'conformance/**'
       - '.github/workflows/pmsec-ci.yml'
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - 'python/**'
       - 'bash/**'
       - 'powershell/**'
+      - 'conformance/**'
       - '.github/workflows/pmsec-ci.yml'
 permissions: {}
 jobs:
@@ -109,3 +111,41 @@ jobs:
       - name: test
         timeout-minutes: 5
         run: ${{ matrix.shell }} -NoProfile -File test/test.ps1
+  conformance:
+    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, impl: bash }
+          - { os: macos-latest,  impl: bash }
+          - { os: ubuntu-latest, impl: node }
+          - { os: macos-latest,  impl: node }
+          - { os: ubuntu-latest, impl: python }
+          - { os: macos-latest,  impl: python }
+          - { os: windows-latest, impl: powershell }
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        if: matrix.impl == 'node'
+        timeout-minutes: 5
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v6.0.0
+        timeout-minutes: 5
+        with:
+          python-version: '3.12'
+      - name: run conformance
+        timeout-minutes: 5
+        env:
+          IMPL: ${{ matrix.impl }}
+        run: |
+          if [ "$IMPL" = "python" ]; then
+            export PYTHONPATH="$PWD/python/src"
+          fi
+          python3 conformance/run.py --impl "$IMPL"
+        shell: bash

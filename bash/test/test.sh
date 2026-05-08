@@ -372,6 +372,35 @@ t_hardening_extras_roundtrip() {
   rm -rf -- "$home"
 }
 
+# Catches a class of formatting bug where the human-readable output
+# leaks unresolved placeholders ({N}) because of a string-construction
+# mistake (e.g. operator precedence between concat and format). This
+# scans every code path that emits a formatted line.
+t_human_output_has_no_unresolved_placeholders() {
+  local home out scenario
+  for scenario in 'enable' 'keep' 'upgrade' 'check_fail' 'check_pass' 'disable'; do
+    home=$(setup_home)
+    case "$scenario" in
+      enable)     out=$(run_pmsec "$home" -- --tool npm --days 7 2>&1) ;;
+      keep)       printf 'min-release-age=99\n' > "$home/.npmrc"
+                  out=$(run_pmsec "$home" -- --tool npm 2>&1) ;;
+      upgrade)    printf 'min-release-age=3\n' > "$home/.npmrc"
+                  out=$(run_pmsec "$home" -- --tool npm --days 7 2>&1) ;;
+      check_fail) out=$(run_pmsec "$home" -- --check 2>&1; true) ;;
+      check_pass) run_pmsec "$home" -- >/dev/null 2>&1
+                  out=$(run_pmsec "$home" -- --check 2>&1) ;;
+      disable)    run_pmsec "$home" -- --tool npm >/dev/null 2>&1
+                  out=$(run_pmsec "$home" -- --disable --tool npm 2>&1) ;;
+    esac
+    rm -rf -- "$home"
+    if printf '%s' "$out" | grep -Eq '\{[0-9]+\}'; then
+      LAST_FAIL="scenario=$scenario leaked placeholder. output: $out"
+      return 1
+    fi
+  done
+  return 0
+}
+T "human output never leaks unresolved placeholders" t_human_output_has_no_unresolved_placeholders
 T "enable writes the bundle for every tool" t_enable_writes_all
 T "check passes after enable across all tools" t_check_passes_after_enable
 T "check fails when bundle missing" t_check_fails_when_missing

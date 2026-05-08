@@ -887,6 +887,7 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scop
       $results.Add(@{
         Scope = $scope.Label
         Tool = $t; Path = $path; Days = $effective; Requested = $Days; Kept = $kept
+        Forced = [bool]$Force
         Ok = ($null -eq $err); Warn = $warn; Error = $err
       })
     }
@@ -901,7 +902,8 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scop
     [void]$sb.AppendLine('  "results": [')
     for ($i = 0; $i -lt $results.Count; $i++) {
       $r = $results[$i]
-      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""requested"": $($r.Requested), ""kept"": $(JsonBool $r.Kept), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
+      $scopePrefix = if ($multiScope) { """scope"": $(JsonString $r.Scope), " } else { '' }
+      $entry = "    {$scopePrefix""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""days"": $($r.Days), ""requested"": $($r.Requested), ""kept"": $(JsonBool $r.Kept), ""forced"": $(JsonBool $r.Forced), ""ok"": $(JsonBool $r.Ok), ""warn"": $(JsonStrOrNull $r.Warn)"
       if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
       $entry += '}'
       if ($i -lt $results.Count - 1) { $entry += ',' }
@@ -914,7 +916,8 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scop
       if ($r.Warn) {
         if (-not $first) { [void]$sb.Append(',') }
         $first = $false
-        [void]$sb.Append("`n    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""warn"": $(JsonString $r.Warn)}")
+        $warnScope = if ($multiScope) { """scope"": $(JsonString $r.Scope), " } else { '' }
+        [void]$sb.Append("`n    {$warnScope""tool"": $(JsonString $r.Tool), ""warn"": $(JsonString $r.Warn)}")
       }
     }
     if (-not $first) { [void]$sb.Append("`n  ") }
