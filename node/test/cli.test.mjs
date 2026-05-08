@@ -104,7 +104,7 @@ test("enable preserves stricter existing cooldowns", async () => {
   await writeFile(join(home, ".npmrc"), "min-release-age=99\nregistry=https://r/\n");
   const { code, out } = await runCli(["--tool", "npm"], home);
   assert.equal(code, 0);
-  assert.match(out, /^keep\s+npm\s/m);
+  assert.match(out, /^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)/m);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
     "min-release-age=99\nregistry=https://r/\naudit-level=high\n"

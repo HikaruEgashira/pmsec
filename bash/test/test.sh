@@ -177,7 +177,7 @@ t_enable_preserves_stricter_existing_cooldown() {
   printf 'min-release-age=99\nregistry=https://r/\n' > "$home/.npmrc"
   local out
   out=$(run_pmsec "$home" -- --tool npm)
-  assert_match "keep line printed" '^keep ' "$out" || { rm -rf "$home"; return 1; }
+  assert_match "keep line fully formatted" '^keep[[:space:]]+npm[[:space:]]+\[[^]]+\][[:space:]]+\(kept existing 99d .* 1d\)' "$out" || { rm -rf "$home"; return 1; }
   assert_file_eq "npmrc preserves 99" 'min-release-age=99
 registry=https://r/
 audit-level=high
