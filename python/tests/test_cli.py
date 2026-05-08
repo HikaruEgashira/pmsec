@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -102,7 +103,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=99\nregistry=https://r/\n")
     code, out, _ = run(["--tool", "npm"], tmp_path)
     assert code == 0
-    assert "keep" in out
+    assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
         "min-release-age=99\nregistry=https://r/\naudit-level=high\n"
     )

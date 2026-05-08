@@ -931,7 +931,7 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scop
       }
       if ($r.Ok) {
         if ($r.Kept) {
-          StdOut ('keep    {0} [{1}]  (kept existing {2}d ' + [string][char]0x2265 + ' {3}d)' -f (Pad4 $r.Tool), $r.Path, $r.Days, $r.Requested)
+          StdOut (('keep    {0} [{1}]  (kept existing {2}d ' + [string][char]0x2265 + ' {3}d)') -f (Pad4 $r.Tool), $r.Path, $r.Days, $r.Requested)
         } else {
           StdOut ('enable  {0} [{1}]' -f (Pad4 $r.Tool), $r.Path)
         }
