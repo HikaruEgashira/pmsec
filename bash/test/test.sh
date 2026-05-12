@@ -113,6 +113,7 @@ t_enable_writes_all() {
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
+  assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
   rm -rf -- "$home"
 }
 
@@ -255,7 +256,7 @@ minimumReleaseAge = 86400
 
 t_yarn_check_parses_days() {
   local home; home=$(setup_home)
-  printf 'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\n' > "$home/.yarnrc.yml"
+  printf 'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\nenableScripts: false\n' > "$home/.yarnrc.yml"
   local out
   out=$(run_pmsec "$home" -- --check --json --tool yarn)
   rm -rf -- "$home"

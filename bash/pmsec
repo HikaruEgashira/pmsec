@@ -445,6 +445,7 @@ tool_extras() {
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
+      printf 'enableScripts|false|enableScripts: false|:|\n'
       ;;
     mise)
       printf 'paranoid|true|paranoid = true|=|settings\n'

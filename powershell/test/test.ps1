@@ -173,6 +173,7 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'pnpm block-exotic-subdeps extra' '(?m)^block-exotic-subdeps=true$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'pnpm strict-dep-builds extra' '(?m)^strict-dep-builds=true$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'yarn enableHardenedMode extra' '(?m)^enableHardenedMode: true$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
+    $ok = $ok -and (AssertMatch 'yarn enableScripts extra' '(?m)^enableScripts: false$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     return $ok
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -337,7 +338,7 @@ T 'bun enable creates [install] section if missing' {
 T 'yarn check parses npmMinimalAgeGate days correctly' {
   $h = NewHome
   try {
-    [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`n")
+    [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`nenableScripts: false`n")
     $r = InvokePmsec $h $null @('--check','--json','--tool','yarn')
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $true) { $script:LastFail = "expected ok=true"; return $false }
