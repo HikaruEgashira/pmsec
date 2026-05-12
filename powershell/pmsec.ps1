@@ -457,7 +457,8 @@ function ToolExtras([string]$Tool) {
     }
     'yarn' {
       return ,@(
-        @{ Key = 'enableHardenedMode'; Expected = 'true'; Line = 'enableHardenedMode: true'; Sep = ':'; Section = '' }
+        @{ Key = 'enableHardenedMode'; Expected = 'true'; Line = 'enableHardenedMode: true'; Sep = ':'; Section = '' },
+        @{ Key = 'enableScripts'; Expected = 'false'; Line = 'enableScripts: false'; Sep = ':'; Section = '' }
       )
     }
     'mise' {

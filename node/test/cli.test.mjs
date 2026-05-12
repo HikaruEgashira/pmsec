@@ -50,6 +50,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   const yarnrc = await readFile(join(home, ".yarnrc.yml"), "utf8");
   assert.match(yarnrc, /^npmMinimalAgeGate: "1d"$/m);
   assert.match(yarnrc, /^enableHardenedMode: true$/m);
+  assert.match(yarnrc, /^enableScripts: false$/m);
   const mise = await readFile(join(home, ".config", "mise", "config.toml"), "utf8");
   assert.match(mise, /^\[settings\]$/m);
   assert.match(mise, /^minimum_release_age = "1d"$/m);
@@ -195,7 +196,7 @@ test("bun enable creates [install] section if missing", async () => {
 
 test("yarn check parses npmMinimalAgeGate days correctly", async () => {
   const home = await setupHome();
-  await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"14d\"\nenableHardenedMode: true\n");
+  await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"14d\"\nenableHardenedMode: true\nenableScripts: false\n");
   const { out } = await runCli(["--check", "--json", "--tool", "yarn"], home);
   const data = JSON.parse(out);
   assert.equal(data.ok, true);

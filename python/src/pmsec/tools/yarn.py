@@ -17,6 +17,7 @@ MIN_BIN = (4, 10, 0)
 SEP = ":"
 EXTRAS = [
     {"key": "enableHardenedMode", "expected": "true", "line": "enableHardenedMode: true", "sep": SEP},
+    {"key": "enableScripts", "expected": "false", "line": "enableScripts: false", "sep": SEP},
 ]
 
 _DURATION = re.compile(r'^"?\s*(\d+)\s*(d|days?|w|weeks?)\s*"?$', re.IGNORECASE)
