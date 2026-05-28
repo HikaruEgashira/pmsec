@@ -437,6 +437,7 @@ tool_extras() {
   case "$1" in
     npm)
       printf 'audit-level|high|audit-level=high|=|\n'
+      printf 'allow-git|root|allow-git=root|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'

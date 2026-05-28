@@ -443,7 +443,8 @@ function ToolExtras([string]$Tool) {
   switch ($Tool) {
     'npm' {
       return ,@(
-        @{ Key = 'audit-level'; Expected = 'high'; Line = 'audit-level=high'; Sep = '='; Section = '' }
+        @{ Key = 'audit-level'; Expected = 'high'; Line = 'audit-level=high'; Sep = '='; Section = '' },
+        @{ Key = 'allow-git'; Expected = 'root'; Line = 'allow-git=root'; Sep = '='; Section = '' }
       )
     }
     'pnpm' {

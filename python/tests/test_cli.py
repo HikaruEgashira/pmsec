@@ -53,6 +53,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=1" in npmrc
     assert "audit-level=high" in npmrc
+    assert "allow-git=root" in npmrc
     assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
     assert "minimum-release-age=1440" in pnpmrc
@@ -116,7 +117,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=7\nregistry=https://r/\naudit-level=high\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\n"
     )
 
 
@@ -126,7 +127,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     assert code == 0
     assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=99\nregistry=https://r/\naudit-level=high\n"
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\n"
     )
 
 
