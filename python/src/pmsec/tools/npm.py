@@ -15,6 +15,7 @@ DOCS = "https://docs.npmjs.com/cli/v11/using-npm/config#min-release-age"
 MIN_BIN = (11, 10, 0)
 EXTRAS = [
     {"key": "audit-level", "expected": "high", "line": "audit-level=high"},
+    {"key": "allow-git", "expected": "root", "line": "allow-git=root"},
 ]
 
 preflight = build_preflight(

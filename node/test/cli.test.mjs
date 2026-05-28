@@ -36,6 +36,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   const npmrc = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(npmrc, /^min-release-age=1$/m);
   assert.match(npmrc, /^audit-level=high$/m);
+  assert.match(npmrc, /^allow-git=root$/m);
   assert.doesNotMatch(npmrc, /minimum-release-age/, "pnpm keys must not leak into .npmrc");
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=1440$/m);
@@ -96,7 +97,7 @@ test("enable upgrades values that are weaker than the request", async () => {
   await runCli(["--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=7\nregistry=https://r/\naudit-level=high\n"
+    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\n"
   );
 });
 
@@ -128,7 +129,7 @@ test("enable preserves stricter existing cooldowns", async () => {
   assert.match(out, /^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)/m);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=99\nregistry=https://r/\naudit-level=high\n"
+    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\n"
   );
 });
 

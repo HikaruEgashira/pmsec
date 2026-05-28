@@ -109,6 +109,7 @@ t_enable_writes_all() {
   assert_match "mise key" '^minimum_release_age = "1d"$' "$mise" || return
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
+  assert_match "npm allow-git extra" '^allow-git=root$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
@@ -169,6 +170,7 @@ t_enable_upgrades_weak_existing_value() {
   assert_file_eq "npmrc" 'min-release-age=7
 registry=https://r/
 audit-level=high
+allow-git=root
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -182,6 +184,7 @@ t_enable_preserves_stricter_existing_cooldown() {
   assert_file_eq "npmrc preserves 99" 'min-release-age=99
 registry=https://r/
 audit-level=high
+allow-git=root
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
