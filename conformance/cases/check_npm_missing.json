@@ -8,7 +8,8 @@
         "tool": "npm", "key": "min-release-age", "path": "<HOME>/.npmrc",
         "configured": null, "days": null, "warn": null,
         "extras": [
-          {"key": "audit-level", "configured": null, "expected": "high", "ok": false}
+          {"key": "audit-level", "configured": null, "expected": "high", "ok": false},
+          {"key": "allow-git", "configured": null, "expected": "root", "ok": false}
         ]
       }
     ],
