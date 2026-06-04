@@ -3,6 +3,11 @@ on:
   push:
     tags:
       - 'pmsec-py-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.12.0)'
+        required: true
 permissions:
   contents: read
   id-token: write
@@ -27,7 +32,11 @@ jobs:
       - name: Verify tag matches pyproject.toml version
         timeout-minutes: 5
         run: |
-          tag_version="${GITHUB_REF_NAME#pmsec-py-v}"
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            tag_version="${{ github.event.inputs.version }}"
+          else
+            tag_version="${GITHUB_REF_NAME#pmsec-py-v}"
+          fi
           pkg_version=$(awk -F\" '/^version *= */ {print $2; exit}' pyproject.toml)
           [ "$tag_version" = "$pkg_version" ] || { echo "tag $tag_version != pyproject.toml $pkg_version" >&2; exit 1; }
       - name: Test
