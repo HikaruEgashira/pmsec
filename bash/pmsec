@@ -438,6 +438,7 @@ tool_extras() {
     npm)
       printf 'audit-level|high|audit-level=high|=|\n'
       printf 'allow-git|root|allow-git=root|=|\n'
+      printf 'allow-remote|root|allow-remote=root|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
