@@ -10,7 +10,8 @@ export const docs = "https://docs.npmjs.com/cli/v11/using-npm/config#min-release
 export const minBin = [11, 10, 0];
 export const extras = [
   { key: "audit-level", expected: "high", line: "audit-level=high" },
-  { key: "allow-git", expected: "root", line: "allow-git=root" }
+  { key: "allow-git", expected: "root", line: "allow-git=root" },
+  { key: "allow-remote", expected: "root", line: "allow-remote=root" }
 ];
 
 export function path(ctx) { return npmrcPath(ctx.env, ctx.home); }

@@ -110,6 +110,7 @@ t_enable_writes_all() {
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "npm allow-git extra" '^allow-git=root$' "$npmrc" || return
+  assert_match "npm allow-remote extra" '^allow-remote=root$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
@@ -171,6 +172,7 @@ t_enable_upgrades_weak_existing_value() {
 registry=https://r/
 audit-level=high
 allow-git=root
+allow-remote=root
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -185,6 +187,7 @@ t_enable_preserves_stricter_existing_cooldown() {
 registry=https://r/
 audit-level=high
 allow-git=root
+allow-remote=root
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }

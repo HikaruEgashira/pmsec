@@ -16,6 +16,7 @@ MIN_BIN = (11, 10, 0)
 EXTRAS = [
     {"key": "audit-level", "expected": "high", "line": "audit-level=high"},
     {"key": "allow-git", "expected": "root", "line": "allow-git=root"},
+    {"key": "allow-remote", "expected": "root", "line": "allow-remote=root"},
 ]
 
 preflight = build_preflight(
