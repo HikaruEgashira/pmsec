@@ -14,9 +14,15 @@ from pmsec.cli import main  # noqa: E402
 
 
 def env_for(home: Path, **overrides: str) -> dict[str, str]:
-    # Hide the host pnpm by default so version-aware extras (pnpm 11 default
-    # enforcement) don't depend on what's installed on the test machine.
-    base = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"), "PMSEC_PNPM_VERSION": "none"}
+    # Hide the host pnpm/bundler by default so version-aware behavior (pnpm 11
+    # default enforcement, bundler preflight warnings) doesn't depend on what's
+    # installed on the test machine.
+    base = {
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "PMSEC_PNPM_VERSION": "none",
+        "PMSEC_BUNDLER_VERSION": "none",
+    }
     base.update(overrides)
     return base
 
@@ -73,6 +79,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "[settings]" in mise
     assert 'minimum_release_age = "1d"' in mise
     assert "paranoid = true" in mise
+    bundle = (tmp_path / ".bundle" / "config").read_text()
+    assert 'BUNDLE_COOLDOWN: "1"' in bundle
 
 
 def test_check_passes_after_default_enable(tmp_path):
@@ -84,7 +92,7 @@ def test_check_passes_after_default_enable(tmp_path):
 def test_check_fails_when_bundle_missing(tmp_path):
     code, out, _ = run(["--check"], tmp_path)
     assert code == 1
-    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"):
+    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"):
         assert f"MISSING {tool}" in out
 
 
@@ -166,8 +174,8 @@ def test_check_json(tmp_path):
     data = json.loads(out)
     assert data["ok"] is False
     assert data["bundleDays"] == 1
-    assert len(data["rows"]) == 7
-    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]
+    assert len(data["rows"]) == 8
+    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]
 
 
 def test_bun_section_insert(tmp_path):
@@ -192,6 +200,32 @@ def test_yarn_check_parses_days(tmp_path):
     data = json.loads(out)
     assert data["ok"] is True
     assert data["rows"][0]["days"] == 14
+
+
+def test_bundler_enable_preserves_unrelated_keys(tmp_path):
+    bundle_dir = tmp_path / ".bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "config").write_text('---\nBUNDLE_PATH: "vendor/bundle"\n')
+    run(["--tool", "bundler", "--days", "7"], tmp_path)
+    text = (bundle_dir / "config").read_text()
+    assert 'BUNDLE_COOLDOWN: "7"' in text
+    assert 'BUNDLE_PATH: "vendor/bundle"' in text
+
+
+def test_bundler_check_parses_days(tmp_path):
+    bundle_dir = tmp_path / ".bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "config").write_text('---\nBUNDLE_COOLDOWN: "14"\n')
+    _, out, _ = run(["--check", "--json", "--tool", "bundler"], tmp_path)
+    data = json.loads(out)
+    assert data["ok"] is True
+    assert data["rows"][0]["days"] == 14
+
+
+def test_bundler_user_config_override(tmp_path):
+    cfg = tmp_path / "custom-bundle-config"
+    run(["--tool", "bundler"], tmp_path, BUNDLE_USER_CONFIG=str(cfg))
+    assert 'BUNDLE_COOLDOWN: "1"' in cfg.read_text()
 
 
 def test_pnpm_check_normalizes_minutes(tmp_path):
@@ -317,9 +351,9 @@ def test_doctor_json_reports_per_tool_writability(tmp_path):
     assert data["doctor"] is True
     assert data["ok"] is True
     assert code == 0
-    # All seven tools surfaced in stable order with the writability quintet.
+    # All eight tools surfaced in stable order with the writability quintet.
     tools = [t["tool"] for t in data["tools"]]
-    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]
+    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]
     for t in data["tools"]:
         for key in ("path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"):
             assert key in t, f"{t['tool']} missing {key}"

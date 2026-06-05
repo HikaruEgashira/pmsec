@@ -18,9 +18,10 @@ async function setupHome() {
 }
 
 function envFor(home, overrides = {}) {
-  // Hide the host pnpm by default so version-aware extras (pnpm 11 default
-  // enforcement) don't depend on what's installed on the test machine.
-  return { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PMSEC_PNPM_VERSION: "none", ...overrides };
+  // Hide the host pnpm/bundler by default so version-aware behavior (pnpm 11
+  // default enforcement, bundler preflight warnings) doesn't depend on what's
+  // installed on the test machine.
+  return { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PMSEC_PNPM_VERSION: "none", PMSEC_BUNDLER_VERSION: "none", ...overrides };
 }
 
 async function runCli(argv, home, platform = "linux", envOverrides = {}) {
@@ -57,6 +58,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^\[settings\]$/m);
   assert.match(mise, /^minimum_release_age = "1d"$/m);
   assert.match(mise, /^paranoid = true$/m);
+  const bundle = await readFile(join(home, ".bundle", "config"), "utf8");
+  assert.match(bundle, /^BUNDLE_COOLDOWN: "1"$/m);
 });
 
 test("--check passes after default enable across all tools", async () => {
@@ -70,7 +73,7 @@ test("--check fails when the bundle is missing", async () => {
   const home = await setupHome();
   const { code, out } = await runCli(["--check"], home);
   assert.equal(code, 1);
-  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]) {
+  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]) {
     assert.match(out, new RegExp(`MISSING ${t}`));
   }
 });
@@ -176,8 +179,8 @@ test("--json emits parseable JSON for --check", async () => {
   const data = JSON.parse(out);
   assert.equal(data.ok, false);
   assert.equal(data.bundleDays, 1);
-  assert.equal(data.rows.length, 7);
-  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]);
+  assert.equal(data.rows.length, 8);
+  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]);
 });
 
 test("bun enable inserts key inside existing [install] section", async () => {
@@ -203,6 +206,42 @@ test("yarn check parses npmMinimalAgeGate days correctly", async () => {
   const data = JSON.parse(out);
   assert.equal(data.ok, true);
   assert.equal(data.rows[0].days, 14);
+});
+
+test("bundler enable writes quoted integer days and preserves unrelated keys", async () => {
+  const home = await setupHome();
+  await mkdir(join(home, ".bundle"), { recursive: true });
+  await writeFile(join(home, ".bundle", "config"), "---\nBUNDLE_PATH: \"vendor/bundle\"\n");
+  await runCli(["--tool", "bundler", "--days", "7"], home);
+  const text = await readFile(join(home, ".bundle", "config"), "utf8");
+  assert.match(text, /^BUNDLE_COOLDOWN: "7"$/m);
+  assert.match(text, /^BUNDLE_PATH: "vendor\/bundle"$/m);
+});
+
+test("bundler check parses BUNDLE_COOLDOWN days (quoted)", async () => {
+  const home = await setupHome();
+  await mkdir(join(home, ".bundle"), { recursive: true });
+  await writeFile(join(home, ".bundle", "config"), "---\nBUNDLE_COOLDOWN: \"14\"\n");
+  const { out } = await runCli(["--check", "--json", "--tool", "bundler"], home);
+  const data = JSON.parse(out);
+  assert.equal(data.ok, true);
+  assert.equal(data.rows[0].days, 14);
+});
+
+test("bundler honors BUNDLE_USER_CONFIG override", async () => {
+  const home = await setupHome();
+  const cfg = join(home, "custom-bundle-config");
+  await runCli(["--tool", "bundler"], home, "linux", { BUNDLE_USER_CONFIG: cfg });
+  const text = await readFile(cfg, "utf8");
+  assert.match(text, /^BUNDLE_COOLDOWN: "1"$/m);
+});
+
+test("bundler disable removes the cooldown", async () => {
+  const home = await setupHome();
+  await runCli(["--tool", "bundler"], home);
+  await runCli(["--disable", "--tool", "bundler"], home);
+  const { out } = await runCli(["--check", "--tool", "bundler"], home);
+  assert.match(out, /MISSING bundler/);
 });
 
 test("pnpm check normalizes minutes to days", async () => {
@@ -348,7 +387,7 @@ test("--doctor --json reports per-tool writability and exits 0 on a fresh home",
   assert.equal(data.doctor, true);
   assert.equal(data.ok, true);
   assert.equal(code, 0);
-  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv"]);
+  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]);
   for (const t of data.tools) {
     for (const key of ["path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"]) {
       assert.ok(key in t, `${t.tool} missing ${key}`);

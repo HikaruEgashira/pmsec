@@ -42,6 +42,15 @@ export function cargoConfigPath(env = process.env, home = homedir()) {
   return join(home, ".cargo", "config.toml");
 }
 
+// Bundler's global config. BUNDLE_USER_CONFIG points at the file directly;
+// BUNDLE_USER_HOME points at the home dir (config lives at <home>/config).
+// Both default to ~/.bundle, matching bundler's own resolution order.
+export function bundleConfigPath(env = process.env, home = homedir()) {
+  if (env.BUNDLE_USER_CONFIG) return env.BUNDLE_USER_CONFIG;
+  if (env.BUNDLE_USER_HOME) return join(env.BUNDLE_USER_HOME, "config");
+  return join(home, ".bundle", "config");
+}
+
 export function miseConfigPath(env = process.env, home = homedir(), platform = process.platform) {
   if (env.MISE_GLOBAL_CONFIG_FILE) return env.MISE_GLOBAL_CONFIG_FILE;
   if (platform === "win32") {

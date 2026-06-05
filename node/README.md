@@ -1,7 +1,7 @@
 # pmsec (Node)
 
 Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun,
-cargo, mise, and uv. One command flips on every safe-by-default knob each
+cargo, mise, uv, and bundler. One command flips on every safe-by-default knob each
 package manager exposes — install cooldown, signature trust policy, lockfile
 re-verification, build-script attestation, and more.
 
@@ -38,7 +38,7 @@ Zero runtime dependencies, ESM, requires Node 22+.
 | `pmsec --disable` | Remove every key the bundle set; other keys in the file are preserved. |
 | `pmsec --version` | Print the installed pmsec version. |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--days N` (override the 1-day default), `--force` (overwrite stricter existing cooldowns; default is monotonic), `--json`. `--check` and `--disable` are mutually exclusive.
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler`, `--days N` (override the 1-day default), `--force` (overwrite stricter existing cooldowns; default is monotonic), `--json`. `--check` and `--disable` are mutually exclusive.
 
 When the target file is owned by another user (typical: `~/.npmrc` left
 root-owned by an old `sudo npm config set`), the write fails with `EACCES`
