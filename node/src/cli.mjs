@@ -9,8 +9,9 @@ import * as bun from "./tools/bun.mjs";
 import * as cargo from "./tools/cargo.mjs";
 import * as mise from "./tools/mise.mjs";
 import * as uv from "./tools/uv.mjs";
+import * as bundler from "./tools/bundler.mjs";
 
-const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv];
+const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv, bundler];
 // Default cooldown for the hardening bundle. Override per-invocation with
 // `--days N`; the default tracks the safest value we'd recommend.
 const BUNDLE_DAYS = 1;
@@ -21,15 +22,15 @@ export const VERSION = JSON.parse(
 const USAGE = `pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. Default action enables every safe-by-default key
-each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+bun, cargo, mise, uv, bundler. Default action enables every safe-by-default
+key each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
-  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output

@@ -45,6 +45,17 @@ def cargo_config_path(env: dict[str, str], home: Path) -> Path:
     return home / ".cargo" / "config.toml"
 
 
+def bundle_config_path(env: dict[str, str], home: Path) -> Path:
+    """Bundler's global config. BUNDLE_USER_CONFIG points at the file directly;
+    BUNDLE_USER_HOME points at the home dir (config lives at <home>/config).
+    Both default to ~/.bundle, matching bundler's own resolution order."""
+    if "BUNDLE_USER_CONFIG" in env:
+        return Path(env["BUNDLE_USER_CONFIG"])
+    if "BUNDLE_USER_HOME" in env:
+        return Path(env["BUNDLE_USER_HOME"]) / "config"
+    return home / ".bundle" / "config"
+
+
 def mise_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     if "MISE_GLOBAL_CONFIG_FILE" in env:
         return Path(env["MISE_GLOBAL_CONFIG_FILE"])

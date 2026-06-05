@@ -18,6 +18,8 @@ setup_home() {
 # run [extra envs...] -- pmsec args...
 # `PMSEC_PNPM_VERSION=none` hides the host pnpm so version-aware extras
 # (pnpm 11 default enforcement) don't depend on what's installed locally.
+# `PMSEC_BUNDLER_VERSION=none` likewise hides the host bundler so its
+# preflight warning doesn't leak into stderr-sensitive assertions.
 # Test cases that exercise pnpm 11 behavior pass an override in `extra`.
 run_pmsec() {
   local home="$1"; shift
@@ -28,11 +30,11 @@ run_pmsec() {
   shift
   if [ "${#extra[@]}" -eq 0 ]; then
     env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" \
-      PMSEC_PNPM_VERSION=none \
+      PMSEC_PNPM_VERSION=none PMSEC_BUNDLER_VERSION=none \
       bash "$PMSEC" "$@"
   else
     env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" \
-      PMSEC_PNPM_VERSION=none \
+      PMSEC_PNPM_VERSION=none PMSEC_BUNDLER_VERSION=none \
       "${extra[@]}" bash "$PMSEC" "$@"
   fi
 }
@@ -89,13 +91,14 @@ T() {
 t_enable_writes_all() {
   local home; home=$(setup_home)
   run_pmsec "$home" -- >/dev/null
-  local npmrc pnpmrc bunfig yarnrc uvtoml mise
+  local npmrc pnpmrc bunfig yarnrc uvtoml mise bundle
   npmrc=$(cat "$home/.npmrc")
   pnpmrc=$(cat "$home/.config/pnpm/rc")
   bunfig=$(cat "$home/.bunfig.toml")
   yarnrc=$(cat "$home/.yarnrc.yml")
   uvtoml=$(cat "$home/.config/uv/uv.toml")
   mise=$(cat "$home/.config/mise/config.toml")
+  bundle=$(cat "$home/.bundle/config")
   assert_match "npm key" '^min-release-age=1$' "$npmrc" || return
   assert_match "pnpm key" '^minimum-release-age=1440$' "$pnpmrc" || return
   if printf '%s' "$npmrc" | grep -q 'minimum-release-age'; then
@@ -116,6 +119,7 @@ t_enable_writes_all() {
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
+  assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
   rm -rf -- "$home"
 }
 
@@ -135,7 +139,7 @@ t_check_fails_when_missing() {
   rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "1" "$rc" || return
-  for t in npm pnpm yarn bun cargo mise uv; do
+  for t in npm pnpm yarn bun cargo mise uv bundler; do
     assert_match "MISSING $t" "MISSING $t" "$out" || return
   done
 }
@@ -278,6 +282,28 @@ t_pnpm_normalizes_minutes() {
   out=$(run_pmsec "$home" -- --check --json --tool pnpm)
   rm -rf -- "$home"
   assert_match "pnpm days" '"days": 14' "$out" || return
+}
+
+t_bundler_enable_preserves_unrelated_keys() {
+  local home; home=$(setup_home)
+  mkdir -p "$home/.bundle"
+  printf -- '---\nBUNDLE_PATH: "vendor/bundle"\n' > "$home/.bundle/config"
+  run_pmsec "$home" -- --tool bundler --days 7 >/dev/null
+  local text; text=$(cat "$home/.bundle/config")
+  rm -rf -- "$home"
+  assert_match "bundler cooldown" '^BUNDLE_COOLDOWN: "7"$' "$text" || return
+  assert_match "bundler unrelated key preserved" '^BUNDLE_PATH: "vendor/bundle"$' "$text" || return
+}
+
+t_bundler_check_parses_days() {
+  local home; home=$(setup_home)
+  mkdir -p "$home/.bundle"
+  printf -- '---\nBUNDLE_COOLDOWN: "14"\n' > "$home/.bundle/config"
+  local out
+  out=$(run_pmsec "$home" -- --check --json --tool bundler)
+  rm -rf -- "$home"
+  assert_match "bundler ok" '"ok": true' "$out" || return
+  assert_match "bundler days" '"days": 14' "$out" || return
 }
 
 t_bak_created_once() {
@@ -423,6 +449,8 @@ T "bun enable inserts into existing [install] section" t_bun_inserts_into_existi
 T "bun enable creates [install] section if missing" t_bun_creates_section_if_missing
 T "yarn check parses npmMinimalAgeGate days correctly" t_yarn_check_parses_days
 T "pnpm check normalizes minutes to days" t_pnpm_normalizes_minutes
+T "bundler enable writes quoted days and preserves unrelated keys" t_bundler_enable_preserves_unrelated_keys
+T "bundler check parses BUNDLE_COOLDOWN days" t_bundler_check_parses_days
 T ".bak is created once and never overwritten" t_bak_created_once
 T "--days N overrides bundle cooldown for enable and check" t_days_overrides_bundle_cooldown
 T "--days rejects non-positive integers with exit 2" t_days_rejects_invalid

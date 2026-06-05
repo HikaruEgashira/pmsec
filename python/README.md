@@ -1,7 +1,7 @@
 # pmsec (Python)
 
 Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun,
-cargo, mise, and uv. One command flips on every safe-by-default knob each
+cargo, mise, uv, and bundler. One command flips on every safe-by-default knob each
 package manager exposes — install cooldown, signature trust policy, lockfile
 re-verification, build-script attestation, and more.
 
@@ -29,7 +29,7 @@ npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec --check
 
 ## Supported tools
 
-npm, pnpm, yarn 4+, bun, cargo (RFC #3801), mise, uv
+npm, pnpm, yarn 4+, bun, cargo (RFC #3801), mise, uv, bundler 4.0.13+
 
 ## Usage
 
@@ -40,7 +40,7 @@ npm, pnpm, yarn 4+, bun, cargo (RFC #3801), mise, uv
 | `pmsec --disable` | Remove every key the bundle set; other keys in the file are preserved |
 | `pmsec --version` | Print the installed pmsec version |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv`, `--days N` (override the 1-day default), `--force` (overwrite stricter existing cooldowns; default is monotonic), `--json`. `--check` and `--disable` are mutually exclusive.
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler`, `--days N` (override the 1-day default), `--force` (overwrite stricter existing cooldowns; default is monotonic), `--json`. `--check` and `--disable` are mutually exclusive.
 
 See the [project README](https://github.com/HikaruEgashira/pmsec) for the full
 table of keys, units, paths, and overrides.

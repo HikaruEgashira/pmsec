@@ -44,10 +44,12 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   $envKeys = @(
     'NPM_CONFIG_USERCONFIG','UV_CONFIG_FILE','BUN_CONFIG_FILE',
     'YARN_RC_FILENAME','CARGO_HOME','MISE_GLOBAL_CONFIG_FILE',
+    'BUNDLE_USER_CONFIG','BUNDLE_USER_HOME',
     'APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME',
     'PMSEC_HOME','HOME','USERPROFILE','PMSEC_FAKE_SCOPES','PMSEC_NO_WSL',
     'PMSEC_NPM_VERSION','PMSEC_PNPM_VERSION','PMSEC_YARN_VERSION',
-    'PMSEC_BUN_VERSION','PMSEC_CARGO_VERSION','PMSEC_MISE_VERSION','PMSEC_UV_VERSION'
+    'PMSEC_BUN_VERSION','PMSEC_CARGO_VERSION','PMSEC_MISE_VERSION','PMSEC_UV_VERSION',
+    'PMSEC_BUNDLER_VERSION'
   )
   $saved = @{}
   foreach ($k in $envKeys) {
@@ -63,6 +65,9 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   # don't depend on what's installed on the test machine. Tests that exercise
   # pnpm 11 behavior pass an override via $Extra.
   [Environment]::SetEnvironmentVariable('PMSEC_PNPM_VERSION', 'none', 'Process')
+  # Likewise hide the host bundler so its preflight warning doesn't depend on
+  # what's installed on the test machine.
+  [Environment]::SetEnvironmentVariable('PMSEC_BUNDLER_VERSION', 'none', 'Process')
   if ($Extra) {
     foreach ($k in $Extra.Keys) {
       [Environment]::SetEnvironmentVariable($k, $Extra[$k], 'Process')
@@ -176,6 +181,7 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'pnpm strict-dep-builds extra' '(?m)^strict-dep-builds=true$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'yarn enableHardenedMode extra' '(?m)^enableHardenedMode: true$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'yarn enableScripts extra' '(?m)^enableScripts: false$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
+    $ok = $ok -and (AssertMatch 'bundler key' '(?m)^BUNDLE_COOLDOWN: "1"$' ([System.IO.File]::ReadAllText((PathJoin $h '.bundle' 'config'))))
     return $ok
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -195,7 +201,7 @@ T 'check fails when bundle missing' {
   try {
     $r = InvokePmsec $h $null @('--check')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1, got $($r.Code)`n$($r.Out)"; return $false }
-    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv') {
+    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv','bundler') {
       if (-not (AssertMatch "MISSING $t" "MISSING $t" $r.Out)) { return $false }
     }
     return $true
@@ -312,9 +318,9 @@ T '--json emits parseable JSON for check' {
     try { $data = $r.Out | ConvertFrom-Json } catch { $script:LastFail = "json parse failed: $_`n$($r.Out)"; return $false }
     if ($data.ok -ne $false) { $script:LastFail = "expected ok=false, got $($data.ok)"; return $false }
     if ($data.bundleDays -ne 1) { $script:LastFail = "expected bundleDays=1, got $($data.bundleDays)"; return $false }
-    if ($data.rows.Count -ne 7) { $script:LastFail = "expected 7 rows, got $($data.rows.Count)"; return $false }
+    if ($data.rows.Count -ne 8) { $script:LastFail = "expected 8 rows, got $($data.rows.Count)"; return $false }
     $names = ($data.rows | ForEach-Object { $_.tool }) -join ','
-    if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv') { $script:LastFail = "row order: $names"; return $false }
+    if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv,bundler') { $script:LastFail = "row order: $names"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -342,6 +348,32 @@ T 'yarn check parses npmMinimalAgeGate days correctly' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`nenableScripts: false`n")
     $r = InvokePmsec $h $null @('--check','--json','--tool','yarn')
+    $data = $r.Out | ConvertFrom-Json
+    if ($data.ok -ne $true) { $script:LastFail = "expected ok=true"; return $false }
+    if ($data.rows[0].days -ne 14) { $script:LastFail = "expected 14 days, got $($data.rows[0].days)"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'bundler enable writes quoted days and preserves unrelated keys' {
+  $h = NewHome
+  try {
+    [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.bundle'))
+    [System.IO.File]::WriteAllText((PathJoin $h '.bundle' 'config'), "---`nBUNDLE_PATH: ""vendor/bundle""`n")
+    [void](InvokePmsec $h $null @('--tool','bundler','--days','7'))
+    $text = [System.IO.File]::ReadAllText((PathJoin $h '.bundle' 'config'))
+    $ok = (AssertMatch 'bundler cooldown' '(?m)^BUNDLE_COOLDOWN: "7"$' $text)
+    $ok = $ok -and (AssertMatch 'bundler unrelated key' '(?m)^BUNDLE_PATH: "vendor/bundle"$' $text)
+    return $ok
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'bundler check parses BUNDLE_COOLDOWN days' {
+  $h = NewHome
+  try {
+    [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.bundle'))
+    [System.IO.File]::WriteAllText((PathJoin $h '.bundle' 'config'), "---`nBUNDLE_COOLDOWN: ""14""`n")
+    $r = InvokePmsec $h $null @('--check','--json','--tool','bundler')
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $true) { $script:LastFail = "expected ok=true"; return $false }
     if ($data.rows[0].days -ne 14) { $script:LastFail = "expected 14 days, got $($data.rows[0].days)"; return $false }
@@ -624,7 +656,7 @@ T 'doctor --json reports per-tool writability on a fresh home' {
     if ($data.ok -ne $true) { $script:LastFail = "ok=false on fresh home: $($r.Out)"; return $false }
     if ($data.platform -ne 'win32') { $script:LastFail = "platform=$($data.platform)"; return $false }
     $tools = @($data.tools | ForEach-Object { $_.tool })
-    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','uv')) {
+    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler')) {
       if ($tools -notcontains $t) { $script:LastFail = "tool $t missing from doctor output"; return $false }
     }
     foreach ($row in $data.tools) {

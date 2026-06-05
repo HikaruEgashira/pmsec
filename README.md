@@ -1,7 +1,7 @@
 <h1 align="center">pmsec</h1>
 
 <p align="center">
-  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv.
+  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv / bundler.
 </p>
 
 <p align="center">
@@ -71,5 +71,6 @@ JSON exit-code signal (Intune detection rule, Ansible `assert`, CI step).
 | mise  | `~/.config/mise/config.toml`         | `[settings].minimum_release_age`   | `"1d"`         | filters out tool versions younger than 1 day                                                                  | mise ≥ 2026.4.22     |
 | mise  | `~/.config/mise/config.toml`         | `[settings].paranoid`              | `true`         | re-verifies SLSA / cosign / minisign / GitHub attestations even when lockfile checksums match                 | mise (any current)\* |
 | uv    | `~/.config/uv/uv.toml`               | `exclude-newer`                    | `"1 days"`     | filters out package versions published after `now − 1 day`                                                    | uv ≥ 0.9.17          |
+| bundler | `~/.bundle/config`                 | `BUNDLE_COOLDOWN`                  | `"1"` (days)   | refuses to resolve to a gem version until it has been public for at least 1 day                               | bundler ≥ 4.0.13     |
 
 [MIT](LICENSE)

@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # pmsec — zero-config install-time supply-chain hardening for
-# npm / pnpm / yarn / bun / cargo / mise / uv. `enable` writes the cooldown
+# npm / pnpm / yarn / bun / cargo / mise / uv / bundler. `enable` writes the cooldown
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
 # hardened mode, attestation re-verification, ...). `--days N` overrides the
 # default cooldown.
@@ -24,7 +24,7 @@ $script:PmsecVersion = '0.11.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 1
-$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv')
+$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler')
 
 # ---------- scope / platform / paths ----------
 
@@ -110,6 +110,14 @@ function Get-MisePath {
     return (PathJoin $base 'mise' 'config.toml')
   }
   return (PathJoin (Get-PmsecHome) '.config' 'mise' 'config.toml')
+}
+# Bundler's global config. BUNDLE_USER_CONFIG points at the file directly;
+# BUNDLE_USER_HOME points at the home dir (config = <home>/config). Both
+# default to ~/.bundle, matching bundler's own resolution order.
+function Get-BundlerPath {
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:BUNDLE_USER_CONFIG) { return $env:BUNDLE_USER_CONFIG }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:BUNDLE_USER_HOME) { return (PathJoin $env:BUNDLE_USER_HOME 'config') }
+  return (PathJoin (Get-PmsecHome) '.bundle' 'config')
 }
 
 # ---------- scope discovery ----------
@@ -371,6 +379,7 @@ function VersionOverrideEnvVar([string]$Bin) {
     'cargo' { 'PMSEC_CARGO_VERSION' }
     'mise'  { 'PMSEC_MISE_VERSION' }
     'uv'    { 'PMSEC_UV_VERSION' }
+    'bundler' { 'PMSEC_BUNDLER_VERSION' }
     default { '' }
   }
 }
@@ -410,6 +419,7 @@ function ToolPath([string]$Tool) {
     'cargo' { return Get-CargoPath }
     'mise'  { return Get-MisePath }
     'uv'    { return Get-UvPath }
+    'bundler' { return Get-BundlerPath }
   }
 }
 function ToolKey([string]$Tool) {
@@ -421,6 +431,7 @@ function ToolKey([string]$Tool) {
     'cargo' { 'minimum-release-age' }
     'mise'  { 'minimum_release_age' }
     'uv'    { 'exclude-newer' }
+    'bundler' { 'BUNDLE_COOLDOWN' }
   }
 }
 function ToolSection([string]$Tool) {
@@ -432,7 +443,7 @@ function ToolSection([string]$Tool) {
   }
 }
 function ToolSep([string]$Tool) {
-  if ($Tool -eq 'yarn') { return ':' }
+  if ($Tool -eq 'yarn' -or $Tool -eq 'bundler') { return ':' }
   return '='
 }
 
@@ -518,6 +529,7 @@ function ToolRead([string]$Tool) {
       'cargo' { $days = ParseDaysDw $val }
       'mise'  { $days = ParseDaysMise $val }
       'uv'    { $days = ParseDaysUv $val }
+      'bundler' { if ($val.Trim('"').Trim() -match '^\d+$') { $days = [int]$val.Trim('"').Trim() } }
     }
   }
   $extras = New-Object System.Collections.Generic.List[hashtable]
@@ -553,6 +565,7 @@ function ToolWriteValueLine([string]$Tool, [int]$Days) {
     'cargo' { return ('{0} = "{1}d"' -f $key, $Days) }
     'mise'  { return ('{0} = "{1}d"' -f $key, $Days) }
     'uv'    { return ('{0} = "{1} days"' -f $key, $Days) }
+    'bundler' { return ('{0}: "{1}"' -f $key, $Days) }
   }
 }
 
@@ -592,6 +605,7 @@ function ToolPreflight([string]$Tool) {
     'bun'  { $min = @(1,3,0);     $msg = 'minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' }
     'mise' { $min = @(2026,4,22); $msg = 'setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' }
     'uv'   { $min = @(0,9,17);    $msg = 'writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' }
+    'bundler' { $min = @(4,0,13); $msg = 'BUNDLE_COOLDOWN is silently ignored. Upgrade bundler (v4.0.13+) to enforce the cooldown.' }
     default { return $null }  # cargo: no min version gate (ships with rustup)
   }
   $v = VersionDetect $Tool
@@ -647,15 +661,15 @@ function PrintUsage {
 pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv. Default action enables every safe-by-default key
-each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
+bun, cargo, mise, uv, bundler. Default action enables every safe-by-default
+key each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
-  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv)
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --no-wsl              Skip the WSL pass; only configure the Windows host
