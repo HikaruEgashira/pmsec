@@ -61,12 +61,20 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   # tool dropping its config under $HomeDir/... Tests can override via
   # $Extra.PMSEC_FAKE_SCOPES (e.g. for win32 APPDATA paths or multi-scope).
   [Environment]::SetEnvironmentVariable('PMSEC_FAKE_SCOPES', "test|$HomeDir|linux", 'Process')
-  # Hide the host pnpm so version-aware extras (pnpm 11 default enforcement)
-  # don't depend on what's installed on the test machine. Tests that exercise
-  # pnpm 11 behavior pass an override via $Extra.
-  [Environment]::SetEnvironmentVariable('PMSEC_PNPM_VERSION', 'none', 'Process')
-  # Likewise hide the host bundler so its preflight warning doesn't depend on
-  # what's installed on the test machine.
+  # Hide all tool binaries so preflight warnings and version-aware behaviour
+  # (e.g. pnpm 11 block-exotic-subdeps default-enforcement) don't depend on
+  # what's installed on the test machine.  Tests that exercise version-specific
+  # behaviour pass an explicit override via $Extra.
+  # Not setting these caused VersionDetect to spawn real binaries (npm --version
+  # etc.) when a win32 scope was active in multi-scope tests, which hangs under
+  # Windows PowerShell 5.1 on certain CI runners.
+  [Environment]::SetEnvironmentVariable('PMSEC_NPM_VERSION',     'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_PNPM_VERSION',    'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_YARN_VERSION',    'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_BUN_VERSION',     'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_CARGO_VERSION',   'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_MISE_VERSION',    'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_UV_VERSION',      'none', 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_BUNDLER_VERSION', 'none', 'Process')
   if ($Extra) {
     foreach ($k in $Extra.Keys) {
