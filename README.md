@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.png" alt="pmsec: zero-config install-time hardening" width="100%">
+</p>
+
 <h1 align="center">pmsec</h1>
 
 <p align="center">
