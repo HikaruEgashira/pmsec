@@ -40,13 +40,8 @@ The default action enables the hardening bundle for every detected tool.
 Pass `--check` to verify, `--disable` to remove. Common options:
 `--tool npm,pnpm`, `--days 7`, `--force`, `--json`.
 
-`pmsec --doctor` (read-only) prints the resolved per-tool config path,
-running `uid`/`euid`, `HOME` / `PMSEC_HOME` source, parent-directory
-writability, and the existing file's owner — the diagnostic to run from
-any orchestrator (Jamf, Intune, Ansible, SCCM, Munki, GPO logon scripts,
-Salt, …) when an enable run reports nothing visible to the user.
-`pmsec --doctor --json` is consumable by any orchestrator that ingests a
-JSON exit-code signal (Intune detection rule, Ansible `assert`, CI step).
+For deployment diagnostics, `pmsec --doctor --json` reports the effective
+home, resolved config paths, ownership, and parent-directory writability.
 
 > Bootstrap: pmsec eats its own
 >
