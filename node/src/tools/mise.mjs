@@ -9,7 +9,8 @@ export const section = "settings";
 export const docs = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age";
 export const minBin = [2026, 4, 22];
 export const extras = [
-  { key: "paranoid", expected: "true", line: "paranoid = true", section }
+  { key: "paranoid", expected: "true", line: "paranoid = true", section },
+  { key: "gpg_verify", expected: "true", line: "gpg_verify = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }

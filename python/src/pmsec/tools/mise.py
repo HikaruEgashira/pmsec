@@ -17,6 +17,7 @@ DOCS = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age"
 MIN_BIN = (2026, 4, 22)
 EXTRAS = [
     {"key": "paranoid", "expected": "true", "line": "paranoid = true", "section": SECTION},
+    {"key": "gpg_verify", "expected": "true", "line": "gpg_verify = true", "section": SECTION},
 ]
 
 preflight = build_preflight(

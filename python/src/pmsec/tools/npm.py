@@ -17,6 +17,8 @@ EXTRAS = [
     {"key": "audit-level", "expected": "high", "line": "audit-level=high"},
     {"key": "allow-git", "expected": "root", "line": "allow-git=root"},
     {"key": "allow-remote", "expected": "root", "line": "allow-remote=root"},
+    {"key": "allow-file", "expected": "root", "line": "allow-file=root"},
+    {"key": "allow-directory", "expected": "root", "line": "allow-directory=root"},
 ]
 
 preflight = build_preflight(

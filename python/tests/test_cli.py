@@ -61,16 +61,21 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "audit-level=high" in npmrc
     assert "allow-git=root" in npmrc
     assert "allow-remote=root" in npmrc
+    assert "allow-file=root" in npmrc
+    assert "allow-directory=root" in npmrc
     assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
     assert "minimum-release-age=1440" in pnpmrc
     assert "trust-policy=no-downgrade" in pnpmrc
     assert "block-exotic-subdeps=true" in pnpmrc
     assert "strict-dep-builds=true" in pnpmrc
-    assert 'exclude-newer = "1 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
+    uvtoml = (tmp_path / ".config" / "uv" / "uv.toml").read_text()
+    assert 'exclude-newer = "1 days"' in uvtoml
+    assert 'index-strategy = "first-index"' in uvtoml
     bunfig = (tmp_path / ".bunfig.toml").read_text()
     assert "[install]" in bunfig
     assert "minimumReleaseAge = 86400" in bunfig
+    assert "ignoreScripts = true" in bunfig
     yarnrc = (tmp_path / ".yarnrc.yml").read_text()
     assert 'npmMinimalAgeGate: "1d"' in yarnrc
     assert "enableHardenedMode: true" in yarnrc
@@ -79,6 +84,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "[settings]" in mise
     assert 'minimum_release_age = "1d"' in mise
     assert "paranoid = true" in mise
+    assert "gpg_verify = true" in mise
     bundle = (tmp_path / ".bundle" / "config").read_text()
     assert 'BUNDLE_COOLDOWN: "1"' in bundle
 
@@ -106,7 +112,7 @@ def test_disable_preserves_other_keys(tmp_path):
     uv_dir = tmp_path / ".config" / "uv"
     uv_dir.mkdir(parents=True)
     (uv_dir / "uv.toml").write_text(
-        'exclude-newer = "3 days"\nindex-strategy = "unsafe-best-match"\n'
+        'exclude-newer = "3 days"\nlink-mode = "copy"\n'
     )
     (tmp_path / ".bunfig.toml").write_text(
         '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n'
@@ -117,7 +123,7 @@ def test_disable_preserves_other_keys(tmp_path):
     run(["--disable"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == "registry=https://r/\n"
     assert (pnpm_dir / "rc").read_text() == "store-dir=/tmp/pstore\n"
-    assert (uv_dir / "uv.toml").read_text() == 'index-strategy = "unsafe-best-match"\n'
+    assert (uv_dir / "uv.toml").read_text() == 'link-mode = "copy"\n'
     assert (tmp_path / ".bunfig.toml").read_text() == '[install]\nregistry = "https://x/"\n'
     assert (tmp_path / ".yarnrc.yml").read_text() == 'npmRegistryServer: "https://r/"\n'
 
@@ -126,7 +132,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\n"
     )
 
 
@@ -136,7 +142,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     assert code == 0
     assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\n"
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\n"
     )
 
 
@@ -182,14 +188,14 @@ def test_bun_section_insert(tmp_path):
     (tmp_path / ".bunfig.toml").write_text('[install]\nregistry = "https://x/"\n')
     run(["--tool", "bun"], tmp_path)
     text = (tmp_path / ".bunfig.toml").read_text()
-    assert text.startswith("[install]\nminimumReleaseAge = 86400\nregistry =")
+    assert text.startswith("[install]\nignoreScripts = true\nminimumReleaseAge = 86400\nregistry =")
 
 
 def test_bun_creates_section_if_missing(tmp_path):
     (tmp_path / ".bunfig.toml").write_text("telemetry = false\n")
     run(["--tool", "bun"], tmp_path)
     text = (tmp_path / ".bunfig.toml").read_text()
-    assert text == "telemetry = false\n\n[install]\nminimumReleaseAge = 86400\n"
+    assert text == "telemetry = false\n\n[install]\nignoreScripts = true\nminimumReleaseAge = 86400\n"
 
 
 def test_yarn_check_parses_days(tmp_path):
