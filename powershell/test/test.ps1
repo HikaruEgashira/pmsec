@@ -343,7 +343,7 @@ T 'bun enable inserts key inside existing [install] section' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "[install]`nregistry = ""https://x/""`n")
     [void](InvokePmsec $h $null @('--tool','bun'))
-    return (AssertFileEq '.bunfig' "[install]`nminimumReleaseAge = 86400`nregistry = ""https://x/""`n" (Join-Path $h '.bunfig.toml'))
+    return (AssertFileEq '.bunfig' "[install]`nignoreScripts = true`nminimumReleaseAge = 86400`nregistry = ""https://x/""`n" (Join-Path $h '.bunfig.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -352,7 +352,7 @@ T 'bun enable creates [install] section if missing' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "telemetry = false`n")
     [void](InvokePmsec $h $null @('--tool','bun'))
-    return (AssertFileEq '.bunfig' "telemetry = false`n`n[install]`nminimumReleaseAge = 86400`n" (Join-Path $h '.bunfig.toml'))
+    return (AssertFileEq '.bunfig' "telemetry = false`n`n[install]`nignoreScripts = true`nminimumReleaseAge = 86400`n" (Join-Path $h '.bunfig.toml'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
