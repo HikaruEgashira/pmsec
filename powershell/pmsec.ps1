@@ -456,7 +456,9 @@ function ToolExtras([string]$Tool) {
       return ,@(
         @{ Key = 'audit-level'; Expected = 'high'; Line = 'audit-level=high'; Sep = '='; Section = '' },
         @{ Key = 'allow-git'; Expected = 'root'; Line = 'allow-git=root'; Sep = '='; Section = '' },
-        @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = '' }
+        @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = '' },
+        @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = '' },
+        @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = '' }
       )
     }
     'pnpm' {
@@ -474,9 +476,20 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'enableScripts'; Expected = 'false'; Line = 'enableScripts: false'; Sep = ':'; Section = '' }
       )
     }
+    'bun' {
+      return ,@(
+        @{ Key = 'ignoreScripts'; Expected = 'true'; Line = 'ignoreScripts = true'; Sep = '='; Section = 'install' }
+      )
+    }
+    'uv' {
+      return ,@(
+        @{ Key = 'index-strategy'; Expected = '"first-index"'; Line = 'index-strategy = "first-index"'; Sep = '='; Section = '' }
+      )
+    }
     'mise' {
       return ,@(
-        @{ Key = 'paranoid'; Expected = 'true'; Line = 'paranoid = true'; Sep = '='; Section = 'settings' }
+        @{ Key = 'paranoid'; Expected = 'true'; Line = 'paranoid = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'gpg_verify'; Expected = 'true'; Line = 'gpg_verify = true'; Sep = '='; Section = 'settings' }
       )
     }
     default { return ,@() }

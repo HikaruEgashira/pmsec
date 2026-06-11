@@ -106,14 +106,19 @@ t_enable_writes_all() {
   fi
   assert_match "bun section" '^\[install\]$' "$bunfig" || return
   assert_match "bun key" '^minimumReleaseAge = 86400$' "$bunfig" || return
+  assert_match "bun ignoreScripts extra" '^ignoreScripts = true$' "$bunfig" || return
   assert_match "yarn key" '^npmMinimalAgeGate: "1d"$' "$yarnrc" || return
   assert_match "uv key" '^exclude-newer = "1 days"$' "$uvtoml" || return
+  assert_match "uv index-strategy extra" '^index-strategy = "first-index"$' "$uvtoml" || return
   assert_match "mise section" '^\[settings\]$' "$mise" || return
   assert_match "mise key" '^minimum_release_age = "1d"$' "$mise" || return
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
+  assert_match "mise gpg_verify extra" '^gpg_verify = true$' "$mise" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "npm allow-git extra" '^allow-git=root$' "$npmrc" || return
   assert_match "npm allow-remote extra" '^allow-remote=root$' "$npmrc" || return
+  assert_match "npm allow-file extra" '^allow-file=root$' "$npmrc" || return
+  assert_match "npm allow-directory extra" '^allow-directory=root$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
@@ -150,7 +155,7 @@ t_disable_preserves_unrelated_keys() {
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=4320\nstore-dir=/tmp/pstore\n' > "$home/.config/pnpm/rc"
   mkdir -p "$home/.config/uv"
-  printf 'exclude-newer = "3 days"\nindex-strategy = "unsafe-best-match"\n' > "$home/.config/uv/uv.toml"
+  printf 'exclude-newer = "3 days"\nlink-mode = "copy"\n' > "$home/.config/uv/uv.toml"
   printf '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
   printf 'npmMinimalAgeGate: "3d"\nnpmRegistryServer: "https://r/"\n' > "$home/.yarnrc.yml"
   run_pmsec "$home" -- --disable >/dev/null
@@ -158,7 +163,7 @@ t_disable_preserves_unrelated_keys() {
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   assert_file_eq "pnpm rc" 'store-dir=/tmp/pstore
 ' "$home/.config/pnpm/rc" || { rm -rf "$home"; return 1; }
-  assert_file_eq "uv.toml" 'index-strategy = "unsafe-best-match"
+  assert_file_eq "uv.toml" 'link-mode = "copy"
 ' "$home/.config/uv/uv.toml" || { rm -rf "$home"; return 1; }
   assert_file_eq "bunfig" '[install]
 registry = "https://x/"
@@ -177,6 +182,8 @@ registry=https://r/
 audit-level=high
 allow-git=root
 allow-remote=root
+allow-file=root
+allow-directory=root
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -192,6 +199,8 @@ registry=https://r/
 audit-level=high
 allow-git=root
 allow-remote=root
+allow-file=root
+allow-directory=root
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -246,6 +255,7 @@ t_bun_inserts_into_existing_section() {
   printf '[install]\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
   run_pmsec "$home" -- --tool bun >/dev/null
   assert_file_eq "bunfig" '[install]
+ignoreScripts = true
 minimumReleaseAge = 86400
 registry = "https://x/"
 ' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
@@ -259,6 +269,7 @@ t_bun_creates_section_if_missing() {
   assert_file_eq "bunfig" 'telemetry = false
 
 [install]
+ignoreScripts = true
 minimumReleaseAge = 86400
 ' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"

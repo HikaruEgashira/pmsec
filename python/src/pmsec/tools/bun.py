@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pmsec.util.context import Context
+from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import bun_config_path
@@ -13,7 +14,9 @@ KEY = "minimumReleaseAge"
 SECTION = "install"
 DOCS = "https://bun.com/docs/runtime/bunfig#install"
 MIN_BIN = (1, 3, 0)
-EXTRAS: list[dict] = []
+EXTRAS: list[dict] = [
+    {"key": "ignoreScripts", "expected": "true", "line": "ignoreScripts = true", "section": SECTION},
+]
 
 preflight = build_preflight(
     NAME, MIN_BIN,
@@ -36,13 +39,13 @@ def read(ctx: Context) -> dict:
         except ValueError:
             seconds = None
     days = None if seconds is None else seconds // 86400
-    return {"path": str(p), "configured": value, "days": days, "extras": []}
+    return {"path": str(p), "configured": value, "days": days, "extras": read_extras(raw, EXTRAS)}
 
 
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8") if p.exists() else ""
-    write_atomic(p, set_key(raw, KEY, f"{KEY} = {days * 86400}", section=SECTION))
+    write_atomic(p, apply_extras(set_key(raw, KEY, f"{KEY} = {days * 86400}", section=SECTION), EXTRAS))
     return {"path": str(p)}
 
 
@@ -51,7 +54,9 @@ def unset(ctx: Context) -> dict:
     if not p.exists():
         return {"path": str(p), "removed": False}
     before = p.read_text("utf-8")
-    after, removed = remove_key(before, KEY, section=SECTION)
+    after, removed_cooldown = remove_key(before, KEY, section=SECTION)
+    after, removed_extras = remove_extras(after, EXTRAS)
+    removed = removed_cooldown or removed_extras
     if removed:
         write_atomic(p, after)
     return {"path": str(p), "removed": removed}

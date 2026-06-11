@@ -39,6 +39,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(npmrc, /^audit-level=high$/m);
   assert.match(npmrc, /^allow-git=root$/m);
   assert.match(npmrc, /^allow-remote=root$/m);
+  assert.match(npmrc, /^allow-file=root$/m);
+  assert.match(npmrc, /^allow-directory=root$/m);
   assert.doesNotMatch(npmrc, /minimum-release-age/, "pnpm keys must not leak into .npmrc");
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=1440$/m);
@@ -47,9 +49,11 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(pnpmrc, /^strict-dep-builds=true$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "1 days"$/m);
+  assert.match(uvtoml, /^index-strategy = "first-index"$/m);
   const bunfig = await readFile(join(home, ".bunfig.toml"), "utf8");
   assert.match(bunfig, /^\[install\]$/m);
   assert.match(bunfig, /^minimumReleaseAge = 86400$/m);
+  assert.match(bunfig, /^ignoreScripts = true$/m);
   const yarnrc = await readFile(join(home, ".yarnrc.yml"), "utf8");
   assert.match(yarnrc, /^npmMinimalAgeGate: "1d"$/m);
   assert.match(yarnrc, /^enableHardenedMode: true$/m);
@@ -58,6 +62,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^\[settings\]$/m);
   assert.match(mise, /^minimum_release_age = "1d"$/m);
   assert.match(mise, /^paranoid = true$/m);
+  assert.match(mise, /^gpg_verify = true$/m);
   const bundle = await readFile(join(home, ".bundle", "config"), "utf8");
   assert.match(bundle, /^BUNDLE_COOLDOWN: "1"$/m);
 });
@@ -84,13 +89,13 @@ test("--disable preserves unrelated keys per file", async () => {
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=4320\nstore-dir=/tmp/pstore\n");
   await mkdir(join(home, ".config", "uv"), { recursive: true });
-  await writeFile(join(home, ".config", "uv", "uv.toml"), 'exclude-newer = "3 days"\nindex-strategy = "unsafe-best-match"\n');
+  await writeFile(join(home, ".config", "uv", "uv.toml"), 'exclude-newer = "3 days"\nlink-mode = "copy"\n');
   await writeFile(join(home, ".bunfig.toml"), "[install]\nminimumReleaseAge = 259200\nregistry = \"https://x/\"\n");
   await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"3d\"\nnpmRegistryServer: \"https://r/\"\n");
   await runCli(["--disable"], home);
   assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://r/\n");
   assert.equal(await readFile(join(home, ".config", "pnpm", "rc"), "utf8"), "store-dir=/tmp/pstore\n");
-  assert.equal(await readFile(join(home, ".config", "uv", "uv.toml"), "utf8"), 'index-strategy = "unsafe-best-match"\n');
+  assert.equal(await readFile(join(home, ".config", "uv", "uv.toml"), "utf8"), 'link-mode = "copy"\n');
   assert.equal(await readFile(join(home, ".bunfig.toml"), "utf8"), "[install]\nregistry = \"https://x/\"\n");
   assert.equal(await readFile(join(home, ".yarnrc.yml"), "utf8"), "npmRegistryServer: \"https://r/\"\n");
 });
@@ -101,7 +106,7 @@ test("enable upgrades values that are weaker than the request", async () => {
   await runCli(["--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\n"
+    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\n"
   );
 });
 
@@ -133,7 +138,7 @@ test("enable preserves stricter existing cooldowns", async () => {
   assert.match(out, /^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)/m);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\n"
+    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\n"
   );
 });
 
@@ -188,7 +193,7 @@ test("bun enable inserts key inside existing [install] section", async () => {
   await writeFile(join(home, ".bunfig.toml"), "[install]\nregistry = \"https://x/\"\n");
   await runCli(["--tool", "bun"], home);
   const text = await readFile(join(home, ".bunfig.toml"), "utf8");
-  assert.match(text, /^\[install\]\nminimumReleaseAge = 86400\nregistry = "https:\/\/x\/"$/m);
+  assert.match(text, /^\[install\]\nignoreScripts = true\nminimumReleaseAge = 86400\nregistry = "https:\/\/x\/"$/m);
 });
 
 test("bun enable creates [install] section if missing", async () => {
@@ -196,7 +201,7 @@ test("bun enable creates [install] section if missing", async () => {
   await writeFile(join(home, ".bunfig.toml"), "telemetry = false\n");
   await runCli(["--tool", "bun"], home);
   const text = await readFile(join(home, ".bunfig.toml"), "utf8");
-  assert.match(text, /^telemetry = false\n\n\[install\]\nminimumReleaseAge = 86400\n$/);
+  assert.match(text, /^telemetry = false\n\n\[install\]\nignoreScripts = true\nminimumReleaseAge = 86400\n$/);
 });
 
 test("yarn check parses npmMinimalAgeGate days correctly", async () => {

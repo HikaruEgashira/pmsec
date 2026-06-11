@@ -450,6 +450,8 @@ tool_extras() {
       printf 'audit-level|high|audit-level=high|=|\n'
       printf 'allow-git|root|allow-git=root|=|\n'
       printf 'allow-remote|root|allow-remote=root|=|\n'
+      printf 'allow-file|root|allow-file=root|=|\n'
+      printf 'allow-directory|root|allow-directory=root|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
@@ -460,8 +462,15 @@ tool_extras() {
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
       printf 'enableScripts|false|enableScripts: false|:|\n'
       ;;
+    bun)
+      printf 'ignoreScripts|true|ignoreScripts = true|=|install\n'
+      ;;
+    uv)
+      printf 'index-strategy|"first-index"|index-strategy = "first-index"|=|\n'
+      ;;
     mise)
       printf 'paranoid|true|paranoid = true|=|settings\n'
+      printf 'gpg_verify|true|gpg_verify = true|=|settings\n'
       ;;
     *) ;;
   esac
