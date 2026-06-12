@@ -77,4 +77,45 @@ home, resolved config paths, ownership, and parent-directory writability.
 | uv    | `~/.config/uv/uv.toml`               | `index-strategy`                   | `"first-index"`| pins the secure default: when multiple indexes are configured uv resolves packages only from the first index that contains them, preventing dependency confusion across indexes | uv ≥ 0.1.0           |
 | bundler | `~/.bundle/config`                 | `BUNDLE_COOLDOWN`                  | `"1"` (days)   | refuses to resolve to a gem version until it has been public for at least 1 day                               | bundler ≥ 4.0.13     |
 
+## Q&A
+
+### Can I change an individual setting (e.g. `allow-file`) to a different value?
+
+Not through pmsec — it is zero-config by design. The only knobs are `--days N`
+(cooldown length) and `--tool` (which tools to manage). Every other key is
+written with a fixed, safe value, `--check` validates that exact value, and
+re-running `pmsec` restores it.
+
+Instead, relax the specific setting in the specific project that needs it.
+Every supported tool resolves its project-level config with higher precedence
+than the user-level file pmsec manages, so the override is scoped to that one
+project and survives pmsec re-runs:
+
+| tool    | project-level override                            |
+|---------|---------------------------------------------------|
+| npm     | `<project>/.npmrc`                                |
+| pnpm    | `<project>/.npmrc` / `pnpm-workspace.yaml`        |
+| yarn    | `<project>/.yarnrc.yml`                           |
+| bun     | `<project>/bunfig.toml`                           |
+| cargo   | `<project>/.cargo/config.toml`                    |
+| mise    | `<project>/mise.toml`                             |
+| uv      | `<project>/pyproject.toml` (`[tool.uv]`) / `uv.toml` |
+| bundler | `<project>/.bundle/config`                        |
+
+Example — a monorepo that legitimately needs workspace `file:` dependencies:
+
+```ini
+# <project>/.npmrc
+allow-file=workspaces
+```
+
+Two things to keep in mind:
+
+- **Project config is also how an untrusted repo would weaken these
+  protections.** A cloned repository can commit the same override files, so
+  the pmsec baseline is a safe *default*, not an enforcement boundary —
+  review checked-in tool configs when working with code you don't trust.
+- **`pmsec --check` validates the global baseline only.** It stays green
+  regardless of project-level overrides; that is intentional.
+
 [MIT](LICENSE)
