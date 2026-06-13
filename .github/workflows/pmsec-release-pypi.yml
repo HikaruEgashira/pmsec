@@ -39,6 +39,10 @@ jobs:
           fi
           pkg_version=$(awk -F\" '/^version *= */ {print $2; exit}' pyproject.toml)
           [ "$tag_version" = "$pkg_version" ] || { echo "tag $tag_version != pyproject.toml $pkg_version" >&2; exit 1; }
+      - name: Verify all implementations agree on the version
+        timeout-minutes: 1
+        working-directory: .
+        run: bash scripts/check-versions.sh
       - name: Test
         timeout-minutes: 5
         run: uv run --with pytest pytest -q

@@ -11,6 +11,8 @@ The public surface (`pmsec enable | check | disable`, `--tool`, `--days N`, `--j
 
 ## Release workflow
 
+Bump with `scripts/bump.sh <version>` — it updates every file that declares the version (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`) and runs `scripts/check-versions.sh`, which CI and both release workflows also enforce. Never bump by hand.
+
 Node and Python use **trusted publishing via tag push**. Do not `npm publish` / `uv publish` locally. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
 
 ## Architecture
