@@ -1,8 +1,8 @@
 name: pmsec release pypi
+# Only dispatched by the `pmsec release` workflow. No tag trigger: release
+# tags are pushed with GITHUB_TOKEN (which never triggers workflows), so a
+# tag-triggered run could only ever be a manual tag push — blocked by design.
 on:
-  push:
-    tags:
-      - 'pmsec-py-v*'
   workflow_dispatch:
     inputs:
       version:
@@ -29,16 +29,19 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         timeout-minutes: 5
-      - name: Verify tag matches pyproject.toml version
-        timeout-minutes: 5
+      - name: Block direct manual dispatch
+        timeout-minutes: 1
+        env:
+          ACTOR: ${{ github.actor }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            tag_version="${{ github.event.inputs.version }}"
-          else
-            tag_version="${GITHUB_REF_NAME#pmsec-py-v}"
-          fi
+          [ "$ACTOR" = "github-actions[bot]" ] || { echo "publish runs only via the 'pmsec release' workflow (actor: $ACTOR)" >&2; exit 1; }
+      - name: Verify requested version matches pyproject.toml
+        timeout-minutes: 5
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
           pkg_version=$(awk -F\" '/^version *= */ {print $2; exit}' pyproject.toml)
-          [ "$tag_version" = "$pkg_version" ] || { echo "tag $tag_version != pyproject.toml $pkg_version" >&2; exit 1; }
+          [ "$INPUT_VERSION" = "$pkg_version" ] || { echo "input $INPUT_VERSION != pyproject.toml $pkg_version" >&2; exit 1; }
       - name: Verify all implementations agree on the version
         timeout-minutes: 1
         working-directory: .

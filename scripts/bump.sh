@@ -16,8 +16,8 @@ bash scripts/check-versions.sh
 
 cat <<EOF
 
-Bumped to $ver. Next:
-  git commit -am "chore: bump version to $ver" && git push
-  git tag pmsec-node-v$ver && git tag pmsec-py-v$ver
-  git push origin pmsec-node-v$ver pmsec-py-v$ver
+Bumped to $ver.
+Releases run through .github/workflows/pmsec-release.yml, which invokes this
+script, commits, tags, and dispatches the publish workflows:
+  gh workflow run pmsec-release.yml -f version=$ver
 EOF

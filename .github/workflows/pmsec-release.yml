@@ -1,0 +1,45 @@
+name: pmsec release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.15.0)'
+        required: true
+permissions:
+  contents: write
+  actions: write
+jobs:
+  bump:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        timeout-minutes: 5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        timeout-minutes: 5
+      - name: Bump all version declarations
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ inputs.version }}
+        run: bash scripts/bump.sh "$VERSION"
+      - name: Commit, tag, push
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: bump version to $VERSION"
+          git tag "pmsec-node-v$VERSION"
+          git tag "pmsec-py-v$VERSION"
+          git push origin HEAD:main "pmsec-node-v$VERSION" "pmsec-py-v$VERSION"
+      # Tags pushed with GITHUB_TOKEN do not trigger other workflows
+      # (recursive-trigger protection), so dispatch the publishers directly.
+      - name: Dispatch publish workflows
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh workflow run pmsec-release-npm.yml --ref main -f version="$VERSION"
+          gh workflow run pmsec-release-pypi.yml --ref main -f version="$VERSION"

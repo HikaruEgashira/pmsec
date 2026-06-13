@@ -11,9 +11,9 @@ The public surface (`pmsec enable | check | disable`, `--tool`, `--days N`, `--j
 
 ## Release workflow
 
-Bump with `scripts/bump.sh <version>` — it updates every file that declares the version (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`) and runs `scripts/check-versions.sh`, which CI and both release workflows also enforce. Never bump by hand.
+Releases run **only** through the `pmsec release` workflow: `gh workflow run pmsec-release.yml -f version=<ver>`. It bumps every version declaration via `scripts/bump.sh` (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`), verifies them with `scripts/check-versions.sh` (also enforced by the CI `versions` job), commits, tags (`pmsec-node-v*` / `pmsec-py-v*`), and dispatches the npm / PyPI publish workflows.
 
-Node and Python use **trusted publishing via tag push**. Do not `npm publish` / `uv publish` locally. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
+The publish workflows have no tag trigger and reject any dispatch whose actor is not `github-actions[bot]`, so manual tag pushes and direct manual dispatch cannot publish. Do not bump versions by hand, push release tags from a local clone, or `npm publish` / `uv publish` locally. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
 
 ## Architecture
 
