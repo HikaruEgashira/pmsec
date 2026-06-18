@@ -16,7 +16,7 @@ function parseDays(value) {
   if (value === null) return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.round(n / 1440);
+  return Math.floor(n / 1440);
 }
 
 export async function read(ctx) {

@@ -741,8 +741,9 @@ Environment:
   BUN_CONFIG_FILE       Override the bun config file path.
   CARGO_HOME            Override the cargo dir; pmsec writes \$CARGO_HOME/config.toml.
   MISE_GLOBAL_CONFIG_FILE Override the mise config file path.
+  AUBE_CONFIG_FILE      Override the aube config file path.
   UV_CONFIG_FILE        Override the uv config file path.
-  XDG_CONFIG_HOME       Override the XDG config root (affects mise, uv on linux/mac).
+  XDG_CONFIG_HOME       Override the XDG config root (affects mise, aube, uv on linux/mac).
 EOF
 }
 

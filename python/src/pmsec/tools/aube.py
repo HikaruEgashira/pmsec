@@ -29,7 +29,7 @@ def _parse_days(value: str | None) -> int | None:
         return None
     if n <= 0:
         return None
-    return round(n / 1440)
+    return n // 1440
 
 
 def read(ctx: Context) -> dict:
