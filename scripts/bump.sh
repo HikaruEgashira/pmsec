@@ -17,7 +17,5 @@ bash scripts/check-versions.sh
 cat <<EOF
 
 Bumped to $ver.
-Releases run through .github/workflows/pmsec-release.yml, which invokes this
-script, commits, tags, and dispatches the publish workflows:
-  gh workflow run pmsec-release.yml -f version=$ver
+Commit and push to main — the release workflow triggers automatically after CI passes.
 EOF

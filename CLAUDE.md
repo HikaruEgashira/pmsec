@@ -11,9 +11,14 @@ The public surface (`pmsec enable | check | disable`, `--tool`, `--days N`, `--j
 
 ## Release workflow
 
-Releases run **only** through the `pmsec release` workflow: `gh workflow run pmsec-release.yml -f version=<ver>`. It bumps every version declaration via `scripts/bump.sh` (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`), verifies them with `scripts/check-versions.sh` (also enforced by the CI `versions` job), commits, tags (`pmsec-node-v*` / `pmsec-py-v*`), and dispatches the npm / PyPI publish workflows.
+Releases are **trunk-based**: push a version bump to `main` and the release happens automatically. The flow is:
 
-The publish workflows have no tag trigger and reject any dispatch whose actor is not `github-actions[bot]`, so manual tag pushes and direct manual dispatch cannot publish. Do not bump versions by hand, push release tags from a local clone, or `npm publish` / `uv publish` locally. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
+1. Run `bash scripts/bump.sh <ver>` to update all five version declarations (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`) and verify with `scripts/check-versions.sh`.
+2. Commit and push to `main` (directly or via PR merge).
+3. `pmsec ci` runs the full test matrix. On success, `pmsec release` (`workflow_run` trigger) detects the new version by checking for the `pmsec-node-v<ver>` tag.
+4. If the tag does not exist, the release job creates `pmsec-node-v<ver>` and `pmsec-py-v<ver>` tags, pushes them, and dispatches the npm / PyPI publish workflows.
+
+The publish workflows reject any dispatch whose actor is not `github-actions[bot]`, so direct manual dispatch cannot publish. Do not push release tags from a local clone, or `npm publish` / `uv publish` locally. A `workflow_dispatch` trigger is available on `pmsec-release.yml` as an emergency re-run mechanism. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
 
 ## Architecture
 
