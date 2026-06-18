@@ -85,6 +85,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert 'minimum_release_age = "1d"' in mise
     assert "paranoid = true" in mise
     assert "gpg_verify = true" in mise
+    assert "github_attestations = true" in mise
+    assert "slsa = true" in mise
     bundle = (tmp_path / ".bundle" / "config").read_text()
     assert 'BUNDLE_COOLDOWN: "1"' in bundle
 

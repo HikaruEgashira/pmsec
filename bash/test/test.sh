@@ -114,6 +114,8 @@ t_enable_writes_all() {
   assert_match "mise key" '^minimum_release_age = "1d"$' "$mise" || return
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
   assert_match "mise gpg_verify extra" '^gpg_verify = true$' "$mise" || return
+  assert_match "mise github_attestations extra" '^github_attestations = true$' "$mise" || return
+  assert_match "mise slsa extra" '^slsa = true$' "$mise" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "npm allow-git extra" '^allow-git=root$' "$npmrc" || return
   assert_match "npm allow-remote extra" '^allow-remote=root$' "$npmrc" || return
