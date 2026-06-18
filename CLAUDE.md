@@ -17,7 +17,7 @@ Versioning is **CalVer `YYYY.M.N`** (year, month, release-number-within-month). 
 
 1. Push to `main` (directly or via PR merge).
 2. `pmsec ci` runs the full test matrix.
-3. On success, `pmsec release` (`workflow_run` trigger) determines the next CalVer version, runs `scripts/bump.sh` to update all five version declarations (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`), commits, tags (`pmsec-node-v*` / `pmsec-py-v*`), pushes, and dispatches the npm / PyPI publish workflows.
+3. On success, `pmsec release` (`workflow_run` trigger) determines the next CalVer version, updates all five version declarations (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`), verifies them with `scripts/check-versions.sh`, commits, tags (`pmsec-node-v*` / `pmsec-py-v*`), pushes, and dispatches the npm / PyPI publish workflows.
 
 The version bump commit is pushed with `GITHUB_TOKEN`, which does not re-trigger workflows, so no release loop occurs. The publish workflows reject any dispatch whose actor is not `github-actions[bot]`, so direct manual dispatch cannot publish. Do not push release tags from a local clone, or `npm publish` / `uv publish` locally. A `workflow_dispatch` trigger is available on `pmsec-release.yml` as an emergency re-run mechanism. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
 

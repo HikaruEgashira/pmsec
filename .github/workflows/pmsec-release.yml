@@ -41,7 +41,13 @@ jobs:
         timeout-minutes: 5
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: bash scripts/bump.sh "$VERSION"
+        run: |
+          perl -pi -e 's/^(  "version": ")[^"]+/${1}'"$VERSION"'/' node/package.json
+          perl -pi -e 's/^(version = ")[^"]+/${1}'"$VERSION"'/' python/pyproject.toml
+          perl -pi -e 's/^(PMSEC_VERSION=")[^"]+/${1}'"$VERSION"'/' bash/pmsec
+          perl -pi -e "s/(PmsecVersion = ')[^']+/\${1}$VERSION/" powershell/pmsec.ps1
+          (cd python && uv lock --quiet)
+          bash scripts/check-versions.sh
       - name: Commit, tag, push
         timeout-minutes: 5
         env:
