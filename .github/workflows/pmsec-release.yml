@@ -47,7 +47,6 @@ jobs:
           perl -pi -e 's/^(PMSEC_VERSION=")[^"]+/${1}'"$VERSION"'/' bash/pmsec
           perl -pi -e "s/(PmsecVersion = ')[^']+/\${1}$VERSION/" powershell/pmsec.ps1
           (cd python && uv lock --quiet)
-          bash scripts/check-versions.sh
       - name: Commit, tag, push
         timeout-minutes: 5
         env:

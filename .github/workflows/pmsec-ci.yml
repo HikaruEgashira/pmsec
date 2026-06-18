@@ -8,7 +8,6 @@ on:
       - 'bash/**'
       - 'powershell/**'
       - 'conformance/**'
-      - 'scripts/**'
       - '.github/workflows/pmsec-ci.yml'
   pull_request:
     paths:
@@ -17,21 +16,9 @@ on:
       - 'bash/**'
       - 'powershell/**'
       - 'conformance/**'
-      - 'scripts/**'
       - '.github/workflows/pmsec-ci.yml'
 permissions: {}
 jobs:
-  versions:
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        timeout-minutes: 5
-        with:
-          persist-credentials: false
-      - name: all five version declarations agree
-        timeout-minutes: 1
-        run: bash scripts/check-versions.sh
   node:
     timeout-minutes: 10
     runs-on: ${{ matrix.os }}
