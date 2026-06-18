@@ -23,34 +23,20 @@ jobs:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         timeout-minutes: 5
-      - name: Determine next version
+      - name: Determine next CalVer version
         id: version
         timeout-minutes: 1
         run: |
-          latest=$(git tag --list 'pmsec-node-v*' --sort=-v:refname | head -1)
-          intree=$(awk -F'"' '/"version":/ {print $4; exit}' node/package.json)
-
+          prefix=$(date -u +%Y.%-m)
+          latest=$(git tag --list "pmsec-node-v${prefix}.*" --sort=-v:refname | head -1)
           if [ -z "$latest" ]; then
-            tag_ver="0.0.0"
+            next="${prefix}.0"
           else
-            tag_ver="${latest#pmsec-node-v}"
+            n="${latest##*.}"
+            next="${prefix}.$((n + 1))"
           fi
-
-          IFS='.' read -r major minor patch <<< "$tag_ver"
-          auto_next="$major.$minor.$((patch + 1))"
-
-          # Use in-tree version if strictly newer than latest tag (manual bump);
-          # otherwise auto-increment patch.
-          higher=$(printf '%s\n%s' "$tag_ver" "$intree" | sort -V | tail -1)
-          if [ "$higher" = "$intree" ] && [ "$intree" != "$tag_ver" ]; then
-            next="$intree"
-            echo "Using in-tree version $next (manual bump detected; latest tag: $tag_ver)"
-          else
-            next="$auto_next"
-            echo "Auto-incrementing to $next (latest tag: ${latest:-none})"
-          fi
-
           echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: $next (prefix: $prefix, latest tag in month: ${latest:-none})"
       - name: Bump all version declarations
         timeout-minutes: 5
         env:
