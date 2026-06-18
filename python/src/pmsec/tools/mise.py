@@ -18,6 +18,8 @@ MIN_BIN = (2026, 4, 22)
 EXTRAS = [
     {"key": "paranoid", "expected": "true", "line": "paranoid = true", "section": SECTION},
     {"key": "gpg_verify", "expected": "true", "line": "gpg_verify = true", "section": SECTION},
+    {"key": "github_attestations", "expected": "true", "line": "github_attestations = true", "section": SECTION},
+    {"key": "slsa", "expected": "true", "line": "slsa = true", "section": SECTION},
 ]
 
 preflight = build_preflight(

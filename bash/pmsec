@@ -471,6 +471,8 @@ tool_extras() {
     mise)
       printf 'paranoid|true|paranoid = true|=|settings\n'
       printf 'gpg_verify|true|gpg_verify = true|=|settings\n'
+      printf 'github_attestations|true|github_attestations = true|=|settings\n'
+      printf 'slsa|true|slsa = true|=|settings\n'
       ;;
     *) ;;
   esac

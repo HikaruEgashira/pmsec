@@ -489,7 +489,9 @@ function ToolExtras([string]$Tool) {
     'mise' {
       return ,@(
         @{ Key = 'paranoid'; Expected = 'true'; Line = 'paranoid = true'; Sep = '='; Section = 'settings' },
-        @{ Key = 'gpg_verify'; Expected = 'true'; Line = 'gpg_verify = true'; Sep = '='; Section = 'settings' }
+        @{ Key = 'gpg_verify'; Expected = 'true'; Line = 'gpg_verify = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'github_attestations'; Expected = 'true'; Line = 'github_attestations = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'slsa'; Expected = 'true'; Line = 'slsa = true'; Sep = '='; Section = 'settings' }
       )
     }
     default { return ,@() }

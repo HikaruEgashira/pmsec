@@ -63,6 +63,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^minimum_release_age = "1d"$/m);
   assert.match(mise, /^paranoid = true$/m);
   assert.match(mise, /^gpg_verify = true$/m);
+  assert.match(mise, /^github_attestations = true$/m);
+  assert.match(mise, /^slsa = true$/m);
   const bundle = await readFile(join(home, ".bundle", "config"), "utf8");
   assert.match(bundle, /^BUNDLE_COOLDOWN: "1"$/m);
 });

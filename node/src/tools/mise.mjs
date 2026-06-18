@@ -11,6 +11,8 @@ export const minBin = [2026, 4, 22];
 export const extras = [
   { key: "paranoid", expected: "true", line: "paranoid = true", section },
   { key: "gpg_verify", expected: "true", line: "gpg_verify = true", section },
+  { key: "github_attestations", expected: "true", line: "github_attestations = true", section },
+  { key: "slsa", expected: "true", line: "slsa = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }
