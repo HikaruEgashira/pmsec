@@ -5,7 +5,7 @@
 <h1 align="center">pmsec</h1>
 
 <p align="center">
-  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv / bundler.
+  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube.
 </p>
 
 <p align="center">
@@ -78,6 +78,8 @@ home, resolved config paths, ownership, and parent-directory writability.
 | uv    | `~/.config/uv/uv.toml`               | `exclude-newer`                    | `"1 days"`     | filters out package versions published after `now − 1 day`                                                    | uv ≥ 0.9.17          |
 | uv    | `~/.config/uv/uv.toml`               | `index-strategy`                   | `"first-index"`| pins the secure default: when multiple indexes are configured uv resolves packages only from the first index that contains them, preventing dependency confusion across indexes | uv ≥ 0.1.0           |
 | bundler | `~/.bundle/config`                 | `BUNDLE_COOLDOWN`                  | `"1"` (days)   | refuses to resolve to a gem version until it has been public for at least 1 day                               | bundler ≥ 4.0.13     |
+| aube  | `~/.config/aube/config.toml`         | `minimumReleaseAge`                | `1440` (min)   | filters out package versions younger than 1 day (1440 minutes)                                                | aube ≥ 1.0.0         |
+| aube  | `~/.config/aube/config.toml`         | `paranoid`                         | `true`         | enables the strict-security bundle: jailBuilds, trustPolicy=no-downgrade, minimumReleaseAgeStrict, strictStoreIntegrity, strictDepBuilds, advisoryCheck=required | aube ≥ 1.0.0         |
 
 ## Q&A
 
@@ -103,6 +105,7 @@ project and survives pmsec re-runs:
 | mise    | `<project>/mise.toml`                             |
 | uv      | `<project>/pyproject.toml` (`[tool.uv]`) / `uv.toml` |
 | bundler | `<project>/.bundle/config`                        |
+| aube    | `<project>/.npmrc` / `aube-workspace.yaml`        |
 
 Example — a monorepo that legitimately needs workspace `file:` dependencies:
 

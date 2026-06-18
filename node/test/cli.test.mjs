@@ -65,6 +65,9 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^gpg_verify = true$/m);
   assert.match(mise, /^github_attestations = true$/m);
   assert.match(mise, /^slsa = true$/m);
+  const aube = await readFile(join(home, ".config", "aube", "config.toml"), "utf8");
+  assert.match(aube, /^minimumReleaseAge = 1440$/m);
+  assert.match(aube, /^paranoid = true$/m);
   const bundle = await readFile(join(home, ".bundle", "config"), "utf8");
   assert.match(bundle, /^BUNDLE_COOLDOWN: "1"$/m);
 });
@@ -80,7 +83,7 @@ test("--check fails when the bundle is missing", async () => {
   const home = await setupHome();
   const { code, out } = await runCli(["--check"], home);
   assert.equal(code, 1);
-  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]) {
+  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]) {
     assert.match(out, new RegExp(`MISSING ${t}`));
   }
 });
@@ -186,8 +189,8 @@ test("--json emits parseable JSON for --check", async () => {
   const data = JSON.parse(out);
   assert.equal(data.ok, false);
   assert.equal(data.bundleDays, 1);
-  assert.equal(data.rows.length, 8);
-  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]);
+  assert.equal(data.rows.length, 9);
+  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]);
 });
 
 test("bun enable inserts key inside existing [install] section", async () => {
@@ -340,6 +343,9 @@ test("--days N overrides bundle cooldown for enable and check", async () => {
   // pnpm uses minutes: 7 * 1440 = 10080, in its own rc file.
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=10080$/m);
+  // aube uses minutes: 7 * 1440 = 10080
+  const aubetoml = await readFile(join(home, ".config", "aube", "config.toml"), "utf8");
+  assert.match(aubetoml, /^minimumReleaseAge = 10080$/m);
 
   const r = await runCli(["--check", "--json", "--days", "7"], home);
   assert.equal(r.code, 0);
@@ -394,7 +400,7 @@ test("--doctor --json reports per-tool writability and exits 0 on a fresh home",
   assert.equal(data.doctor, true);
   assert.equal(data.ok, true);
   assert.equal(code, 0);
-  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]);
+  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]);
   for (const t of data.tools) {
     for (const key of ["path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"]) {
       assert.ok(key in t, `${t.tool} missing ${key}`);

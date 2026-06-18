@@ -60,3 +60,13 @@ export function miseConfigPath(env = process.env, home = homedir(), platform = p
   const base = env.XDG_CONFIG_HOME || join(home, ".config");
   return join(base, "mise", "config.toml");
 }
+
+export function aubeConfigPath(env = process.env, home = homedir(), platform = process.platform) {
+  if (env.AUBE_CONFIG_FILE) return env.AUBE_CONFIG_FILE;
+  if (platform === "win32") {
+    const base = env.LOCALAPPDATA || join(home, "AppData", "Local");
+    return join(base, "aube", "config.toml");
+  }
+  const base = env.XDG_CONFIG_HOME || join(home, ".config");
+  return join(base, "aube", "config.toml");
+}

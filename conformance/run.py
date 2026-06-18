@@ -47,7 +47,7 @@ def env_for(impl: str, home: Path) -> dict[str, str]:
     # Hide every host-installed package manager so version-aware preflight
     # warnings are deterministic (otherwise CI runners that ship npm/yarn/etc
     # leak a tool-specific 'warn' string into the JSON, breaking the cases).
-    for tool in ("NPM", "PNPM", "YARN", "BUN", "CARGO", "MISE", "UV"):
+    for tool in ("NPM", "PNPM", "YARN", "BUN", "CARGO", "MISE", "AUBE", "UV"):
         env[f"PMSEC_{tool}_VERSION"] = "none"
     if impl == "python":
         env["PYTHONPATH"] = str(REPO / "python" / "src")

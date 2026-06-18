@@ -76,6 +76,16 @@ def uv_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     return base / "uv" / "uv.toml"
 
 
+def aube_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
+    if "AUBE_CONFIG_FILE" in env:
+        return Path(env["AUBE_CONFIG_FILE"])
+    if platform == "win32":
+        base = Path(env["LOCALAPPDATA"]) if "LOCALAPPDATA" in env else home / "AppData" / "Local"
+        return base / "aube" / "config.toml"
+    base = Path(env["XDG_CONFIG_HOME"]) if "XDG_CONFIG_HOME" in env else home / ".config"
+    return base / "aube" / "config.toml"
+
+
 def current_platform() -> str:
     if os.name == "nt":
         return "win32"

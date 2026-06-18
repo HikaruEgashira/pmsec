@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # pmsec — zero-config install-time supply-chain hardening for
-# npm / pnpm / yarn / bun / cargo / mise / uv / bundler. `enable` writes the cooldown
+# npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube. `enable` writes the cooldown
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
 # hardened mode, attestation re-verification, ...). `--days N` overrides the
 # default cooldown.
@@ -24,7 +24,7 @@ $script:PmsecVersion = '0.14.0'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 1
-$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler')
+$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler','aube')
 
 # ---------- scope / platform / paths ----------
 
@@ -118,6 +118,14 @@ function Get-BundlerPath {
   if ((Get-PmsecPlatform) -eq 'win32' -and $env:BUNDLE_USER_CONFIG) { return $env:BUNDLE_USER_CONFIG }
   if ((Get-PmsecPlatform) -eq 'win32' -and $env:BUNDLE_USER_HOME) { return (PathJoin $env:BUNDLE_USER_HOME 'config') }
   return (PathJoin (Get-PmsecHome) '.bundle' 'config')
+}
+function Get-AubePath {
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    if ($env:AUBE_CONFIG_FILE) { return $env:AUBE_CONFIG_FILE }
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
+    return (PathJoin $base 'aube' 'config.toml')
+  }
+  return (PathJoin (Get-PmsecHome) '.config' 'aube' 'config.toml')
 }
 
 # ---------- scope discovery ----------
@@ -380,6 +388,7 @@ function VersionOverrideEnvVar([string]$Bin) {
     'mise'  { 'PMSEC_MISE_VERSION' }
     'uv'    { 'PMSEC_UV_VERSION' }
     'bundler' { 'PMSEC_BUNDLER_VERSION' }
+    'aube'  { 'PMSEC_AUBE_VERSION' }
     default { '' }
   }
 }
@@ -420,6 +429,7 @@ function ToolPath([string]$Tool) {
     'mise'  { return Get-MisePath }
     'uv'    { return Get-UvPath }
     'bundler' { return Get-BundlerPath }
+    'aube' { return Get-AubePath }
   }
 }
 function ToolKey([string]$Tool) {
@@ -432,6 +442,7 @@ function ToolKey([string]$Tool) {
     'mise'  { 'minimum_release_age' }
     'uv'    { 'exclude-newer' }
     'bundler' { 'BUNDLE_COOLDOWN' }
+    'aube' { 'minimumReleaseAge' }
   }
 }
 function ToolSection([string]$Tool) {
@@ -494,6 +505,11 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'slsa'; Expected = 'true'; Line = 'slsa = true'; Sep = '='; Section = 'settings' }
       )
     }
+    'aube' {
+      return ,@(
+        @{ Key = 'paranoid'; Expected = 'true'; Line = 'paranoid = true'; Sep = '='; Section = '' }
+      )
+    }
     default { return ,@() }
   }
 }
@@ -545,6 +561,7 @@ function ToolRead([string]$Tool) {
       'mise'  { $days = ParseDaysMise $val }
       'uv'    { $days = ParseDaysUv $val }
       'bundler' { if ($val.Trim('"').Trim() -match '^\d+$') { $days = [int]$val.Trim('"').Trim() } }
+      'aube'  { if ($val -match '^\d+$') { $days = [int][math]::Floor([int]$val / 1440.0) } }
     }
   }
   $extras = New-Object System.Collections.Generic.List[hashtable]
@@ -581,6 +598,7 @@ function ToolWriteValueLine([string]$Tool, [int]$Days) {
     'mise'  { return ('{0} = "{1}d"' -f $key, $Days) }
     'uv'    { return ('{0} = "{1} days"' -f $key, $Days) }
     'bundler' { return ('{0}: "{1}"' -f $key, $Days) }
+    'aube'  { return ("$key = " + ($Days * 1440)) }
   }
 }
 
@@ -676,7 +694,7 @@ function PrintUsage {
 pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv, bundler. Default action enables every safe-by-default
+bun, cargo, mise, uv, bundler, aube. Default action enables every safe-by-default
 key each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
@@ -684,7 +702,7 @@ Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
-  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler)
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --no-wsl              Skip the WSL pass; only configure the Windows host
