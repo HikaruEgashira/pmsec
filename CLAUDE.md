@@ -11,14 +11,15 @@ The public surface (`pmsec enable | check | disable`, `--tool`, `--days N`, `--j
 
 ## Release workflow
 
-Releases are **trunk-based**: push a version bump to `main` and the release happens automatically. The flow is:
+Releases are **fully automated**: every push to `main` that passes CI triggers a release. No manual version bumping or dispatch is required.
 
-1. Run `bash scripts/bump.sh <ver>` to update all five version declarations (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`) and verify with `scripts/check-versions.sh`.
-2. Commit and push to `main` (directly or via PR merge).
-3. `pmsec ci` runs the full test matrix. On success, `pmsec release` (`workflow_run` trigger) detects the new version by checking for the `pmsec-node-v<ver>` tag.
-4. If the tag does not exist, the release job creates `pmsec-node-v<ver>` and `pmsec-py-v<ver>` tags, pushes them, and dispatches the npm / PyPI publish workflows.
+1. Push to `main` (directly or via PR merge).
+2. `pmsec ci` runs the full test matrix.
+3. On success, `pmsec release` (`workflow_run` trigger) auto-increments the patch version from the latest `pmsec-node-v*` tag, runs `scripts/bump.sh` to update all five version declarations (`node/package.json`, `python/pyproject.toml`, `python/uv.lock`, `bash/pmsec`, `powershell/pmsec.ps1`), commits, tags (`pmsec-node-v*` / `pmsec-py-v*`), pushes, and dispatches the npm / PyPI publish workflows.
 
-The publish workflows reject any dispatch whose actor is not `github-actions[bot]`, so direct manual dispatch cannot publish. Do not push release tags from a local clone, or `npm publish` / `uv publish` locally. A `workflow_dispatch` trigger is available on `pmsec-release.yml` as an emergency re-run mechanism. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
+The version bump commit is pushed with `GITHUB_TOKEN`, which does not re-trigger workflows, so no release loop occurs. The publish workflows reject any dispatch whose actor is not `github-actions[bot]`, so direct manual dispatch cannot publish. Do not push release tags from a local clone, or `npm publish` / `uv publish` locally. A `workflow_dispatch` trigger is available on `pmsec-release.yml` as an emergency re-run mechanism. The bash and PowerShell ports have no registry; users `curl` / `Invoke-WebRequest` the script from a tagged GitHub raw URL.
+
+For major or minor version bumps, run `bash scripts/bump.sh <ver>` manually before pushing — the release workflow detects that the in-tree version already exceeds the latest tag and uses it as-is.
 
 ## Architecture
 

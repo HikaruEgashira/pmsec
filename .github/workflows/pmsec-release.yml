@@ -19,48 +19,59 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         timeout-minutes: 5
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - name: Detect version
-        id: detect
+          ref: main
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        timeout-minutes: 5
+      - name: Determine next version
+        id: version
         timeout-minutes: 1
         run: |
-          version=$(awk -F'"' '/"version":/ {print $4; exit}' node/package.json)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Detected version: $version"
-      - name: Check if release needed
-        id: check
-        timeout-minutes: 1
-        env:
-          VERSION: ${{ steps.detect.outputs.version }}
-        run: |
-          if git ls-remote --tags origin "refs/tags/pmsec-node-v$VERSION" | grep -q .; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "Tag pmsec-node-v$VERSION already exists — skipping release"
+          latest=$(git tag --list 'pmsec-node-v*' --sort=-v:refname | head -1)
+          intree=$(awk -F'"' '/"version":/ {print $4; exit}' node/package.json)
+
+          if [ -z "$latest" ]; then
+            tag_ver="0.0.0"
           else
-            echo "release=true" >> "$GITHUB_OUTPUT"
-            echo "Tag pmsec-node-v$VERSION not found — will release"
+            tag_ver="${latest#pmsec-node-v}"
           fi
-      - name: Verify all implementations agree
-        if: steps.check.outputs.release == 'true'
-        timeout-minutes: 1
-        run: bash scripts/check-versions.sh
-      - name: Create and push tags
-        if: steps.check.outputs.release == 'true'
+
+          IFS='.' read -r major minor patch <<< "$tag_ver"
+          auto_next="$major.$minor.$((patch + 1))"
+
+          # Use in-tree version if strictly newer than latest tag (manual bump);
+          # otherwise auto-increment patch.
+          higher=$(printf '%s\n%s' "$tag_ver" "$intree" | sort -V | tail -1)
+          if [ "$higher" = "$intree" ] && [ "$intree" != "$tag_ver" ]; then
+            next="$intree"
+            echo "Using in-tree version $next (manual bump detected; latest tag: $tag_ver)"
+          else
+            next="$auto_next"
+            echo "Auto-incrementing to $next (latest tag: ${latest:-none})"
+          fi
+
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+      - name: Bump all version declarations
         timeout-minutes: 5
         env:
-          VERSION: ${{ steps.detect.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/bump.sh "$VERSION"
+      - name: Commit, tag, push
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: release v$VERSION"
           git tag "pmsec-node-v$VERSION"
           git tag "pmsec-py-v$VERSION"
-          git push origin "pmsec-node-v$VERSION" "pmsec-py-v$VERSION"
+          git push origin HEAD:main "pmsec-node-v$VERSION" "pmsec-py-v$VERSION"
       - name: Dispatch publish workflows
-        if: steps.check.outputs.release == 'true'
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.detect.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh workflow run pmsec-release-npm.yml --ref main -f version="$VERSION"
           gh workflow run pmsec-release-pypi.yml --ref main -f version="$VERSION"

@@ -14,8 +14,4 @@ perl -pi -e "s/(PmsecVersion = ')[^']+/\${1}$ver/" powershell/pmsec.ps1
 
 bash scripts/check-versions.sh
 
-cat <<EOF
-
-Bumped to $ver.
-Commit and push to main — the release workflow triggers automatically after CI passes.
-EOF
+echo "Bumped to $ver."
