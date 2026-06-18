@@ -1,6 +1,6 @@
 [project]
 name = "pmsec"
-version = "0.14.0"
+version = "2026.6.0"
 description = "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun, cargo, mise, uv, and bundler."
 readme = "README.md"
 requires-python = ">=3.10"
