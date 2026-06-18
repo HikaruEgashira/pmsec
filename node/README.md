@@ -1,11 +1,6 @@
 # pmsec (Node)
 
-Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun,
-cargo, mise, uv, and bundler. One command flips on every safe-by-default knob each
-package manager exposes — install cooldown, signature trust policy, lockfile
-re-verification, build-script attestation, and more.
-
-## Install
+Node 22+ ESM CLI for the same pmsec contract as the root project.
 
 ```bash
 npx pmsec
@@ -13,40 +8,30 @@ npx pmsec --check
 npx pmsec --disable
 ```
 
-```bash
-uvx pmsec
-uvx pmsec --check
-uvx pmsec --disable
-```
-
-If your environment already enforces cooldown (or routes through a proxy
-registry), bootstrap pmsec by overriding just for that call:
+Bootstrap through registries that already enforce cooldowns:
 
 ```bash
 npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec --check
 uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec --check
 ```
 
-Zero runtime dependencies, ESM, requires Node 22+.
-
 ## Usage
 
-| Invocation | Description |
+| Command | Result |
 | --- | --- |
-| `pmsec` | Default action: write the hardening bundle (1-day cooldown + per-tool extras) to every selected tool's user config. |
-| `pmsec --check` | Read each tool's config; exit 1 if any row is missing or below the bundled value. |
-| `pmsec --disable` | Remove every key the bundle set; other keys in the file are preserved. |
-| `pmsec --version` | Print the installed pmsec version. |
+| `pmsec` | Writes the hardening bundle. |
+| `pmsec --check` | Exits 1 when any selected tool is below policy. |
+| `pmsec --disable` | Removes pmsec-managed keys only. |
+| `pmsec --doctor` | Prints read-only path, ownership, and writability diagnostics. |
+| `pmsec --version` | Prints the version. |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler`, `--days N` (override the 1-day default), `--force` (overwrite stricter existing cooldowns; default is monotonic), `--json`. `--check` and `--disable` are mutually exclusive.
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube`, `--days N`,
+`--force`, `--json`.
 
-When the target file is owned by another user (typical: `~/.npmrc` left
-root-owned by an old `sudo npm config set`), the write fails with `EACCES`
-and pmsec prints the exact `chown` command needed to restore ownership —
-re-run after applying it. pmsec never escalates privileges itself.
+Write failures include the target path and ownership hint. pmsec never escalates
+privileges.
 
-See the [project README](https://github.com/HikaruEgashira/pmsec) for the
-full table of keys, units, paths, and environment overrides.
+See the root README for the full key table.
 
 ## License
 
