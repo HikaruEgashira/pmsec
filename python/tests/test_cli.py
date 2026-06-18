@@ -87,6 +87,9 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "gpg_verify = true" in mise
     assert "github_attestations = true" in mise
     assert "slsa = true" in mise
+    aube = (tmp_path / ".config" / "aube" / "config.toml").read_text()
+    assert "minimumReleaseAge = 1440" in aube
+    assert "paranoid = true" in aube
     bundle = (tmp_path / ".bundle" / "config").read_text()
     assert 'BUNDLE_COOLDOWN: "1"' in bundle
 
@@ -100,7 +103,7 @@ def test_check_passes_after_default_enable(tmp_path):
 def test_check_fails_when_bundle_missing(tmp_path):
     code, out, _ = run(["--check"], tmp_path)
     assert code == 1
-    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"):
+    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"):
         assert f"MISSING {tool}" in out
 
 
@@ -182,8 +185,8 @@ def test_check_json(tmp_path):
     data = json.loads(out)
     assert data["ok"] is False
     assert data["bundleDays"] == 1
-    assert len(data["rows"]) == 8
-    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]
+    assert len(data["rows"]) == 9
+    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]
 
 
 def test_bun_section_insert(tmp_path):
@@ -318,6 +321,7 @@ def test_days_flag_overrides_bundle_cooldown(tmp_path):
     assert "minimum-release-age=10080" in pnpmrc
     assert 'exclude-newer = "7 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert "minimumReleaseAge = 604800" in (tmp_path / ".bunfig.toml").read_text()
+    assert "minimumReleaseAge = 10080" in (tmp_path / ".config" / "aube" / "config.toml").read_text()
 
     code, out, _ = run(["--check", "--json", "--days", "7"], tmp_path)
     assert code == 0
@@ -361,7 +365,7 @@ def test_doctor_json_reports_per_tool_writability(tmp_path):
     assert code == 0
     # All eight tools surfaced in stable order with the writability quintet.
     tools = [t["tool"] for t in data["tools"]]
-    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler"]
+    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]
     for t in data["tools"]:
         for key in ("path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"):
             assert key in t, f"{t['tool']} missing {key}"

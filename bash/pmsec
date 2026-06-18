@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pmsec — zero-config install-time supply-chain hardening for
-# npm / pnpm / yarn / bun / cargo / mise / uv / bundler. `enable` writes the cooldown
+# npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube. `enable` writes the cooldown
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
 # hardened mode, attestation re-verification, ...). `--days N` overrides the
 # default cooldown.
@@ -13,7 +13,7 @@ PMSEC_VERSION="0.14.0"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=1
-TOOLS=(npm pnpm yarn bun cargo mise uv bundler)
+TOOLS=(npm pnpm yarn bun cargo mise uv bundler aube)
 
 # ---------- paths ----------
 
@@ -90,6 +90,14 @@ path_mise() {
     printf '%s/mise/config.toml' "${LOCALAPPDATA:-$home/AppData/Local}"; return
   fi
   printf '%s/mise/config.toml' "${XDG_CONFIG_HOME:-$home/.config}"
+}
+path_aube() {
+  local home; home=$(_pmsec_home)
+  if [ -n "${AUBE_CONFIG_FILE:-}" ]; then printf '%s' "$AUBE_CONFIG_FILE"; return; fi
+  if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
+    printf '%s/aube/config.toml' "${LOCALAPPDATA:-$home/AppData/Local}"; return
+  fi
+  printf '%s/aube/config.toml' "${XDG_CONFIG_HOME:-$home/.config}"
 }
 
 # ---------- line buffer ----------
@@ -363,6 +371,7 @@ version_override_env_var() {
     mise)  printf 'PMSEC_MISE_VERSION' ;;
     uv)    printf 'PMSEC_UV_VERSION' ;;
     bundler) printf 'PMSEC_BUNDLER_VERSION' ;;
+    aube)  printf 'PMSEC_AUBE_VERSION' ;;
     *)     printf '' ;;
   esac
 }
@@ -408,6 +417,7 @@ tool_path() {
     mise)  path_mise ;;
     uv)    path_uv ;;
     bundler) path_bundler ;;
+    aube) path_aube ;;
     *) return 1 ;;
   esac
 }
@@ -422,6 +432,7 @@ tool_key() {
     mise)  printf 'minimum_release_age' ;;
     uv)    printf 'exclude-newer' ;;
     bundler) printf 'BUNDLE_COOLDOWN' ;;
+    aube) printf 'minimumReleaseAge' ;;
   esac
 }
 
@@ -473,6 +484,9 @@ tool_extras() {
       printf 'gpg_verify|true|gpg_verify = true|=|settings\n'
       printf 'github_attestations|true|github_attestations = true|=|settings\n'
       printf 'slsa|true|slsa = true|=|settings\n'
+      ;;
+    aube)
+      printf 'paranoid|true|paranoid = true|=|\n'
       ;;
     *) ;;
   esac
@@ -546,6 +560,9 @@ tool_read() {
       bval="${val#\"}"; bval="${bval%\"}"
       if [[ "$bval" =~ ^[0-9]+$ ]]; then days="$bval"; else days=""; fi
       ;;
+    aube)
+      if [[ "$val" =~ ^[0-9]+$ ]]; then days=$((val / 1440)); else days=""; fi
+      ;;
     *) days="" ;;
   esac
   printf '%s|%s' "$val" "$days"
@@ -565,6 +582,7 @@ tool_write_value_line() {
     mise)  printf '%s = "%dd"' "$key" "$days" ;;
     uv)    printf '%s = "%d days"' "$key" "$days" ;;
     bundler) printf '%s: "%d"' "$key" "$days" ;;
+    aube)  printf '%s = %d' "$key" "$((days * 1440))" ;;
   esac
 }
 
@@ -690,7 +708,7 @@ USAGE() {
 pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv, bundler. Default action enables every safe-by-default
+bun, cargo, mise, uv, bundler, aube. Default action enables every safe-by-default
 key each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
@@ -698,7 +716,7 @@ Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
-  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler)
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --json                Emit JSON output
@@ -723,8 +741,9 @@ Environment:
   BUN_CONFIG_FILE       Override the bun config file path.
   CARGO_HOME            Override the cargo dir; pmsec writes \$CARGO_HOME/config.toml.
   MISE_GLOBAL_CONFIG_FILE Override the mise config file path.
+  AUBE_CONFIG_FILE      Override the aube config file path.
   UV_CONFIG_FILE        Override the uv config file path.
-  XDG_CONFIG_HOME       Override the XDG config root (affects mise, uv on linux/mac).
+  XDG_CONFIG_HOME       Override the XDG config root (affects mise, aube, uv on linux/mac).
 EOF
 }
 

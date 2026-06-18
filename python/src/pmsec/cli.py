@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 
 from pmsec import __version__
-from pmsec.tools import bun, bundler, cargo, mise, npm, pnpm, uv, yarn
+from pmsec.tools import aube, bun, bundler, cargo, mise, npm, pnpm, uv, yarn
 from pmsec.util.context import Context
 from pmsec.util.paths import current_platform
 
-TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv, bundler]
+TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv, bundler, aube]
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS = 1

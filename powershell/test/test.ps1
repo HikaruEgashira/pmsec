@@ -44,11 +44,13 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   $envKeys = @(
     'NPM_CONFIG_USERCONFIG','UV_CONFIG_FILE','BUN_CONFIG_FILE',
     'YARN_RC_FILENAME','CARGO_HOME','MISE_GLOBAL_CONFIG_FILE',
+    'AUBE_CONFIG_FILE',
     'BUNDLE_USER_CONFIG','BUNDLE_USER_HOME',
     'APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME',
     'PMSEC_HOME','HOME','USERPROFILE','PMSEC_FAKE_SCOPES','PMSEC_NO_WSL',
     'PMSEC_NPM_VERSION','PMSEC_PNPM_VERSION','PMSEC_YARN_VERSION',
     'PMSEC_BUN_VERSION','PMSEC_CARGO_VERSION','PMSEC_MISE_VERSION','PMSEC_UV_VERSION',
+    'PMSEC_AUBE_VERSION',
     'PMSEC_BUNDLER_VERSION'
   )
   $saved = @{}
@@ -75,6 +77,7 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   [Environment]::SetEnvironmentVariable('PMSEC_CARGO_VERSION',   'none', 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_MISE_VERSION',    'none', 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_UV_VERSION',      'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_AUBE_VERSION',    'none', 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_BUNDLER_VERSION', 'none', 'Process')
   if ($Extra) {
     foreach ($k in $Extra.Keys) {
@@ -186,6 +189,8 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'mise gpg_verify extra' '(?m)^gpg_verify = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'mise github_attestations extra' '(?m)^github_attestations = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'mise slsa extra' '(?m)^slsa = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'mise' 'config.toml'))))
+    $ok = $ok -and (AssertMatch 'aube key' '(?m)^minimumReleaseAge = 1440$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'aube' 'config.toml'))))
+    $ok = $ok -and (AssertMatch 'aube paranoid extra' '(?m)^paranoid = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'aube' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'npm audit-level extra' '(?m)^audit-level=high$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm allow-git extra' '(?m)^allow-git=root$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm allow-remote extra' '(?m)^allow-remote=root$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
@@ -216,7 +221,7 @@ T 'check fails when bundle missing' {
   try {
     $r = InvokePmsec $h $null @('--check')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1, got $($r.Code)`n$($r.Out)"; return $false }
-    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv','bundler') {
+    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv','bundler','aube') {
       if (-not (AssertMatch "MISSING $t" "MISSING $t" $r.Out)) { return $false }
     }
     return $true
@@ -333,9 +338,9 @@ T '--json emits parseable JSON for check' {
     try { $data = $r.Out | ConvertFrom-Json } catch { $script:LastFail = "json parse failed: $_`n$($r.Out)"; return $false }
     if ($data.ok -ne $false) { $script:LastFail = "expected ok=false, got $($data.ok)"; return $false }
     if ($data.bundleDays -ne 1) { $script:LastFail = "expected bundleDays=1, got $($data.bundleDays)"; return $false }
-    if ($data.rows.Count -ne 8) { $script:LastFail = "expected 8 rows, got $($data.rows.Count)"; return $false }
+    if ($data.rows.Count -ne 9) { $script:LastFail = "expected 9 rows, got $($data.rows.Count)"; return $false }
     $names = ($data.rows | ForEach-Object { $_.tool }) -join ','
-    if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv,bundler') { $script:LastFail = "row order: $names"; return $false }
+    if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube') { $script:LastFail = "row order: $names"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -478,6 +483,8 @@ T '--days N overrides bundle cooldown for enable and check' {
     if ($uv -notmatch 'exclude-newer = "7 days"') { $script:LastFail = "uv not 7 days: $uv"; return $false }
     $bun = [System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))
     if ($bun -notmatch 'minimumReleaseAge = 604800') { $script:LastFail = "bun not 604800: $bun"; return $false }
+    $aube = [System.IO.File]::ReadAllText((PathJoin $h '.config' 'aube' 'config.toml'))
+    if ($aube -notmatch 'minimumReleaseAge = 10080') { $script:LastFail = "aube not 10080: $aube"; return $false }
 
     $r2 = InvokePmsec $h $null @('--check','--json','--days','7')
     if ($r2.Code -ne 0) { $script:LastFail = "check --days 7 exit $($r2.Code)"; return $false }
@@ -572,6 +579,7 @@ T 'multi-scope enable writes both host and WSL configs' {
     $ok = $ok -and (Test-Path -LiteralPath (Join-Path $h2 '.npmrc'))
     $ok = $ok -and (Test-Path -LiteralPath (PathJoin $h2 '.config' 'uv' 'uv.toml'))
     $ok = $ok -and (Test-Path -LiteralPath (PathJoin $h2 '.config' 'mise' 'config.toml'))
+    $ok = $ok -and (Test-Path -LiteralPath (PathJoin $h2 '.config' 'aube' 'config.toml'))
     if (-not $ok) { $script:LastFail = "files missing across scopes`n$($r.Out)" }
     return $ok
   } finally {
@@ -671,7 +679,7 @@ T 'doctor --json reports per-tool writability on a fresh home' {
     if ($data.ok -ne $true) { $script:LastFail = "ok=false on fresh home: $($r.Out)"; return $false }
     if ($data.platform -ne 'win32') { $script:LastFail = "platform=$($data.platform)"; return $false }
     $tools = @($data.tools | ForEach-Object { $_.tool })
-    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler')) {
+    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','aube','uv','bundler')) {
       if ($tools -notcontains $t) { $script:LastFail = "tool $t missing from doctor output"; return $false }
     }
     foreach ($row in $data.tools) {

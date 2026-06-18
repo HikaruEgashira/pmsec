@@ -98,6 +98,7 @@ t_enable_writes_all() {
   yarnrc=$(cat "$home/.yarnrc.yml")
   uvtoml=$(cat "$home/.config/uv/uv.toml")
   mise=$(cat "$home/.config/mise/config.toml")
+  aube=$(cat "$home/.config/aube/config.toml")
   bundle=$(cat "$home/.bundle/config")
   assert_match "npm key" '^min-release-age=1$' "$npmrc" || return
   assert_match "pnpm key" '^minimum-release-age=1440$' "$pnpmrc" || return
@@ -116,6 +117,8 @@ t_enable_writes_all() {
   assert_match "mise gpg_verify extra" '^gpg_verify = true$' "$mise" || return
   assert_match "mise github_attestations extra" '^github_attestations = true$' "$mise" || return
   assert_match "mise slsa extra" '^slsa = true$' "$mise" || return
+  assert_match "aube key" '^minimumReleaseAge = 1440$' "$aube" || return
+  assert_match "aube paranoid extra" '^paranoid = true$' "$aube" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
   assert_match "npm allow-git extra" '^allow-git=root$' "$npmrc" || return
   assert_match "npm allow-remote extra" '^allow-remote=root$' "$npmrc" || return
@@ -146,7 +149,7 @@ t_check_fails_when_missing() {
   rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "1" "$rc" || return
-  for t in npm pnpm yarn bun cargo mise uv bundler; do
+  for t in npm pnpm yarn bun cargo mise uv bundler aube; do
     assert_match "MISSING $t" "MISSING $t" "$out" || return
   done
 }
@@ -337,6 +340,7 @@ t_days_overrides_bundle_cooldown() {
   assert_match "pnpm cooldown 10080m" '^minimum-release-age=10080$' "$(cat "$home/.config/pnpm/rc")" || { rm -rf "$home"; return 1; }
   assert_match "uv 7 days" 'exclude-newer = "7 days"' "$(cat "$home/.config/uv/uv.toml")" || { rm -rf "$home"; return 1; }
   assert_match "bun 7d secs" 'minimumReleaseAge = 604800' "$(cat "$home/.bunfig.toml")" || { rm -rf "$home"; return 1; }
+  assert_match "aube 7d mins" 'minimumReleaseAge = 10080' "$(cat "$home/.config/aube/config.toml")" || { rm -rf "$home"; return 1; }
 
   local out rc
   out=$(run_pmsec "$home" -- --check --json --days 7); rc=$?
@@ -532,7 +536,7 @@ t_doctor_json_shape() {
   assert_match "doctor=true" '"doctor": true' "$out" || return 1
   assert_match "ok=true" '"ok": true' "$out" || return 1
   assert_match "pmsecHomeSource=HOME" '"pmsecHomeSource": "HOME"' "$out" || return 1
-  for tool in npm pnpm yarn bun cargo mise uv; do
+  for tool in npm pnpm yarn bun cargo mise aube uv; do
     assert_match "$tool entry present" "\"tool\": \"$tool\"" "$out" || return 1
   done
   assert_match "parentWritable surfaced" '"parentWritable": true' "$out" || return 1
