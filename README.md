@@ -52,10 +52,10 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | --- | --- | --- | --- | --- | --- |
 | npm | `~/.npmrc` | `min-release-age` | `1` | 1-day publish cooldown | npm >= 11.10.0 |
 | npm | `~/.npmrc` | `audit-level` | `high` | high+ advisories fail audit/install checks | npm >= 6.4.0 |
-| npm | `~/.npmrc` | `allow-git` | `root` | no transitive git deps | npm >= 11.15.0 |
-| npm | `~/.npmrc` | `allow-remote` | `root` | no transitive remote tarballs | npm >= 11.15.0 |
-| npm | `~/.npmrc` | `allow-file` | `root` | no transitive `file:` deps | npm >= 11.15.0 |
-| npm | `~/.npmrc` | `allow-directory` | `root` | no transitive local directories | npm >= 11.15.0 |
+| npm | `~/.npmrc` | `allow-git` | `root` (`none` accepted) | no transitive git deps | npm >= 11.15.0 |
+| npm | `~/.npmrc` | `allow-remote` | `root` (`none` accepted) | no transitive remote tarballs | npm >= 11.15.0 |
+| npm | `~/.npmrc` | `allow-file` | `root` (`none` accepted) | no transitive `file:` deps | npm >= 11.15.0 |
+| npm | `~/.npmrc` | `allow-directory` | `root` (`none` accepted) | no transitive local directories | npm >= 11.15.0 |
 | pnpm | `~/.config/pnpm/rc` | `minimum-release-age` | `1440` | 1-day publish cooldown | pnpm >= 10.6.0 |
 | pnpm | `~/.config/pnpm/rc` | `trust-policy` | `no-downgrade` | reject weaker provenance than prior install | pnpm >= 10.21.0 |
 | pnpm | `~/.config/pnpm/rc` | `block-exotic-subdeps` | `true` | no transitive git/tarball deps | pnpm >= 10.26.0; default >= 11 |

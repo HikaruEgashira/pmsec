@@ -8,7 +8,8 @@ import { readKey, setKey, removeKey } from "./lines.mjs";
 export function readExtras(raw, extras) {
   return extras.map(e => {
     const cur = readKey(raw, e.key, { sep: e.sep, section: e.section });
-    return { key: e.key, configured: cur, expected: e.expected, ok: cur === e.expected };
+    const safeValues = e.safeValues ?? [e.expected];
+    return { key: e.key, configured: cur, expected: e.expected, ok: cur !== null && safeValues.includes(cur) };
   });
 }
 

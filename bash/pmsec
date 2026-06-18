@@ -453,16 +453,16 @@ tool_sep() {
 }
 
 # Per-tool hardening extras: emit one extra per line, pipe-delimited as
-# key|expected|full-line|sep|section. Pipe (not tab) so adjacent empty fields
-# survive `read` (whitespace IFS collapses runs of separators).
+# key|expected|full-line|sep|section|safe-values. Pipe (not tab) so adjacent
+# empty fields survive `read` (whitespace IFS collapses runs of separators).
 tool_extras() {
   case "$1" in
     npm)
       printf 'audit-level|high|audit-level=high|=|\n'
-      printf 'allow-git|root|allow-git=root|=|\n'
-      printf 'allow-remote|root|allow-remote=root|=|\n'
-      printf 'allow-file|root|allow-file=root|=|\n'
-      printf 'allow-directory|root|allow-directory=root|=|\n'
+      printf 'allow-git|root|allow-git=root|=||none,root\n'
+      printf 'allow-remote|root|allow-remote=root|=||none,root\n'
+      printf 'allow-file|root|allow-file=root|=||none,root\n'
+      printf 'allow-directory|root|allow-directory=root|=||none,root\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
@@ -593,8 +593,8 @@ tool_write() {
   line=$(tool_write_value_line "$tool" "$days")
   lines_load "$path"
   lines_set_key "$key" "$line" "$sep" "$section"
-  local ek ev el es esec
-  while IFS='|' read -r ek ev el es esec; do
+  local ek ev el es esec esafe
+  while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
     lines_set_key "$ek" "$el" "$es" "$esec"
   done < <(tool_extras "$tool")
@@ -607,8 +607,8 @@ tool_unset() {
   sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
   lines_load "$path"
   if lines_remove_key "$key" "$sep" "$section"; then removed=1; fi
-  local ek ev el es esec
-  while IFS='|' read -r ek ev el es esec; do
+  local ek ev el es esec esafe
+  while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
     if lines_remove_key "$ek" "$es" "$esec"; then removed=1; fi
   done < <(tool_extras "$tool")
@@ -627,7 +627,7 @@ tool_unset() {
 # pnpm 11 made `block-exotic-subdeps=true` the default, so a missing line is
 # still secure under pnpm >= 11 — surface that instead of a false MISSING.
 tool_read_extras() {
-  local tool="$1" path ek ev el es esec cur ok def
+  local tool="$1" path ek ev el es esec esafe cur ok def
   path=$(tool_path "$tool")
   lines_load "$path"
   local pnpm_major=""
@@ -637,11 +637,20 @@ tool_read_extras() {
       pnpm_major="$1"
     fi
   fi
-  while IFS='|' read -r ek ev el es esec; do
+  while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
     def=0
     if cur=$(lines_read_key "$ek" "$es" "$esec"); then
-      if [ "$cur" = "$ev" ]; then ok=1; else ok=0; fi
+      if [ -n "$esafe" ]; then
+        case ",$esafe," in
+          *",$cur,"*) ok=1 ;;
+          *) ok=0 ;;
+        esac
+      elif [ "$cur" = "$ev" ]; then
+        ok=1
+      else
+        ok=0
+      fi
     else
       cur=""; ok=0
       if [ "$tool" = "pnpm" ] && [ "$ek" = "block-exotic-subdeps" ] \

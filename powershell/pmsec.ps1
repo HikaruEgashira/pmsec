@@ -466,10 +466,10 @@ function ToolExtras([string]$Tool) {
     'npm' {
       return ,@(
         @{ Key = 'audit-level'; Expected = 'high'; Line = 'audit-level=high'; Sep = '='; Section = '' },
-        @{ Key = 'allow-git'; Expected = 'root'; Line = 'allow-git=root'; Sep = '='; Section = '' },
-        @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = '' },
-        @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = '' },
-        @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = '' }
+        @{ Key = 'allow-git'; Expected = 'root'; Line = 'allow-git=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
+        @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
+        @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
+        @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') }
       )
     }
     'pnpm' {
@@ -572,7 +572,8 @@ function ToolRead([string]$Tool) {
   if ($Tool -eq 'pnpm' -and (Get-PmsecPlatform) -eq 'win32') { $toolVersion = VersionDetect 'pnpm' }
   foreach ($e in (ToolExtras $Tool)) {
     $cur = LinesReadKey $e.Key $e.Sep $e.Section
-    $ok = ($null -ne $cur -and $cur -eq $e.Expected)
+    $safeValues = if ($e.ContainsKey('SafeValues')) { $e.SafeValues } else { @($e.Expected) }
+    $ok = ($null -ne $cur -and $safeValues -contains $cur)
     $defaultEnforced = $false
     if (-not $ok -and $null -eq $cur -and $e.ContainsKey('DefaultSinceMajor') -and $null -ne $toolVersion) {
       if ($toolVersion.Major -ge [int]$e.DefaultSinceMajor) {

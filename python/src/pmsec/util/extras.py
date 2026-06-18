@@ -7,11 +7,12 @@ def read_extras(raw: str, extras: list[dict]) -> list[dict]:
     rows = []
     for e in extras:
         cur = read_key(raw, e["key"], sep=e.get("sep", "="), section=e.get("section"))
+        safe_values = e.get("safeValues", [e["expected"]])
         rows.append({
             "key": e["key"],
             "configured": cur,
             "expected": e["expected"],
-            "ok": cur == e["expected"],
+            "ok": cur is not None and cur in safe_values,
         })
     return rows
 
