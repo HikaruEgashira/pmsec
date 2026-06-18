@@ -105,7 +105,7 @@ project and survives pmsec re-runs:
 | mise    | `<project>/mise.toml`                             |
 | uv      | `<project>/pyproject.toml` (`[tool.uv]`) / `uv.toml` |
 | bundler | `<project>/.bundle/config`                        |
-| aube    | `<project>/.npmrc` / `aube-workspace.yaml`        |
+| aube    | `<project>/aube.toml`                             |
 
 Example — a monorepo that legitimately needs workspace `file:` dependencies:
 
