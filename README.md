@@ -26,10 +26,14 @@ pmsec
 ```
 
 ```powershell
-Invoke-WebRequest `
+$dest = Join-Path $env:USERPROFILE 'bin\pmsec.ps1'
+New-Item -ItemType Directory -Path (Split-Path $dest) -Force | Out-Null
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ProgressPreference = 'SilentlyContinue'
+Invoke-WebRequest -UseBasicParsing `
   -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
-  -OutFile $env:USERPROFILE\bin\pmsec.ps1
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1
+  -OutFile $dest
+powershell.exe -ExecutionPolicy Bypass -File $dest
 ```
 
 `pmsec` enables the hardening bundle for every detected tool. Use `--check` to

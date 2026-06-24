@@ -7,15 +7,25 @@ By default the script hardens Windows plus each installed WSL distro. Docker
 Desktop helper distros are skipped.
 
 ```powershell
-# Production: pin main to a commit SHA.
-Invoke-WebRequest `
+$dest = Join-Path $env:USERPROFILE 'bin\pmsec.ps1'
+New-Item -ItemType Directory -Path (Split-Path $dest) -Force | Out-Null
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ProgressPreference = 'SilentlyContinue'
+Invoke-WebRequest -UseBasicParsing `
   -Uri https://raw.githubusercontent.com/HikaruEgashira/pmsec/main/powershell/pmsec.ps1 `
-  -OutFile $env:USERPROFILE\bin\pmsec.ps1
+  -OutFile $dest
 
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 --check
-pwsh -File $env:USERPROFILE\bin\pmsec.ps1 --disable
+powershell.exe -ExecutionPolicy Bypass -File $dest
+powershell.exe -ExecutionPolicy Bypass -File $dest --check
+powershell.exe -ExecutionPolicy Bypass -File $dest --disable
 ```
+
+Uses the built-in `powershell.exe` so no PowerShell 7 install is required;
+`pwsh -File …` also works when PowerShell 7+ is present. `New-Item -Force`
+creates `%USERPROFILE%\bin` before download — without it `Invoke-WebRequest
+-OutFile` fails with "パスの一部が見つかりませんでした" on a fresh host
+(typical Intune target). For reproducible rollouts replace `main` with a
+commit SHA.
 
 ```
 pmsec            [--tool TOOL[,TOOL]] [--days N] [--force] [--no-wsl] [--json]
