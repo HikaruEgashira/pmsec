@@ -12,7 +12,8 @@
           {"key": "allow-git", "configured": null, "expected": "root", "ok": false},
           {"key": "allow-remote", "configured": null, "expected": "root", "ok": false},
           {"key": "allow-file", "configured": null, "expected": "root", "ok": false},
-          {"key": "allow-directory", "configured": null, "expected": "root", "ok": false}
+          {"key": "allow-directory", "configured": null, "expected": "root", "ok": false},
+          {"key": "strict-allow-scripts", "configured": null, "expected": "true", "ok": false}
         ]
       }
     ],
