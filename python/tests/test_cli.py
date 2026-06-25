@@ -63,12 +63,15 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "allow-remote=root" in npmrc
     assert "allow-file=root" in npmrc
     assert "allow-directory=root" in npmrc
+    assert "strict-allow-scripts=true" in npmrc
     assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
     assert "minimum-release-age=1440" in pnpmrc
     assert "trust-policy=no-downgrade" in pnpmrc
     assert "block-exotic-subdeps=true" in pnpmrc
     assert "strict-dep-builds=true" in pnpmrc
+    assert "verify-deps-before-run=error" in pnpmrc
+    assert "minimum-release-age-strict=true" in pnpmrc
     uvtoml = (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert 'exclude-newer = "1 days"' in uvtoml
     assert 'index-strategy = "first-index"' in uvtoml
@@ -137,7 +140,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\n"
     )
 
 
@@ -147,7 +150,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     assert code == 0
     assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\n"
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\n"
     )
 
 
@@ -264,7 +267,7 @@ def test_hardening_extras_roundtrip(tmp_path):
     code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
-    assert len(data["rows"][0]["extras"]) == 3
+    assert len(data["rows"][0]["extras"]) == 5
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
     run(["--tool", "pnpm"], tmp_path)
@@ -272,6 +275,8 @@ def test_hardening_extras_roundtrip(tmp_path):
     assert "trust-policy=no-downgrade" in text
     assert "block-exotic-subdeps=true" in text
     assert "strict-dep-builds=true" in text
+    assert "verify-deps-before-run=error" in text
+    assert "minimum-release-age-strict=true" in text
 
     code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     assert code == 0
@@ -282,6 +287,7 @@ def test_hardening_extras_roundtrip(tmp_path):
     assert "trust-policy" not in after
     assert "block-exotic-subdeps" not in after
     assert "strict-dep-builds" not in after
+    assert "verify-deps-before-run" not in after
     assert "minimum-release-age" not in after
 
 

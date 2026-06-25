@@ -469,7 +469,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'allow-git'; Expected = 'root'; Line = 'allow-git=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
-        @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') }
+        @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
+        @{ Key = 'strict-allow-scripts'; Expected = 'true'; Line = 'strict-allow-scripts=true'; Sep = '='; Section = '' }
       )
     }
     'pnpm' {
@@ -478,7 +479,9 @@ function ToolExtras([string]$Tool) {
       return ,@(
         @{ Key = 'trust-policy'; Expected = 'no-downgrade'; Line = 'trust-policy=no-downgrade'; Sep = '='; Section = '' },
         @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = ''; DefaultSinceMajor = 11 },
-        @{ Key = 'strict-dep-builds'; Expected = 'true'; Line = 'strict-dep-builds=true'; Sep = '='; Section = '' }
+        @{ Key = 'strict-dep-builds'; Expected = 'true'; Line = 'strict-dep-builds=true'; Sep = '='; Section = '' },
+        @{ Key = 'verify-deps-before-run'; Expected = 'error'; Line = 'verify-deps-before-run=error'; Sep = '='; Section = '' },
+        @{ Key = 'minimum-release-age-strict'; Expected = 'true'; Line = 'minimum-release-age-strict=true'; Sep = '='; Section = '' }
       )
     }
     'yarn' {

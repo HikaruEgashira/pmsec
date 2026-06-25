@@ -463,11 +463,14 @@ tool_extras() {
       printf 'allow-remote|root|allow-remote=root|=||none,root\n'
       printf 'allow-file|root|allow-file=root|=||none,root\n'
       printf 'allow-directory|root|allow-directory=root|=||none,root\n'
+      printf 'strict-allow-scripts|true|strict-allow-scripts=true|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
       printf 'block-exotic-subdeps|true|block-exotic-subdeps=true|=|\n'
       printf 'strict-dep-builds|true|strict-dep-builds=true|=|\n'
+      printf 'verify-deps-before-run|error|verify-deps-before-run=error|=|\n'
+      printf 'minimum-release-age-strict|true|minimum-release-age-strict=true|=|\n'
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'

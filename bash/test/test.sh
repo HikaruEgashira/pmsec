@@ -124,9 +124,12 @@ t_enable_writes_all() {
   assert_match "npm allow-remote extra" '^allow-remote=root$' "$npmrc" || return
   assert_match "npm allow-file extra" '^allow-file=root$' "$npmrc" || return
   assert_match "npm allow-directory extra" '^allow-directory=root$' "$npmrc" || return
+  assert_match "npm strict-allow-scripts extra" '^strict-allow-scripts=true$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
+  assert_match "pnpm verify-deps-before-run extra" '^verify-deps-before-run=error$' "$pnpmrc" || return
+  assert_match "pnpm minimum-release-age-strict extra" '^minimum-release-age-strict=true$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
@@ -189,6 +192,7 @@ allow-git=root
 allow-remote=root
 allow-file=root
 allow-directory=root
+strict-allow-scripts=true
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -206,6 +210,7 @@ allow-git=root
 allow-remote=root
 allow-file=root
 allow-directory=root
+strict-allow-scripts=true
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -411,6 +416,8 @@ t_hardening_extras_roundtrip() {
   assert_match "trust-policy written" '^trust-policy=no-downgrade$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
   assert_match "block-exotic-subdeps written" '^block-exotic-subdeps=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
   assert_match "strict-dep-builds written" '^strict-dep-builds=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "verify-deps-before-run written" '^verify-deps-before-run=error$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
+  assert_match "minimum-release-age-strict written" '^minimum-release-age-strict=true$' "$(cat "$pnpmrc")" || { rm -rf "$home"; return 1; }
   out=$(run_pmsec "$home" -- --check --json --tool pnpm); rc=$?
   assert_eq "after-enable exit" "0" "$rc" || { rm -rf "$home"; return 1; }
   assert_match "after-enable ok=true" '"ok": true' "$out" || { rm -rf "$home"; return 1; }
@@ -419,6 +426,7 @@ t_hardening_extras_roundtrip() {
   ! printf '%s' "$after" | grep -q 'trust-policy' || { LAST_FAIL="trust-policy not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'block-exotic-subdeps' || { LAST_FAIL="block-exotic-subdeps not removed"; rm -rf "$home"; return 1; }
   ! printf '%s' "$after" | grep -q 'strict-dep-builds' || { LAST_FAIL="strict-dep-builds not removed"; rm -rf "$home"; return 1; }
+  ! printf '%s' "$after" | grep -q 'verify-deps-before-run' || { LAST_FAIL="verify-deps-before-run not removed"; rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
