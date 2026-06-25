@@ -14,7 +14,9 @@ export const minBin = [10, 6, 0];
 export const extras = [
   { key: "trust-policy", expected: "no-downgrade", line: "trust-policy=no-downgrade" },
   { key: "block-exotic-subdeps", expected: "true", line: "block-exotic-subdeps=true", defaultSinceMajor: 11 },
-  { key: "strict-dep-builds", expected: "true", line: "strict-dep-builds=true" }
+  { key: "strict-dep-builds", expected: "true", line: "strict-dep-builds=true" },
+  { key: "verify-deps-before-run", expected: "error", line: "verify-deps-before-run=error" },
+  { key: "minimum-release-age-strict", expected: "true", line: "minimum-release-age-strict=true" },
 ];
 
 export function path(ctx) { return pnpmRcPath(ctx.env, ctx.home, ctx.platform); }

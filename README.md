@@ -56,10 +56,13 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | npm | `~/.npmrc` | `allow-remote` | `root` (`none` accepted) | no transitive remote tarballs | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `allow-file` | `root` (`none` accepted) | no transitive `file:` deps | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `allow-directory` | `root` (`none` accepted) | no transitive local directories | npm >= 11.15.0 |
+| npm | `~/.npmrc` | `strict-allow-scripts` | `true` | treat install-script policy violations as hard errors | npm >= 11.15.0 |
 | pnpm | `~/.config/pnpm/rc` | `minimum-release-age` | `1440` | 1-day publish cooldown | pnpm >= 10.6.0 |
 | pnpm | `~/.config/pnpm/rc` | `trust-policy` | `no-downgrade` | reject weaker provenance than prior install | pnpm >= 10.21.0 |
 | pnpm | `~/.config/pnpm/rc` | `block-exotic-subdeps` | `true` | no transitive git/tarball deps | pnpm >= 10.26.0; default >= 11 |
 | pnpm | `~/.config/pnpm/rc` | `strict-dep-builds` | `true` | unreviewed lifecycle scripts fail install | pnpm >= 10.3.0 |
+| pnpm | `~/.config/pnpm/rc` | `verify-deps-before-run` | `error` | abort `pnpm run` if lockfile is out of sync | pnpm >= 10.12.0 |
+| pnpm | `~/.config/pnpm/rc` | `minimum-release-age-strict` | `true` | treat minimum-release-age violations as hard errors | pnpm >= 10.12.0 |
 | yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `"1d"` | 1-day publish cooldown | yarn >= 4.10.0 |
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |

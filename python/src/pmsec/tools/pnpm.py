@@ -20,6 +20,8 @@ EXTRAS = [
     {"key": "trust-policy", "expected": "no-downgrade", "line": "trust-policy=no-downgrade"},
     {"key": "block-exotic-subdeps", "expected": "true", "line": "block-exotic-subdeps=true", "default_since_major": 11},
     {"key": "strict-dep-builds", "expected": "true", "line": "strict-dep-builds=true"},
+    {"key": "verify-deps-before-run", "expected": "error", "line": "verify-deps-before-run=error"},
+    {"key": "minimum-release-age-strict", "expected": "true", "line": "minimum-release-age-strict=true"},
 ]
 
 
