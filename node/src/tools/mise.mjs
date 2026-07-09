@@ -13,6 +13,7 @@ export const extras = [
   { key: "gpg_verify", expected: "true", line: "gpg_verify = true", section },
   { key: "github_attestations", expected: "true", line: "github_attestations = true", section },
   { key: "slsa", expected: "true", line: "slsa = true", section },
+  { key: "locked_verify_provenance", expected: "true", line: "locked_verify_provenance = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }

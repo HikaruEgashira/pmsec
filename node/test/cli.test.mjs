@@ -68,6 +68,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^gpg_verify = true$/m);
   assert.match(mise, /^github_attestations = true$/m);
   assert.match(mise, /^slsa = true$/m);
+  assert.match(mise, /^locked_verify_provenance = true$/m);
   const aube = await readFile(join(home, ".config", "aube", "config.toml"), "utf8");
   assert.match(aube, /^minimumReleaseAge = 1440$/m);
   assert.match(aube, /^paranoid = true$/m);

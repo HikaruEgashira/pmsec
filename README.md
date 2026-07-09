@@ -74,6 +74,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | mise | `~/.config/mise/config.toml` | `[settings].gpg_verify` | `true` | require GPG when available | current mise |
 | mise | `~/.config/mise/config.toml` | `[settings].github_attestations` | `true` | verify GitHub attestations | mise >= 2025.12.12; default true |
 | mise | `~/.config/mise/config.toml` | `[settings].slsa` | `true` | verify SLSA provenance | mise >= 2025.12; default true |
+| mise | `~/.config/mise/config.toml` | `[settings].locked_verify_provenance` | `true` | re-verify provenance on every install even when lockfile has a checksum — prevents lockfile-poisoning bypass | mise >= 2026.6 |
 | uv | `~/.config/uv/uv.toml` | `exclude-newer` | `"1 days"` | 1-day publish cooldown | uv >= 0.9.17 |
 | uv | `~/.config/uv/uv.toml` | `index-strategy` | `"first-index"` | avoid cross-index confusion | uv >= 0.1.0 |
 | bundler | `~/.bundle/config` | `BUNDLE_COOLDOWN` | `"1"` | 1-day gem cooldown | bundler >= 4.0.13 |

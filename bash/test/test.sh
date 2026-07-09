@@ -117,6 +117,7 @@ t_enable_writes_all() {
   assert_match "mise gpg_verify extra" '^gpg_verify = true$' "$mise" || return
   assert_match "mise github_attestations extra" '^github_attestations = true$' "$mise" || return
   assert_match "mise slsa extra" '^slsa = true$' "$mise" || return
+  assert_match "mise locked_verify_provenance extra" '^locked_verify_provenance = true$' "$mise" || return
   assert_match "aube key" '^minimumReleaseAge = 1440$' "$aube" || return
   assert_match "aube paranoid extra" '^paranoid = true$' "$aube" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
