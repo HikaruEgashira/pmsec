@@ -487,6 +487,7 @@ tool_extras() {
       printf 'gpg_verify|true|gpg_verify = true|=|settings\n'
       printf 'github_attestations|true|github_attestations = true|=|settings\n'
       printf 'slsa|true|slsa = true|=|settings\n'
+      printf 'locked_verify_provenance|true|locked_verify_provenance = true|=|settings\n'
       ;;
     aube)
       printf 'paranoid|true|paranoid = true|=|\n'
