@@ -170,26 +170,27 @@ function Get-WslDistros {
   if (-not (Get-Command wsl.exe -ErrorAction Ignore)) { return ,@() }
   $list = New-Object System.Collections.Generic.List[hashtable]
   $prevUtf8 = $env:WSL_UTF8
-  $prevEnc = [Console]::OutputEncoding
   try {
     $env:WSL_UTF8 = '1'
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    $raw = & wsl.exe -l -q 2>$null
+    $raw = & wsl.exe -l -q 2>&1
   } catch {
     $raw = @()
   } finally {
-    [Console]::OutputEncoding = $prevEnc
     if ($null -eq $prevUtf8) { Remove-Item Env:WSL_UTF8 -ErrorAction Ignore } else { $env:WSL_UTF8 = $prevUtf8 }
   }
   foreach ($line in $raw) {
     $name = ([string]$line).Trim() -replace "`0",''
     if ($name -eq '' -or $name -match '^docker-desktop') { continue }
+    if ($name -match '[\s\\/]') { continue }
+    # $wslHome (not $home): $HOME is a read-only automatic variable in
+    # PowerShell; assigning to it throws and the outer try/catch would
+    # silently drop every distro.
     try {
-      $home = (& wsl.exe -d $name -- sh -c 'printf %s "$HOME"' 2>$null) | Out-String
+      $wslHome = (& wsl.exe -d $name -- sh -c 'printf %s "$HOME"' 2>&1) | Out-String
     } catch { continue }
-    $home = ([string]$home).Trim()
-    if ($home -eq '' -or -not $home.StartsWith('/')) { continue }
-    $unc = '\\wsl$\' + $name + ($home -replace '/', '\')
+    $wslHome = ([string]$wslHome).Trim() -replace "`0",''
+    if ($wslHome -eq '' -or -not $wslHome.StartsWith('/')) { continue }
+    $unc = '\\wsl$\' + $name + ($wslHome -replace '/', '\')
     $list.Add(@{ Label = "wsl-$name"; Home = $unc; Platform = 'linux' })
   }
   return ,$list.ToArray()
