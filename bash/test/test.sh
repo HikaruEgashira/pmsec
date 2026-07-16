@@ -133,6 +133,9 @@ t_enable_writes_all() {
   assert_match "pnpm minimum-release-age-strict extra" '^minimum-release-age-strict=true$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
+  assert_match "yarn approvedGitRepositories extra" '^approvedGitRepositories: \[\]$' "$yarnrc" || return
+  assert_match "mise ruby.github_attestations extra" '^ruby\.github_attestations = true$' "$mise" || return
+  assert_match "mise python.github_attestations extra" '^python\.github_attestations = true$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
   rm -rf -- "$home"
 }
@@ -288,7 +291,7 @@ minimumReleaseAge = 86400
 
 t_yarn_check_parses_days() {
   local home; home=$(setup_home)
-  printf 'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\nenableScripts: false\n' > "$home/.yarnrc.yml"
+  printf 'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\nenableScripts: false\napprovedGitRepositories: []\n' > "$home/.yarnrc.yml"
   local out
   out=$(run_pmsec "$home" -- --check --json --tool yarn)
   rm -rf -- "$home"

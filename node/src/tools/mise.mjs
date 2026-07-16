@@ -14,6 +14,8 @@ export const extras = [
   { key: "github_attestations", expected: "true", line: "github_attestations = true", section },
   { key: "slsa", expected: "true", line: "slsa = true", section },
   { key: "locked_verify_provenance", expected: "true", line: "locked_verify_provenance = true", section },
+  { key: "ruby.github_attestations", expected: "true", line: "ruby.github_attestations = true", section },
+  { key: "python.github_attestations", expected: "true", line: "python.github_attestations = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }

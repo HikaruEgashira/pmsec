@@ -18,6 +18,7 @@ SEP = ":"
 EXTRAS = [
     {"key": "enableHardenedMode", "expected": "true", "line": "enableHardenedMode: true", "sep": SEP},
     {"key": "enableScripts", "expected": "false", "line": "enableScripts: false", "sep": SEP},
+    {"key": "approvedGitRepositories", "expected": "[]", "line": "approvedGitRepositories: []", "sep": SEP},
 ]
 
 _DURATION = re.compile(r'^"?\s*(\d+)\s*(d|days?|w|weeks?)\s*"?$', re.IGNORECASE)

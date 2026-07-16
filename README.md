@@ -66,6 +66,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `"1d"` | 1-day publish cooldown | yarn >= 4.10.0 |
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |
+| yarn | `~/.yarnrc.yml` | `approvedGitRepositories` | `[]` | block all git-sourced dependencies | yarn >= 4.14.0 |
 | bun | `~/.bunfig.toml` | `[install].minimumReleaseAge` | `86400` | 1-day publish cooldown | bun >= 1.3.0 |
 | bun | `~/.bunfig.toml` | `[install].ignoreScripts` | `true` | disable lifecycle scripts | bun >= 1.3.0 |
 | cargo | `$CARGO_HOME/config.toml` | `[install].minimum-release-age` | `"1d"` | 1-day publish cooldown | cargo >= 1.94.0 |
@@ -75,6 +76,8 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | mise | `~/.config/mise/config.toml` | `[settings].github_attestations` | `true` | verify GitHub attestations | mise >= 2025.12.12; default true |
 | mise | `~/.config/mise/config.toml` | `[settings].slsa` | `true` | verify SLSA provenance | mise >= 2025.12; default true |
 | mise | `~/.config/mise/config.toml` | `[settings].locked_verify_provenance` | `true` | re-verify provenance on every install even when lockfile has a checksum — prevents lockfile-poisoning bypass | mise >= 2026.4.4 |
+| mise | `~/.config/mise/config.toml` | `[settings].ruby.github_attestations` | `true` | verify GitHub attestations for Ruby binaries installed via mise | mise >= 2025.12.12 |
+| mise | `~/.config/mise/config.toml` | `[settings].python.github_attestations` | `true` | verify GitHub attestations for Python binaries installed via mise | mise >= 2026.3.18 |
 | uv | `~/.config/uv/uv.toml` | `exclude-newer` | `"1 days"` | 1-day publish cooldown | uv >= 0.9.17 |
 | uv | `~/.config/uv/uv.toml` | `index-strategy` | `"first-index"` | avoid cross-index confusion | uv >= 0.1.0 |
 | bundler | `~/.bundle/config` | `BUNDLE_COOLDOWN` | `"1"` | 1-day gem cooldown | bundler >= 4.0.13 |
