@@ -11,7 +11,8 @@ export const minBin = [4, 10, 0];
 const SEP = ":";
 export const extras = [
   { key: "enableHardenedMode", expected: "true", line: "enableHardenedMode: true", sep: SEP },
-  { key: "enableScripts", expected: "false", line: "enableScripts: false", sep: SEP }
+  { key: "enableScripts", expected: "false", line: "enableScripts: false", sep: SEP },
+  { key: "approvedGitRepositories", expected: "[]", line: "approvedGitRepositories: []", sep: SEP },
 ];
 
 export function path(ctx) { return yarnrcPath(ctx.env, ctx.home); }

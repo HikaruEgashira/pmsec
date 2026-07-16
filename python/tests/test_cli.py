@@ -83,6 +83,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert 'npmMinimalAgeGate: "1d"' in yarnrc
     assert "enableHardenedMode: true" in yarnrc
     assert "enableScripts: false" in yarnrc
+    assert "approvedGitRepositories: []" in yarnrc
     mise = (tmp_path / ".config" / "mise" / "config.toml").read_text()
     assert "[settings]" in mise
     assert 'minimum_release_age = "1d"' in mise
@@ -91,6 +92,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "github_attestations = true" in mise
     assert "slsa = true" in mise
     assert "locked_verify_provenance = true" in mise
+    assert "ruby.github_attestations = true" in mise
+    assert "python.github_attestations = true" in mise
     aube = (tmp_path / ".config" / "aube" / "config.toml").read_text()
     assert "minimumReleaseAge = 1440" in aube
     assert "paranoid = true" in aube
@@ -209,7 +212,7 @@ def test_bun_creates_section_if_missing(tmp_path):
 
 def test_yarn_check_parses_days(tmp_path):
     (tmp_path / ".yarnrc.yml").write_text(
-        'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\nenableScripts: false\n'
+        'npmMinimalAgeGate: "14d"\nenableHardenedMode: true\nenableScripts: false\napprovedGitRepositories: []\n'
     )
     _, out, _ = run(["--check", "--json", "--tool", "yarn"], tmp_path)
     data = json.loads(out)

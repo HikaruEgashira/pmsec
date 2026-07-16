@@ -370,7 +370,7 @@ T 'bun enable creates [install] section if missing' {
 T 'yarn check parses npmMinimalAgeGate days correctly' {
   $h = NewHome
   try {
-    [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`nenableScripts: false`n")
+    [System.IO.File]::WriteAllText((Join-Path $h '.yarnrc.yml'), "npmMinimalAgeGate: ""14d""`nenableHardenedMode: true`nenableScripts: false`napprovedGitRepositories: []`n")
     $r = InvokePmsec $h $null @('--check','--json','--tool','yarn')
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $true) { $script:LastFail = "expected ok=true"; return $false }

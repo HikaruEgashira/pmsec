@@ -475,6 +475,7 @@ tool_extras() {
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
       printf 'enableScripts|false|enableScripts: false|:|\n'
+      printf 'approvedGitRepositories|[]|approvedGitRepositories: []|:|\n'
       ;;
     bun)
       printf 'ignoreScripts|true|ignoreScripts = true|=|install\n'
@@ -488,6 +489,8 @@ tool_extras() {
       printf 'github_attestations|true|github_attestations = true|=|settings\n'
       printf 'slsa|true|slsa = true|=|settings\n'
       printf 'locked_verify_provenance|true|locked_verify_provenance = true|=|settings\n'
+      printf 'ruby.github_attestations|true|ruby.github_attestations = true|=|settings\n'
+      printf 'python.github_attestations|true|python.github_attestations = true|=|settings\n'
       ;;
     aube)
       printf 'paranoid|true|paranoid = true|=|\n'
