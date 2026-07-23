@@ -4,5 +4,5 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "pmsec"
-version = "2026.7.6"
+version = "2026.7.7"
 source = { editable = "." }
