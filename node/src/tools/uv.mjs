@@ -10,6 +10,7 @@ export const docs = "https://docs.astral.sh/uv/reference/settings/#exclude-newer
 export const minBin = [0, 9, 17];
 export const extras = [
   { key: "index-strategy", expected: '"first-index"', line: 'index-strategy = "first-index"' },
+  { key: "malware-check", expected: "true", line: "malware-check = true", section: "audit" },
 ];
 
 export function path(ctx) { return uvConfigPath(ctx.env, ctx.home, ctx.platform); }

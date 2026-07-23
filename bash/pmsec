@@ -464,6 +464,7 @@ tool_extras() {
       printf 'allow-file|root|allow-file=root|=||none,root\n'
       printf 'allow-directory|root|allow-directory=root|=||none,root\n'
       printf 'strict-allow-scripts|true|strict-allow-scripts=true|=|\n'
+      printf 'dangerously-allow-all-scripts|false|dangerously-allow-all-scripts=false|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
@@ -482,6 +483,7 @@ tool_extras() {
       ;;
     uv)
       printf 'index-strategy|"first-index"|index-strategy = "first-index"|=|\n'
+      printf 'malware-check|true|malware-check = true|=|audit\n'
       ;;
     mise)
       printf 'paranoid|true|paranoid = true|=|settings\n'
@@ -491,6 +493,13 @@ tool_extras() {
       printf 'locked_verify_provenance|true|locked_verify_provenance = true|=|settings\n'
       printf 'ruby.github_attestations|true|ruby.github_attestations = true|=|settings\n'
       printf 'python.github_attestations|true|python.github_attestations = true|=|settings\n'
+      printf 'provenance_api_failures_fatal|true|provenance_api_failures_fatal = true|=|settings\n'
+      printf 'aqua.github_attestations|true|aqua.github_attestations = true|=|settings\n'
+      printf 'aqua.cosign|true|aqua.cosign = true|=|settings\n'
+      printf 'aqua.minisign|true|aqua.minisign = true|=|settings\n'
+      printf 'aqua.slsa|true|aqua.slsa = true|=|settings\n'
+      printf 'github.github_attestations|true|github.github_attestations = true|=|settings\n'
+      printf 'github.slsa|true|github.slsa = true|=|settings\n'
       ;;
     aube)
       printf 'paranoid|true|paranoid = true|=|\n'

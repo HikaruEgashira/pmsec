@@ -111,6 +111,8 @@ t_enable_writes_all() {
   assert_match "yarn key" '^npmMinimalAgeGate: "1d"$' "$yarnrc" || return
   assert_match "uv key" '^exclude-newer = "1 days"$' "$uvtoml" || return
   assert_match "uv index-strategy extra" '^index-strategy = "first-index"$' "$uvtoml" || return
+  assert_match "uv audit section" '^\[audit\]$' "$uvtoml" || return
+  assert_match "uv malware-check extra" '^malware-check = true$' "$uvtoml" || return
   assert_match "mise section" '^\[settings\]$' "$mise" || return
   assert_match "mise key" '^minimum_release_age = "1d"$' "$mise" || return
   assert_match "mise paranoid extra" '^paranoid = true$' "$mise" || return
@@ -126,6 +128,7 @@ t_enable_writes_all() {
   assert_match "npm allow-file extra" '^allow-file=root$' "$npmrc" || return
   assert_match "npm allow-directory extra" '^allow-directory=root$' "$npmrc" || return
   assert_match "npm strict-allow-scripts extra" '^strict-allow-scripts=true$' "$npmrc" || return
+  assert_match "npm dangerously-allow-all-scripts extra" '^dangerously-allow-all-scripts=false$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
@@ -136,6 +139,13 @@ t_enable_writes_all() {
   assert_match "yarn approvedGitRepositories extra" '^approvedGitRepositories: \[\]$' "$yarnrc" || return
   assert_match "mise ruby.github_attestations extra" '^ruby\.github_attestations = true$' "$mise" || return
   assert_match "mise python.github_attestations extra" '^python\.github_attestations = true$' "$mise" || return
+  assert_match "mise provenance_api_failures_fatal extra" '^provenance_api_failures_fatal = true$' "$mise" || return
+  assert_match "mise aqua.github_attestations extra" '^aqua\.github_attestations = true$' "$mise" || return
+  assert_match "mise aqua.cosign extra" '^aqua\.cosign = true$' "$mise" || return
+  assert_match "mise aqua.minisign extra" '^aqua\.minisign = true$' "$mise" || return
+  assert_match "mise aqua.slsa extra" '^aqua\.slsa = true$' "$mise" || return
+  assert_match "mise github.github_attestations extra" '^github\.github_attestations = true$' "$mise" || return
+  assert_match "mise github.slsa extra" '^github\.slsa = true$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
   rm -rf -- "$home"
 }
@@ -197,6 +207,7 @@ allow-remote=root
 allow-file=root
 allow-directory=root
 strict-allow-scripts=true
+dangerously-allow-all-scripts=false
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -215,6 +226,7 @@ allow-remote=root
 allow-file=root
 allow-directory=root
 strict-allow-scripts=true
+dangerously-allow-all-scripts=false
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
