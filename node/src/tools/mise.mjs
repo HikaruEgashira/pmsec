@@ -16,6 +16,13 @@ export const extras = [
   { key: "locked_verify_provenance", expected: "true", line: "locked_verify_provenance = true", section },
   { key: "ruby.github_attestations", expected: "true", line: "ruby.github_attestations = true", section },
   { key: "python.github_attestations", expected: "true", line: "python.github_attestations = true", section },
+  { key: "provenance_api_failures_fatal", expected: "true", line: "provenance_api_failures_fatal = true", section },
+  { key: "aqua.github_attestations", expected: "true", line: "aqua.github_attestations = true", section },
+  { key: "aqua.cosign", expected: "true", line: "aqua.cosign = true", section },
+  { key: "aqua.minisign", expected: "true", line: "aqua.minisign = true", section },
+  { key: "aqua.slsa", expected: "true", line: "aqua.slsa = true", section },
+  { key: "github.github_attestations", expected: "true", line: "github.github_attestations = true", section },
+  { key: "github.slsa", expected: "true", line: "github.slsa = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }

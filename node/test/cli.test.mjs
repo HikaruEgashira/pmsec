@@ -42,6 +42,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(npmrc, /^allow-file=root$/m);
   assert.match(npmrc, /^allow-directory=root$/m);
   assert.match(npmrc, /^strict-allow-scripts=true$/m);
+  assert.match(npmrc, /^dangerously-allow-all-scripts=false$/m);
   assert.doesNotMatch(npmrc, /minimum-release-age/, "pnpm keys must not leak into .npmrc");
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=1440$/m);
@@ -53,6 +54,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "1 days"$/m);
   assert.match(uvtoml, /^index-strategy = "first-index"$/m);
+  assert.match(uvtoml, /^\[audit\]$/m);
+  assert.match(uvtoml, /^malware-check = true$/m);
   const bunfig = await readFile(join(home, ".bunfig.toml"), "utf8");
   assert.match(bunfig, /^\[install\]$/m);
   assert.match(bunfig, /^minimumReleaseAge = 86400$/m);
@@ -72,6 +75,13 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^locked_verify_provenance = true$/m);
   assert.match(mise, /^ruby\.github_attestations = true$/m);
   assert.match(mise, /^python\.github_attestations = true$/m);
+  assert.match(mise, /^provenance_api_failures_fatal = true$/m);
+  assert.match(mise, /^aqua\.github_attestations = true$/m);
+  assert.match(mise, /^aqua\.cosign = true$/m);
+  assert.match(mise, /^aqua\.minisign = true$/m);
+  assert.match(mise, /^aqua\.slsa = true$/m);
+  assert.match(mise, /^github\.github_attestations = true$/m);
+  assert.match(mise, /^github\.slsa = true$/m);
   const aube = await readFile(join(home, ".config", "aube", "config.toml"), "utf8");
   assert.match(aube, /^minimumReleaseAge = 1440$/m);
   assert.match(aube, /^paranoid = true$/m);
@@ -118,7 +128,7 @@ test("enable upgrades values that are weaker than the request", async () => {
   await runCli(["--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\n"
+    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\n"
   );
 });
 
@@ -150,7 +160,7 @@ test("enable preserves stricter existing cooldowns", async () => {
   assert.match(out, /^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)/m);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\n"
+    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\n"
   );
 });
 

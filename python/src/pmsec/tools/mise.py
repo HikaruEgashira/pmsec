@@ -23,6 +23,13 @@ EXTRAS = [
     {"key": "locked_verify_provenance", "expected": "true", "line": "locked_verify_provenance = true", "section": SECTION},
     {"key": "ruby.github_attestations", "expected": "true", "line": "ruby.github_attestations = true", "section": SECTION},
     {"key": "python.github_attestations", "expected": "true", "line": "python.github_attestations = true", "section": SECTION},
+    {"key": "provenance_api_failures_fatal", "expected": "true", "line": "provenance_api_failures_fatal = true", "section": SECTION},
+    {"key": "aqua.github_attestations", "expected": "true", "line": "aqua.github_attestations = true", "section": SECTION},
+    {"key": "aqua.cosign", "expected": "true", "line": "aqua.cosign = true", "section": SECTION},
+    {"key": "aqua.minisign", "expected": "true", "line": "aqua.minisign = true", "section": SECTION},
+    {"key": "aqua.slsa", "expected": "true", "line": "aqua.slsa = true", "section": SECTION},
+    {"key": "github.github_attestations", "expected": "true", "line": "github.github_attestations = true", "section": SECTION},
+    {"key": "github.slsa", "expected": "true", "line": "github.slsa = true", "section": SECTION},
 ]
 
 preflight = build_preflight(

@@ -1,6 +1,6 @@
 {
   "setup": {
-    ".npmrc": "min-release-age=1\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=none\nallow-directory=none\nstrict-allow-scripts=true\n"
+    ".npmrc": "min-release-age=1\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=none\nallow-directory=none\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\n"
   },
   "args": ["--tool", "npm", "--check", "--json"],
   "expected_exit": 0,
@@ -16,7 +16,8 @@
           {"key": "allow-remote", "configured": "none", "expected": "root", "ok": true},
           {"key": "allow-file", "configured": "none", "expected": "root", "ok": true},
           {"key": "allow-directory", "configured": "none", "expected": "root", "ok": true},
-          {"key": "strict-allow-scripts", "configured": "true", "expected": "true", "ok": true}
+          {"key": "strict-allow-scripts", "configured": "true", "expected": "true", "ok": true},
+          {"key": "dangerously-allow-all-scripts", "configured": "false", "expected": "false", "ok": true}
         ]
       }
     ],

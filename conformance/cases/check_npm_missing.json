@@ -13,7 +13,8 @@
           {"key": "allow-remote", "configured": null, "expected": "root", "ok": false},
           {"key": "allow-file", "configured": null, "expected": "root", "ok": false},
           {"key": "allow-directory", "configured": null, "expected": "root", "ok": false},
-          {"key": "strict-allow-scripts", "configured": null, "expected": "true", "ok": false}
+          {"key": "strict-allow-scripts", "configured": null, "expected": "true", "ok": false},
+          {"key": "dangerously-allow-all-scripts", "configured": null, "expected": "false", "ok": false}
         ]
       }
     ],

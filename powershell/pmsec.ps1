@@ -471,7 +471,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
-        @{ Key = 'strict-allow-scripts'; Expected = 'true'; Line = 'strict-allow-scripts=true'; Sep = '='; Section = '' }
+        @{ Key = 'strict-allow-scripts'; Expected = 'true'; Line = 'strict-allow-scripts=true'; Sep = '='; Section = '' },
+        @{ Key = 'dangerously-allow-all-scripts'; Expected = 'false'; Line = 'dangerously-allow-all-scripts=false'; Sep = '='; Section = '' }
       )
     }
     'pnpm' {
@@ -499,7 +500,8 @@ function ToolExtras([string]$Tool) {
     }
     'uv' {
       return ,@(
-        @{ Key = 'index-strategy'; Expected = '"first-index"'; Line = 'index-strategy = "first-index"'; Sep = '='; Section = '' }
+        @{ Key = 'index-strategy'; Expected = '"first-index"'; Line = 'index-strategy = "first-index"'; Sep = '='; Section = '' },
+        @{ Key = 'malware-check'; Expected = 'true'; Line = 'malware-check = true'; Sep = '='; Section = 'audit' }
       )
     }
     'mise' {
@@ -510,7 +512,14 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'slsa'; Expected = 'true'; Line = 'slsa = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'locked_verify_provenance'; Expected = 'true'; Line = 'locked_verify_provenance = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'ruby.github_attestations'; Expected = 'true'; Line = 'ruby.github_attestations = true'; Sep = '='; Section = 'settings' },
-        @{ Key = 'python.github_attestations'; Expected = 'true'; Line = 'python.github_attestations = true'; Sep = '='; Section = 'settings' }
+        @{ Key = 'python.github_attestations'; Expected = 'true'; Line = 'python.github_attestations = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'provenance_api_failures_fatal'; Expected = 'true'; Line = 'provenance_api_failures_fatal = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'aqua.github_attestations'; Expected = 'true'; Line = 'aqua.github_attestations = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'aqua.cosign'; Expected = 'true'; Line = 'aqua.cosign = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'aqua.minisign'; Expected = 'true'; Line = 'aqua.minisign = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'aqua.slsa'; Expected = 'true'; Line = 'aqua.slsa = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'github.github_attestations'; Expected = 'true'; Line = 'github.github_attestations = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'github.slsa'; Expected = 'true'; Line = 'github.slsa = true'; Sep = '='; Section = 'settings' }
       )
     }
     'aube' {

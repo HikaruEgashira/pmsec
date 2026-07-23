@@ -16,6 +16,7 @@ DOCS = "https://docs.astral.sh/uv/reference/settings/#exclude-newer"
 MIN_BIN = (0, 9, 17)
 EXTRAS: list[dict] = [
     {"key": "index-strategy", "expected": '"first-index"', "line": 'index-strategy = "first-index"'},
+    {"key": "malware-check", "expected": "true", "line": "malware-check = true", "section": "audit"},
 ]
 
 preflight = build_preflight(
