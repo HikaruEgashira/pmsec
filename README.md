@@ -57,7 +57,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | npm | `~/.npmrc` | `allow-file` | `root` (`none` accepted) | no transitive `file:` deps | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `allow-directory` | `root` (`none` accepted) | no transitive local directories | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `strict-allow-scripts` | `true` | treat install-script policy violations as hard errors | npm >= 11.15.0 |
-| npm | `~/.npmrc` | `dangerously-allow-all-scripts` | `false` | pin the install-script bypass escape hatch to disabled, preventing `strict-allow-scripts` from being overridden | npm >= 11.16.0 |
+| npm | `~/.npmrc` | `dangerously-allow-all-scripts` | `false` | set user-level default for the install-script bypass escape hatch to disabled; project config, env vars, or CLI flags can still override | npm >= 11.16.0 |
 | pnpm | `~/.config/pnpm/rc` | `minimum-release-age` | `1440` | 1-day publish cooldown | pnpm >= 10.6.0 |
 | pnpm | `~/.config/pnpm/rc` | `trust-policy` | `no-downgrade` | reject weaker provenance than prior install | pnpm >= 10.21.0 |
 | pnpm | `~/.config/pnpm/rc` | `block-exotic-subdeps` | `true` | no transitive git/tarball deps | pnpm >= 10.26.0; default >= 11 |
