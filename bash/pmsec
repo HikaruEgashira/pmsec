@@ -9,7 +9,7 @@
 # SPDX-License-Identifier: MIT
 set +u
 
-PMSEC_VERSION="2026.7.5"
+PMSEC_VERSION="2026.7.6"
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS=1
