@@ -23,6 +23,8 @@ export const extras = [
   { key: "aqua.slsa", expected: "true", line: "aqua.slsa = true", section },
   { key: "github.github_attestations", expected: "true", line: "github.github_attestations = true", section },
   { key: "github.slsa", expected: "true", line: "github.slsa = true", section },
+  { key: "node.gpg_verify", expected: "true", line: "node.gpg_verify = true", section },
+  { key: "swift.gpg_verify", expected: "true", line: "swift.gpg_verify = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }

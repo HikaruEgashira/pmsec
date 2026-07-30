@@ -65,6 +65,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "allow-directory=root" in npmrc
     assert "strict-allow-scripts=true" in npmrc
     assert "dangerously-allow-all-scripts=false" in npmrc
+    assert "allow-scripts-pin=true" in npmrc
     assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
     assert "minimum-release-age=1440" in pnpmrc
@@ -73,6 +74,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "strict-dep-builds=true" in pnpmrc
     assert "verify-deps-before-run=error" in pnpmrc
     assert "minimum-release-age-strict=true" in pnpmrc
+    assert "dangerously-allow-all-builds=false" in pnpmrc
     uvtoml = (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert 'exclude-newer = "1 days"' in uvtoml
     assert 'index-strategy = "first-index"' in uvtoml
@@ -104,6 +106,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "aqua.slsa = true" in mise
     assert "github.github_attestations = true" in mise
     assert "github.slsa = true" in mise
+    assert "node.gpg_verify = true" in mise
+    assert "swift.gpg_verify = true" in mise
     aube = (tmp_path / ".config" / "aube" / "config.toml").read_text()
     assert "minimumReleaseAge = 1440" in aube
     assert "paranoid = true" in aube
@@ -154,7 +158,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\n"
     )
 
 
@@ -164,7 +168,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     assert code == 0
     assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\n"
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\n"
     )
 
 
@@ -281,7 +285,7 @@ def test_hardening_extras_roundtrip(tmp_path):
     code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
-    assert len(data["rows"][0]["extras"]) == 5
+    assert len(data["rows"][0]["extras"]) == 6
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
     run(["--tool", "pnpm"], tmp_path)

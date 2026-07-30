@@ -472,7 +472,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'strict-allow-scripts'; Expected = 'true'; Line = 'strict-allow-scripts=true'; Sep = '='; Section = '' },
-        @{ Key = 'dangerously-allow-all-scripts'; Expected = 'false'; Line = 'dangerously-allow-all-scripts=false'; Sep = '='; Section = '' }
+        @{ Key = 'dangerously-allow-all-scripts'; Expected = 'false'; Line = 'dangerously-allow-all-scripts=false'; Sep = '='; Section = '' },
+        @{ Key = 'allow-scripts-pin'; Expected = 'true'; Line = 'allow-scripts-pin=true'; Sep = '='; Section = '' }
       )
     }
     'pnpm' {
@@ -483,7 +484,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'block-exotic-subdeps'; Expected = 'true'; Line = 'block-exotic-subdeps=true'; Sep = '='; Section = ''; DefaultSinceMajor = 11 },
         @{ Key = 'strict-dep-builds'; Expected = 'true'; Line = 'strict-dep-builds=true'; Sep = '='; Section = '' },
         @{ Key = 'verify-deps-before-run'; Expected = 'error'; Line = 'verify-deps-before-run=error'; Sep = '='; Section = '' },
-        @{ Key = 'minimum-release-age-strict'; Expected = 'true'; Line = 'minimum-release-age-strict=true'; Sep = '='; Section = '' }
+        @{ Key = 'minimum-release-age-strict'; Expected = 'true'; Line = 'minimum-release-age-strict=true'; Sep = '='; Section = '' },
+        @{ Key = 'dangerously-allow-all-builds'; Expected = 'false'; Line = 'dangerously-allow-all-builds=false'; Sep = '='; Section = '' }
       )
     }
     'yarn' {
@@ -519,7 +521,9 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'aqua.minisign'; Expected = 'true'; Line = 'aqua.minisign = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'aqua.slsa'; Expected = 'true'; Line = 'aqua.slsa = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'github.github_attestations'; Expected = 'true'; Line = 'github.github_attestations = true'; Sep = '='; Section = 'settings' },
-        @{ Key = 'github.slsa'; Expected = 'true'; Line = 'github.slsa = true'; Sep = '='; Section = 'settings' }
+        @{ Key = 'github.slsa'; Expected = 'true'; Line = 'github.slsa = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'node.gpg_verify'; Expected = 'true'; Line = 'node.gpg_verify = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'swift.gpg_verify'; Expected = 'true'; Line = 'swift.gpg_verify = true'; Sep = '='; Section = 'settings' }
       )
     }
     'aube' {

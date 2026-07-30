@@ -465,6 +465,7 @@ tool_extras() {
       printf 'allow-directory|root|allow-directory=root|=||none,root\n'
       printf 'strict-allow-scripts|true|strict-allow-scripts=true|=|\n'
       printf 'dangerously-allow-all-scripts|false|dangerously-allow-all-scripts=false|=|\n'
+      printf 'allow-scripts-pin|true|allow-scripts-pin=true|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
@@ -472,6 +473,7 @@ tool_extras() {
       printf 'strict-dep-builds|true|strict-dep-builds=true|=|\n'
       printf 'verify-deps-before-run|error|verify-deps-before-run=error|=|\n'
       printf 'minimum-release-age-strict|true|minimum-release-age-strict=true|=|\n'
+      printf 'dangerously-allow-all-builds|false|dangerously-allow-all-builds=false|=|\n'
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
@@ -500,6 +502,8 @@ tool_extras() {
       printf 'aqua.slsa|true|aqua.slsa = true|=|settings\n'
       printf 'github.github_attestations|true|github.github_attestations = true|=|settings\n'
       printf 'github.slsa|true|github.slsa = true|=|settings\n'
+      printf 'node.gpg_verify|true|node.gpg_verify = true|=|settings\n'
+      printf 'swift.gpg_verify|true|swift.gpg_verify = true|=|settings\n'
       ;;
     aube)
       printf 'paranoid|true|paranoid = true|=|\n'

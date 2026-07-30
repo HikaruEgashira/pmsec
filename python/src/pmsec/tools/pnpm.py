@@ -22,6 +22,7 @@ EXTRAS = [
     {"key": "strict-dep-builds", "expected": "true", "line": "strict-dep-builds=true"},
     {"key": "verify-deps-before-run", "expected": "error", "line": "verify-deps-before-run=error"},
     {"key": "minimum-release-age-strict", "expected": "true", "line": "minimum-release-age-strict=true"},
+    {"key": "dangerously-allow-all-builds", "expected": "false", "line": "dangerously-allow-all-builds=false"},
 ]
 
 
