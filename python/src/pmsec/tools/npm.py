@@ -21,6 +21,7 @@ EXTRAS = [
     {"key": "allow-directory", "expected": "root", "line": "allow-directory=root", "safeValues": ["none", "root"]},
     {"key": "strict-allow-scripts", "expected": "true", "line": "strict-allow-scripts=true"},
     {"key": "dangerously-allow-all-scripts", "expected": "false", "line": "dangerously-allow-all-scripts=false"},
+    {"key": "allow-scripts-pin", "expected": "true", "line": "allow-scripts-pin=true"},
 ]
 
 preflight = build_preflight(

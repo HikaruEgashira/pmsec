@@ -129,11 +129,13 @@ t_enable_writes_all() {
   assert_match "npm allow-directory extra" '^allow-directory=root$' "$npmrc" || return
   assert_match "npm strict-allow-scripts extra" '^strict-allow-scripts=true$' "$npmrc" || return
   assert_match "npm dangerously-allow-all-scripts extra" '^dangerously-allow-all-scripts=false$' "$npmrc" || return
+  assert_match "npm allow-scripts-pin extra" '^allow-scripts-pin=true$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
   assert_match "pnpm verify-deps-before-run extra" '^verify-deps-before-run=error$' "$pnpmrc" || return
   assert_match "pnpm minimum-release-age-strict extra" '^minimum-release-age-strict=true$' "$pnpmrc" || return
+  assert_match "pnpm dangerously-allow-all-builds extra" '^dangerously-allow-all-builds=false$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
   assert_match "yarn approvedGitRepositories extra" '^approvedGitRepositories: \[\]$' "$yarnrc" || return
@@ -146,6 +148,8 @@ t_enable_writes_all() {
   assert_match "mise aqua.slsa extra" '^aqua\.slsa = true$' "$mise" || return
   assert_match "mise github.github_attestations extra" '^github\.github_attestations = true$' "$mise" || return
   assert_match "mise github.slsa extra" '^github\.slsa = true$' "$mise" || return
+  assert_match "mise node.gpg_verify extra" '^node\.gpg_verify = true$' "$mise" || return
+  assert_match "mise swift.gpg_verify extra" '^swift\.gpg_verify = true$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
   rm -rf -- "$home"
 }
@@ -208,6 +212,7 @@ allow-file=root
 allow-directory=root
 strict-allow-scripts=true
 dangerously-allow-all-scripts=false
+allow-scripts-pin=true
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -227,6 +232,7 @@ allow-file=root
 allow-directory=root
 strict-allow-scripts=true
 dangerously-allow-all-scripts=false
+allow-scripts-pin=true
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }

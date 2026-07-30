@@ -17,7 +17,8 @@
           {"key": "allow-file", "configured": "root", "expected": "root", "ok": true},
           {"key": "allow-directory", "configured": "root", "expected": "root", "ok": true},
           {"key": "strict-allow-scripts", "configured": "true", "expected": "true", "ok": true},
-          {"key": "dangerously-allow-all-scripts", "configured": "false", "expected": "false", "ok": true}
+          {"key": "dangerously-allow-all-scripts", "configured": "false", "expected": "false", "ok": true},
+          {"key": "allow-scripts-pin", "configured": "true", "expected": "true", "ok": true}
         ]
       }
     ],
