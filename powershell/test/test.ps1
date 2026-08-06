@@ -473,7 +473,7 @@ T 'hardening extras roundtrip (check / enable / disable)' {
     if ($r.Code -ne 1) { $script:LastFail = "extras-missing exit $($r.Code)"; return $false }
     $data = $r.Out | ConvertFrom-Json
     if ($data.ok -ne $false) { $script:LastFail = "extras-missing ok != false"; return $false }
-    if ($data.rows[0].extras.Count -ne 6) { $script:LastFail = "expected 6 extras, got $($data.rows[0].extras.Count)"; return $false }
+    if ($data.rows[0].extras.Count -ne 8) { $script:LastFail = "expected 8 extras, got $($data.rows[0].extras.Count)"; return $false }
     [void](InvokePmsec $h $null @('--tool','pnpm'))
     $body = [System.IO.File]::ReadAllText($pnpmrc)
     if ($body -notmatch '(?m)^trust-policy=no-downgrade$') { $script:LastFail = "trust-policy not written: $body"; return $false }
@@ -481,6 +481,8 @@ T 'hardening extras roundtrip (check / enable / disable)' {
     if ($body -notmatch '(?m)^strict-dep-builds=true$') { $script:LastFail = "strict-dep-builds not written: $body"; return $false }
     if ($body -notmatch '(?m)^verify-deps-before-run=error$') { $script:LastFail = "verify-deps-before-run not written: $body"; return $false }
     if ($body -notmatch '(?m)^minimum-release-age-strict=true$') { $script:LastFail = "minimum-release-age-strict not written: $body"; return $false }
+    if ($body -notmatch '(?m)^minimum-release-age-ignore-missing-time=false$') { $script:LastFail = "minimum-release-age-ignore-missing-time not written: $body"; return $false }
+    if ($body -notmatch '(?m)^trust-lockfile=false$') { $script:LastFail = "trust-lockfile not written: $body"; return $false }
     $r2 = InvokePmsec $h $null @('--check','--json','--tool','pnpm')
     if ($r2.Code -ne 0) { $script:LastFail = "after-enable exit $($r2.Code)"; return $false }
     if (($r2.Out | ConvertFrom-Json).ok -ne $true) { $script:LastFail = "after-enable ok != true"; return $false }
@@ -490,6 +492,7 @@ T 'hardening extras roundtrip (check / enable / disable)' {
     if ($after -match 'block-exotic-subdeps') { $script:LastFail = "block-exotic-subdeps not removed: $after"; return $false }
     if ($after -match 'strict-dep-builds') { $script:LastFail = "strict-dep-builds not removed: $after"; return $false }
     if ($after -match 'verify-deps-before-run') { $script:LastFail = "verify-deps-before-run not removed: $after"; return $false }
+    if ($after -match 'trust-lockfile') { $script:LastFail = "trust-lockfile not removed: $after"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
