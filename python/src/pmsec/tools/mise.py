@@ -32,6 +32,7 @@ EXTRAS = [
     {"key": "github.slsa", "expected": "true", "line": "github.slsa = true", "section": SECTION},
     {"key": "node.gpg_verify", "expected": "true", "line": "node.gpg_verify = true", "section": SECTION},
     {"key": "swift.gpg_verify", "expected": "true", "line": "swift.gpg_verify = true", "section": SECTION},
+    {"key": "safe", "expected": "true", "line": "safe = true", "section": SECTION},
 ]
 
 preflight = build_preflight(

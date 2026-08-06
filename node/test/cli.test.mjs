@@ -53,6 +53,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(pnpmrc, /^verify-deps-before-run=error$/m);
   assert.match(pnpmrc, /^minimum-release-age-strict=true$/m);
   assert.match(pnpmrc, /^dangerously-allow-all-builds=false$/m);
+  assert.match(pnpmrc, /^minimum-release-age-ignore-missing-time=false$/m);
+  assert.match(pnpmrc, /^trust-lockfile=false$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "1 days"$/m);
   assert.match(uvtoml, /^index-strategy = "first-index"$/m);
@@ -86,6 +88,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(mise, /^github\.slsa = true$/m);
   assert.match(mise, /^node\.gpg_verify = true$/m);
   assert.match(mise, /^swift\.gpg_verify = true$/m);
+  assert.match(mise, /^safe = true$/m);
   const aube = await readFile(join(home, ".config", "aube", "config.toml"), "utf8");
   assert.match(aube, /^minimumReleaseAge = 1440$/m);
   assert.match(aube, /^paranoid = true$/m);
@@ -302,7 +305,7 @@ test("hardening extras: --check fails when extras missing, default enable fixes 
   const r1 = await runCli(["--check", "--json", "--tool", "pnpm"], home);
   const d1 = JSON.parse(r1.out);
   assert.equal(r1.code, 1, "extras missing should fail check");
-  assert.equal(d1.rows[0].extras.length, 6);
+  assert.equal(d1.rows[0].extras.length, 8);
   assert.equal(d1.rows[0].extras.every(e => !e.ok), true);
 
   await runCli(["--tool", "pnpm"], home);
@@ -312,6 +315,8 @@ test("hardening extras: --check fails when extras missing, default enable fixes 
   assert.match(after1, /^strict-dep-builds=true$/m);
   assert.match(after1, /^verify-deps-before-run=error$/m);
   assert.match(after1, /^minimum-release-age-strict=true$/m);
+  assert.match(after1, /^minimum-release-age-ignore-missing-time=false$/m);
+  assert.match(after1, /^trust-lockfile=false$/m);
 
   const r2 = await runCli(["--check", "--json", "--tool", "pnpm"], home);
   assert.equal(r2.code, 0);
@@ -324,6 +329,7 @@ test("hardening extras: --check fails when extras missing, default enable fixes 
   assert.doesNotMatch(after2, /strict-dep-builds/);
   assert.doesNotMatch(after2, /verify-deps-before-run/);
   assert.doesNotMatch(after2, /minimum-release-age/);
+  assert.doesNotMatch(after2, /trust-lockfile/);
 });
 
 test("pnpm 11 treats missing block-exotic-subdeps as default-enforced (ok=true)", async () => {

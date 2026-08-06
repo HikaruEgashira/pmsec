@@ -66,6 +66,8 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | pnpm | `~/.config/pnpm/rc` | `verify-deps-before-run` | `error` | abort `pnpm run` if lockfile is out of sync | pnpm >= 10.12.0 |
 | pnpm | `~/.config/pnpm/rc` | `minimum-release-age-strict` | `true` | treat minimum-release-age violations as hard errors | pnpm >= 10.12.0 |
 | pnpm | `~/.config/pnpm/rc` | `dangerously-allow-all-builds` | `false` | close the all-builds escape hatch so that `strict-dep-builds=true` cannot be silently bypassed at the user level | pnpm >= 10.9.0 |
+| pnpm | `~/.config/pnpm/rc` | `minimum-release-age-ignore-missing-time` | `false` | reject packages whose registry metadata lacks a publication timestamp, preventing timestamp-free packages from silently bypassing the minimum-release-age cooldown | pnpm >= 11.0.0 |
+| pnpm | `~/.config/pnpm/rc` | `trust-lockfile` | `false` | prevent user or project config from setting this to `true`, which would bypass both `minimum-release-age` and `trust-policy` for all lockfile entries | pnpm >= 11.3.0 |
 | yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `"1d"` | 1-day publish cooldown | yarn >= 4.10.0 |
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |
@@ -90,6 +92,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | mise | `~/.config/mise/config.toml` | `[settings].github.slsa` | `true` | verify SLSA provenance for tools fetched via github backend | mise >= 2026; default true |
 | mise | `~/.config/mise/config.toml` | `[settings].node.gpg_verify` | `true` | in-process GPG verification for Node.js tarballs using pure-Rust rPGP (no external `gpg` binary required) | mise >= 2026.7.12 |
 | mise | `~/.config/mise/config.toml` | `[settings].swift.gpg_verify` | `true` | in-process GPG verification for Swift tarballs using pure-Rust rPGP (no external `gpg` binary required) | mise >= 2026.7.12 |
+| mise | `~/.config/mise/config.toml` | `[settings].safe` | `true` | block repo-controlled code execution (hooks, tasks, asdf plugin scripts, template exec()/read_file()) from project-level `.mise.toml` files, preventing supply chain attacks via malicious project configs | mise >= 2026.7.12 |
 | uv | `~/.config/uv/uv.toml` | `exclude-newer` | `"1 days"` | 1-day publish cooldown | uv >= 0.9.17 |
 | uv | `~/.config/uv/uv.toml` | `index-strategy` | `"first-index"` | avoid cross-index confusion | uv >= 0.1.0 |
 | uv | `~/.config/uv/uv.toml` | `[audit].malware-check` | `true` | query OSV API for known-malicious packages before sync, blocking install of packages with MAL advisories | uv >= 0.11.31 |
