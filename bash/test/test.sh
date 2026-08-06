@@ -136,6 +136,8 @@ t_enable_writes_all() {
   assert_match "pnpm verify-deps-before-run extra" '^verify-deps-before-run=error$' "$pnpmrc" || return
   assert_match "pnpm minimum-release-age-strict extra" '^minimum-release-age-strict=true$' "$pnpmrc" || return
   assert_match "pnpm dangerously-allow-all-builds extra" '^dangerously-allow-all-builds=false$' "$pnpmrc" || return
+  assert_match "pnpm minimum-release-age-ignore-missing-time extra" '^minimum-release-age-ignore-missing-time=false$' "$pnpmrc" || return
+  assert_match "pnpm trust-lockfile extra" '^trust-lockfile=false$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
   assert_match "yarn approvedGitRepositories extra" '^approvedGitRepositories: \[\]$' "$yarnrc" || return
@@ -150,6 +152,7 @@ t_enable_writes_all() {
   assert_match "mise github.slsa extra" '^github\.slsa = true$' "$mise" || return
   assert_match "mise node.gpg_verify extra" '^node\.gpg_verify = true$' "$mise" || return
   assert_match "mise swift.gpg_verify extra" '^swift\.gpg_verify = true$' "$mise" || return
+  assert_match "mise safe extra" '^safe = true$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
   rm -rf -- "$home"
 }

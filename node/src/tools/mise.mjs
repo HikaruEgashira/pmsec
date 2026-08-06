@@ -25,6 +25,7 @@ export const extras = [
   { key: "github.slsa", expected: "true", line: "github.slsa = true", section },
   { key: "node.gpg_verify", expected: "true", line: "node.gpg_verify = true", section },
   { key: "swift.gpg_verify", expected: "true", line: "swift.gpg_verify = true", section },
+  { key: "safe", expected: "true", line: "safe = true", section },
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }

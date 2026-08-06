@@ -485,7 +485,9 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'strict-dep-builds'; Expected = 'true'; Line = 'strict-dep-builds=true'; Sep = '='; Section = '' },
         @{ Key = 'verify-deps-before-run'; Expected = 'error'; Line = 'verify-deps-before-run=error'; Sep = '='; Section = '' },
         @{ Key = 'minimum-release-age-strict'; Expected = 'true'; Line = 'minimum-release-age-strict=true'; Sep = '='; Section = '' },
-        @{ Key = 'dangerously-allow-all-builds'; Expected = 'false'; Line = 'dangerously-allow-all-builds=false'; Sep = '='; Section = '' }
+        @{ Key = 'dangerously-allow-all-builds'; Expected = 'false'; Line = 'dangerously-allow-all-builds=false'; Sep = '='; Section = '' },
+        @{ Key = 'minimum-release-age-ignore-missing-time'; Expected = 'false'; Line = 'minimum-release-age-ignore-missing-time=false'; Sep = '='; Section = '' },
+        @{ Key = 'trust-lockfile'; Expected = 'false'; Line = 'trust-lockfile=false'; Sep = '='; Section = '' }
       )
     }
     'yarn' {
@@ -523,7 +525,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'github.github_attestations'; Expected = 'true'; Line = 'github.github_attestations = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'github.slsa'; Expected = 'true'; Line = 'github.slsa = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'node.gpg_verify'; Expected = 'true'; Line = 'node.gpg_verify = true'; Sep = '='; Section = 'settings' },
-        @{ Key = 'swift.gpg_verify'; Expected = 'true'; Line = 'swift.gpg_verify = true'; Sep = '='; Section = 'settings' }
+        @{ Key = 'swift.gpg_verify'; Expected = 'true'; Line = 'swift.gpg_verify = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'safe'; Expected = 'true'; Line = 'safe = true'; Sep = '='; Section = 'settings' }
       )
     }
     'aube' {

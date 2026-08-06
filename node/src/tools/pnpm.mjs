@@ -18,6 +18,8 @@ export const extras = [
   { key: "verify-deps-before-run", expected: "error", line: "verify-deps-before-run=error" },
   { key: "minimum-release-age-strict", expected: "true", line: "minimum-release-age-strict=true" },
   { key: "dangerously-allow-all-builds", expected: "false", line: "dangerously-allow-all-builds=false" },
+  { key: "minimum-release-age-ignore-missing-time", expected: "false", line: "minimum-release-age-ignore-missing-time=false" },
+  { key: "trust-lockfile", expected: "false", line: "trust-lockfile=false" },
 ];
 
 export function path(ctx) { return pnpmRcPath(ctx.env, ctx.home, ctx.platform); }

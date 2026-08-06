@@ -474,6 +474,8 @@ tool_extras() {
       printf 'verify-deps-before-run|error|verify-deps-before-run=error|=|\n'
       printf 'minimum-release-age-strict|true|minimum-release-age-strict=true|=|\n'
       printf 'dangerously-allow-all-builds|false|dangerously-allow-all-builds=false|=|\n'
+      printf 'minimum-release-age-ignore-missing-time|false|minimum-release-age-ignore-missing-time=false|=|\n'
+      printf 'trust-lockfile|false|trust-lockfile=false|=|\n'
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
@@ -504,6 +506,7 @@ tool_extras() {
       printf 'github.slsa|true|github.slsa = true|=|settings\n'
       printf 'node.gpg_verify|true|node.gpg_verify = true|=|settings\n'
       printf 'swift.gpg_verify|true|swift.gpg_verify = true|=|settings\n'
+      printf 'safe|true|safe = true|=|settings\n'
       ;;
     aube)
       printf 'paranoid|true|paranoid = true|=|\n'
