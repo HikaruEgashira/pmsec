@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 license-files = ["LICENSE"]
-authors = [{ name = "Hikaru Egashira", email = "ai@egahika.dev" }]
+authors = [{ name = "Hikaru Egashira", email = "39324739+HikaruEgashira@users.noreply.github.com" }]
 keywords = ["supply-chain", "cooldown", "min-release-age", "exclude-newer", "npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "pmsec"]
 
 [project.urls]
