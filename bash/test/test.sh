@@ -136,6 +136,8 @@ t_enable_writes_all() {
   assert_match "pnpm verify-deps-before-run extra" '^verify-deps-before-run=error$' "$pnpmrc" || return
   assert_match "pnpm minimum-release-age-strict extra" '^minimum-release-age-strict=true$' "$pnpmrc" || return
   assert_match "pnpm dangerously-allow-all-builds extra" '^dangerously-allow-all-builds=false$' "$pnpmrc" || return
+  assert_match "pnpm trust-lockfile extra" '^trust-lockfile=false$' "$pnpmrc" || return
+  assert_match "pnpm minimum-release-age-ignore-missing-time extra" '^minimum-release-age-ignore-missing-time=false$' "$pnpmrc" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
   assert_match "yarn approvedGitRepositories extra" '^approvedGitRepositories: \[\]$' "$yarnrc" || return

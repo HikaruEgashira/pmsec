@@ -53,6 +53,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(pnpmrc, /^verify-deps-before-run=error$/m);
   assert.match(pnpmrc, /^minimum-release-age-strict=true$/m);
   assert.match(pnpmrc, /^dangerously-allow-all-builds=false$/m);
+  assert.match(pnpmrc, /^trust-lockfile=false$/m);
+  assert.match(pnpmrc, /^minimum-release-age-ignore-missing-time=false$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "1 days"$/m);
   assert.match(uvtoml, /^index-strategy = "first-index"$/m);

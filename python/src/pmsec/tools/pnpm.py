@@ -23,6 +23,8 @@ EXTRAS = [
     {"key": "verify-deps-before-run", "expected": "error", "line": "verify-deps-before-run=error"},
     {"key": "minimum-release-age-strict", "expected": "true", "line": "minimum-release-age-strict=true"},
     {"key": "dangerously-allow-all-builds", "expected": "false", "line": "dangerously-allow-all-builds=false"},
+    {"key": "trust-lockfile", "expected": "false", "line": "trust-lockfile=false"},
+    {"key": "minimum-release-age-ignore-missing-time", "expected": "false", "line": "minimum-release-age-ignore-missing-time=false"},
 ]
 
 

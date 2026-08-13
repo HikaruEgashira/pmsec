@@ -75,6 +75,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "verify-deps-before-run=error" in pnpmrc
     assert "minimum-release-age-strict=true" in pnpmrc
     assert "dangerously-allow-all-builds=false" in pnpmrc
+    assert "trust-lockfile=false" in pnpmrc
+    assert "minimum-release-age-ignore-missing-time=false" in pnpmrc
     uvtoml = (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert 'exclude-newer = "1 days"' in uvtoml
     assert 'index-strategy = "first-index"' in uvtoml

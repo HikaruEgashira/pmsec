@@ -485,7 +485,9 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'strict-dep-builds'; Expected = 'true'; Line = 'strict-dep-builds=true'; Sep = '='; Section = '' },
         @{ Key = 'verify-deps-before-run'; Expected = 'error'; Line = 'verify-deps-before-run=error'; Sep = '='; Section = '' },
         @{ Key = 'minimum-release-age-strict'; Expected = 'true'; Line = 'minimum-release-age-strict=true'; Sep = '='; Section = '' },
-        @{ Key = 'dangerously-allow-all-builds'; Expected = 'false'; Line = 'dangerously-allow-all-builds=false'; Sep = '='; Section = '' }
+        @{ Key = 'dangerously-allow-all-builds'; Expected = 'false'; Line = 'dangerously-allow-all-builds=false'; Sep = '='; Section = '' },
+        @{ Key = 'trust-lockfile'; Expected = 'false'; Line = 'trust-lockfile=false'; Sep = '='; Section = '' },
+        @{ Key = 'minimum-release-age-ignore-missing-time'; Expected = 'false'; Line = 'minimum-release-age-ignore-missing-time=false'; Sep = '='; Section = '' }
       )
     }
     'yarn' {
