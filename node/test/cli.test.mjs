@@ -305,7 +305,7 @@ test("hardening extras: --check fails when extras missing, default enable fixes 
   const r1 = await runCli(["--check", "--json", "--tool", "pnpm"], home);
   const d1 = JSON.parse(r1.out);
   assert.equal(r1.code, 1, "extras missing should fail check");
-  assert.equal(d1.rows[0].extras.length, 6);
+  assert.equal(d1.rows[0].extras.length, 8);
   assert.equal(d1.rows[0].extras.every(e => !e.ok), true);
 
   await runCli(["--tool", "pnpm"], home);

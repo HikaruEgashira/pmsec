@@ -288,7 +288,7 @@ def test_hardening_extras_roundtrip(tmp_path):
     code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
-    assert len(data["rows"][0]["extras"]) == 6
+    assert len(data["rows"][0]["extras"]) == 8
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
     run(["--tool", "pnpm"], tmp_path)
