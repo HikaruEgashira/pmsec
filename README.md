@@ -66,6 +66,8 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | pnpm | `~/.config/pnpm/rc` | `verify-deps-before-run` | `error` | abort `pnpm run` if lockfile is out of sync | pnpm >= 10.12.0 |
 | pnpm | `~/.config/pnpm/rc` | `minimum-release-age-strict` | `true` | treat minimum-release-age violations as hard errors | pnpm >= 10.12.0 |
 | pnpm | `~/.config/pnpm/rc` | `dangerously-allow-all-builds` | `false` | close the all-builds escape hatch so that `strict-dep-builds=true` cannot be silently bypassed at the user level | pnpm >= 10.9.0 |
+| pnpm | `~/.config/pnpm/rc` | `trust-lockfile` | `false` | re-run release-age and trust-policy gates on every install even against a committed lockfile, closing the lockfile-poisoning bypass | pnpm >= 11.3.0 |
+| pnpm | `~/.config/pnpm/rc` | `minimum-release-age-ignore-missing-time` | `false` | block packages whose registry metadata omits a publish timestamp, preventing attackers from bypassing the age gate by stripping the `time` field | pnpm >= 10.6.0 |
 | yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `"1d"` | 1-day publish cooldown | yarn >= 4.10.0 |
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |

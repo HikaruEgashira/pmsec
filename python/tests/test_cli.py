@@ -75,6 +75,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "verify-deps-before-run=error" in pnpmrc
     assert "minimum-release-age-strict=true" in pnpmrc
     assert "dangerously-allow-all-builds=false" in pnpmrc
+    assert "trust-lockfile=false" in pnpmrc
+    assert "minimum-release-age-ignore-missing-time=false" in pnpmrc
     uvtoml = (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert 'exclude-newer = "1 days"' in uvtoml
     assert 'index-strategy = "first-index"' in uvtoml
@@ -286,7 +288,7 @@ def test_hardening_extras_roundtrip(tmp_path):
     code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
     data = json.loads(out)
     assert code == 1
-    assert len(data["rows"][0]["extras"]) == 6
+    assert len(data["rows"][0]["extras"]) == 8
     assert all(not e["ok"] for e in data["rows"][0]["extras"])
 
     run(["--tool", "pnpm"], tmp_path)

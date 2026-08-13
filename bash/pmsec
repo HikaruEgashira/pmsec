@@ -474,6 +474,8 @@ tool_extras() {
       printf 'verify-deps-before-run|error|verify-deps-before-run=error|=|\n'
       printf 'minimum-release-age-strict|true|minimum-release-age-strict=true|=|\n'
       printf 'dangerously-allow-all-builds|false|dangerously-allow-all-builds=false|=|\n'
+      printf 'trust-lockfile|false|trust-lockfile=false|=|\n'
+      printf 'minimum-release-age-ignore-missing-time|false|minimum-release-age-ignore-missing-time=false|=|\n'
       ;;
     yarn)
       printf 'enableHardenedMode|true|enableHardenedMode: true|:|\n'
