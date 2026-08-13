@@ -150,6 +150,7 @@ t_enable_writes_all() {
   assert_match "mise github.slsa extra" '^github\.slsa = true$' "$mise" || return
   assert_match "mise node.gpg_verify extra" '^node\.gpg_verify = true$' "$mise" || return
   assert_match "mise swift.gpg_verify extra" '^swift\.gpg_verify = true$' "$mise" || return
+  assert_match "mise not_found_system_fallback extra" '^not_found_system_fallback = false$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
   rm -rf -- "$home"
 }

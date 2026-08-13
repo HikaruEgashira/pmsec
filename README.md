@@ -90,6 +90,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | mise | `~/.config/mise/config.toml` | `[settings].github.slsa` | `true` | verify SLSA provenance for tools fetched via github backend | mise >= 2026; default true |
 | mise | `~/.config/mise/config.toml` | `[settings].node.gpg_verify` | `true` | in-process GPG verification for Node.js tarballs using pure-Rust rPGP (no external `gpg` binary required) | mise >= 2026.7.12 |
 | mise | `~/.config/mise/config.toml` | `[settings].swift.gpg_verify` | `true` | in-process GPG verification for Swift tarballs using pure-Rust rPGP (no external `gpg` binary required) | mise >= 2026.7.12 |
+| mise | `~/.config/mise/config.toml` | `[settings].not_found_system_fallback` | `false` | prevents mise shims from silently falling back to same-named system PATH binaries when the required tool version is not installed — eliminates PATH-hijacking via shim fallback | mise >= 2026.8.3 |
 | uv | `~/.config/uv/uv.toml` | `exclude-newer` | `"1 days"` | 1-day publish cooldown | uv >= 0.9.17 |
 | uv | `~/.config/uv/uv.toml` | `index-strategy` | `"first-index"` | avoid cross-index confusion | uv >= 0.1.0 |
 | uv | `~/.config/uv/uv.toml` | `[audit].malware-check` | `true` | query OSV API for known-malicious packages before sync, blocking install of packages with MAL advisories | uv >= 0.11.31 |
