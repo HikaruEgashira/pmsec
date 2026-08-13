@@ -108,6 +108,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "github.slsa = true" in mise
     assert "node.gpg_verify = true" in mise
     assert "swift.gpg_verify = true" in mise
+    assert "not_found_system_fallback = false" in mise
     aube = (tmp_path / ".config" / "aube" / "config.toml").read_text()
     assert "minimumReleaseAge = 1440" in aube
     assert "paranoid = true" in aube

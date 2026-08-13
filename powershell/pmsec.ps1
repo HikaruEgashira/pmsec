@@ -523,7 +523,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'github.github_attestations'; Expected = 'true'; Line = 'github.github_attestations = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'github.slsa'; Expected = 'true'; Line = 'github.slsa = true'; Sep = '='; Section = 'settings' },
         @{ Key = 'node.gpg_verify'; Expected = 'true'; Line = 'node.gpg_verify = true'; Sep = '='; Section = 'settings' },
-        @{ Key = 'swift.gpg_verify'; Expected = 'true'; Line = 'swift.gpg_verify = true'; Sep = '='; Section = 'settings' }
+        @{ Key = 'swift.gpg_verify'; Expected = 'true'; Line = 'swift.gpg_verify = true'; Sep = '='; Section = 'settings' },
+        @{ Key = 'not_found_system_fallback'; Expected = 'false'; Line = 'not_found_system_fallback = false'; Sep = '='; Section = 'settings' }
       )
     }
     'aube' {
