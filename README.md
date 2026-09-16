@@ -32,6 +32,14 @@ Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/HikaruEgash
 powershell -ExecutionPolicy Bypass -File $dest
 ```
 
+For Intune, upload
+[`powershell/intune-platform-script.ps1`](powershell/intune-platform-script.ps1)
+to apply pmsec immediately and register a daily Windows + WSL scheduled task.
+No script arguments are needed. Configure the Platform Script to run using the
+logged-on user's credentials; see the
+[PowerShell instructions](powershell/README.md#intune-daily-deployment-windows--wsl).
+The downloaded pmsec payload is pinned to a commit SHA for reproducible rollout.
+
 `pmsec` enables the hardening bundle for every detected tool. Use `--check` to
 verify, `--disable` to remove, and `--doctor --json` to inspect paths and
 writability.

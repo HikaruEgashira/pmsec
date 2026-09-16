@@ -13,6 +13,7 @@ function _PathJoinBootstrap {
   return $r
 }
 $Pmsec = (Resolve-Path (_PathJoinBootstrap $Here '..' 'pmsec.ps1')).Path
+$IntuneScript = (Resolve-Path (_PathJoinBootstrap $Here '..' 'intune-platform-script.ps1')).Path
 $PwshExe = if ($IsWindows) {
   (Get-Process -Id $PID).Path
 } else {
@@ -136,6 +137,28 @@ function T([string]$Name, [scriptblock]$Body) {
 }
 
 # ---------- tests ----------
+
+T 'Intune Platform Script is upload-ready and registers the daily task internally' {
+  $tokens = $null
+  $parseErrors = $null
+  [void][System.Management.Automation.Language.Parser]::ParseFile(
+    $IntuneScript, [ref]$tokens, [ref]$parseErrors
+  )
+  if ($parseErrors.Count -gt 0) {
+    $script:LastFail = "Intune script parse errors: $($parseErrors -join '; ')"
+    return $false
+  }
+  $source = [System.IO.File]::ReadAllText($IntuneScript)
+  if ($source -notmatch 'Register-ScheduledTask' -or
+      $source -notmatch '(?m)-File \$installPath\s*$' -or
+      $source -notmatch "\`$pmsecCommit\s*=\s*'[0-9a-f]{40}'" -or
+      $source -match 'raw\.githubusercontent\.com/[^/]+/[^/]+/main/' -or
+      $source -match '--install-daily-task') {
+    $script:LastFail = 'Intune script must pin pmsec, register the task, and invoke plain pmsec internally'
+    return $false
+  }
+  return $true
+}
 
 # Catches a class of formatting bug where the human-readable output
 # leaks unresolved placeholders ({N}) because of operator-precedence

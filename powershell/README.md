@@ -30,6 +30,33 @@ pmsec --version
 `--no-wsl` or `PMSEC_NO_WSL=1` skips WSL. Multi-scope output is grouped as
 `[windows]`, `[wsl-<distro>]`; JSON rows include `scope`.
 
+## Intune daily deployment (Windows + WSL)
+
+Upload [`intune-platform-script.ps1`](intune-platform-script.ps1) as the
+Platform Script. No command or script arguments are required: the wrapper
+downloads `pmsec.ps1`, registers the daily task itself, and runs pmsec without
+requiring a special payload version. The downloaded payload is pinned by
+`$pmsecCommit` to make rollouts reproducible. To deploy an update, change it to
+the tested commit SHA and upload the wrapper to Intune again.
+
+Set **Run this script using the logged on credentials** to **Yes** and **Run
+script in 64 bit PowerShell Host** to **Yes**. WSL distributions are registered
+per Windows user, so a task created as `SYSTEM` cannot reach the logged-on
+user's distros.
+
+The wrapper applies pmsec immediately, stores the script at
+`%LOCALAPPDATA%\pmsec\pmsec.ps1`, and creates or updates the `pmsec daily`
+scheduled task. It runs every day at 12:00 local time as the same user, includes
+Windows and WSL by default, starts when next available after a missed run, and
+does not stop on battery power. Re-running the Intune script updates both the
+persistent copy and the existing task.
+
+To remove only the schedule:
+
+```powershell
+Unregister-ScheduledTask -TaskName 'pmsec daily' -Confirm:$false
+```
+
 ## SYSTEM-Orchestrated Runs
 
 `pmsec` writes per-user config. Prefer running in the logged-on user's context.
