@@ -1,0 +1,20 @@
+{
+  "pre": [
+    ["--tool", "cargo", "--days", "7"]
+  ],
+  "args": ["--tool", "cargo", "--days", "7", "--check", "--json"],
+  "expected_exit": 0,
+  "expected_json": {
+    "bundleDays": 7,
+    "rows": [
+      {
+        "tool": "cargo", "key": "minimum-release-age", "path": "<HOME>/.cargo/config.toml",
+        "configured": "\"7d\"", "days": 7, "warn": null,
+        "extras": [
+          {"key": "global-min-publish-age", "configured": "\"7 days\"", "expected": "\"7 days\"", "ok": true}
+        ]
+      }
+    ],
+    "ok": true
+  }
+}

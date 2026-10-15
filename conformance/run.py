@@ -68,8 +68,9 @@ def normalize(obj, home: Path):
         s = obj.replace(home_s, "<HOME>")
         # also handle a backslash-quoted form that may appear inside JSON
         s = s.replace(home_s.replace("\\", "/"), "<HOME>")
-        # any path separator immediately after <HOME> is normalized
-        s = re.sub(r"<HOME>\\+", "<HOME>/", s)
+        # every path separator inside a <HOME>-rooted path is normalized
+        if s.startswith("<HOME>"):
+            s = re.sub(r"\\+", "/", s)
         return s
     if isinstance(obj, list):
         return [normalize(v, home) for v in obj]

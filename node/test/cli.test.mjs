@@ -44,6 +44,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(npmrc, /^strict-allow-scripts=true$/m);
   assert.match(npmrc, /^dangerously-allow-all-scripts=false$/m);
   assert.match(npmrc, /^allow-scripts-pin=true$/m);
+  assert.match(npmrc, /^ignore-extension=true$/m);
   assert.doesNotMatch(npmrc, /minimum-release-age/, "pnpm keys must not leak into .npmrc");
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=1440$/m);
@@ -135,7 +136,7 @@ test("enable upgrades values that are weaker than the request", async () => {
   await runCli(["--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\n"
+    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
   );
 });
 
@@ -167,7 +168,7 @@ test("enable preserves stricter existing cooldowns", async () => {
   assert.match(out, /^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)/m);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\n"
+    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
   );
 });
 
@@ -457,4 +458,26 @@ test("--doctor blocks when the parent directory is not writable", { skip: proces
   } finally {
     await chmod(ro, 0o700);
   }
+});
+
+test("cargo enable writes registry.global-min-publish-age tracking --days", async () => {
+  const home = await setupHome();
+  const cargoHome = join(home, "cargo");
+  const env = { CARGO_HOME: cargoHome };
+  await runCli(["--tool", "cargo", "--days", "7"], home, "linux", env);
+  const cfg = await readFile(join(cargoHome, "config.toml"), "utf8");
+  assert.match(cfg, /\[install\]\nminimum-release-age = "7d"/);
+  assert.match(cfg, /\[registry\]\nglobal-min-publish-age = "7 days"/);
+  let r = await runCli(["--check", "--tool", "cargo", "--days", "7", "--json"], home, "linux", env);
+  assert.equal(r.code, 0);
+  assert.deepEqual(JSON.parse(r.out).rows[0].extras,
+    [{ key: "global-min-publish-age", configured: '"7 days"', expected: '"7 days"', ok: true }]);
+  await writeFile(join(cargoHome, "config.toml"), '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n');
+  r = await runCli(["--check", "--tool", "cargo", "--days", "7"], home, "linux", env);
+  assert.equal(r.code, 1);
+  await writeFile(join(cargoHome, "config.toml"), '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "2 weeks"\n');
+  r = await runCli(["--check", "--tool", "cargo", "--days", "7"], home, "linux", env);
+  assert.equal(r.code, 0);
+  await runCli(["--disable", "--tool", "cargo"], home, "linux", env);
+  assert.equal(await readFile(join(cargoHome, "config.toml"), "utf8"), "[install]\n[registry]\n");
 });

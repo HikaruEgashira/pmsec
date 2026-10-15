@@ -130,6 +130,7 @@ t_enable_writes_all() {
   assert_match "npm strict-allow-scripts extra" '^strict-allow-scripts=true$' "$npmrc" || return
   assert_match "npm dangerously-allow-all-scripts extra" '^dangerously-allow-all-scripts=false$' "$npmrc" || return
   assert_match "npm allow-scripts-pin extra" '^allow-scripts-pin=true$' "$npmrc" || return
+  assert_match "npm ignore-extension extra" '^ignore-extension=true$' "$npmrc" || return
   assert_match "pnpm trust-policy extra" '^trust-policy=no-downgrade$' "$pnpmrc" || return
   assert_match "pnpm block-exotic-subdeps extra" '^block-exotic-subdeps=true$' "$pnpmrc" || return
   assert_match "pnpm strict-dep-builds extra" '^strict-dep-builds=true$' "$pnpmrc" || return
@@ -216,6 +217,7 @@ allow-directory=root
 strict-allow-scripts=true
 dangerously-allow-all-scripts=false
 allow-scripts-pin=true
+ignore-extension=true
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -236,6 +238,7 @@ allow-directory=root
 strict-allow-scripts=true
 dangerously-allow-all-scripts=false
 allow-scripts-pin=true
+ignore-extension=true
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -626,6 +629,33 @@ t_write_atomic_step_label_on_symlink() {
 }
 
 T "write_atomic refuses to follow a symlink with a labeled error" t_write_atomic_step_label_on_symlink
+
+# cargo writes [registry].global-min-publish-age alongside the install
+# cooldown, tracking --days, and check accepts any value at least as strict.
+t_cargo_global_min_publish_age() {
+  local home; home=$(setup_home)
+  local ch="$home/cargo" out rc
+  run_pmsec "$home" CARGO_HOME="$ch" -- --tool cargo --days 7 >/dev/null
+  out=$(cat "$ch/config.toml")
+  assert_match "install cooldown" '^minimum-release-age = "7d"$' "$out" || { rm -rf -- "$home"; return 1; }
+  assert_match "registry publish age" '^global-min-publish-age = "7 days"$' "$out" || { rm -rf -- "$home"; return 1; }
+  out=$(run_pmsec "$home" CARGO_HOME="$ch" -- --check --tool cargo --days 7 --json); rc=$?
+  assert_eq "check passes" "0" "$rc" || { rm -rf -- "$home"; return 1; }
+  assert_match "extra row" '"key": "global-min-publish-age", "configured": "\\"7 days\\"", "expected": "\\"7 days\\"", "ok": true' "$out" || { rm -rf -- "$home"; return 1; }
+  printf '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n' > "$ch/config.toml"
+  run_pmsec "$home" CARGO_HOME="$ch" -- --check --tool cargo --days 7 >/dev/null 2>&1; rc=$?
+  assert_eq "weaker publish age fails check" "1" "$rc" || { rm -rf -- "$home"; return 1; }
+  printf '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "2 weeks"\n' > "$ch/config.toml"
+  run_pmsec "$home" CARGO_HOME="$ch" -- --check --tool cargo --days 7 >/dev/null 2>&1; rc=$?
+  assert_eq "stricter publish age passes check" "0" "$rc" || { rm -rf -- "$home"; return 1; }
+  run_pmsec "$home" CARGO_HOME="$ch" -- --disable --tool cargo >/dev/null
+  assert_file_eq "disable removes both" '[install]
+[registry]
+' "$ch/config.toml" || { rm -rf -- "$home"; return 1; }
+  rm -rf -- "$home"
+}
+
+T "cargo writes global-min-publish-age tracking --days" t_cargo_global_min_publish_age
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

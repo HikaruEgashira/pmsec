@@ -67,6 +67,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | npm | `~/.npmrc` | `strict-allow-scripts` | `true` | treat install-script policy violations as hard errors | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `dangerously-allow-all-scripts` | `false` | set user-level default for the install-script bypass escape hatch to disabled; project config, env vars, or CLI flags can still override | npm >= 11.16.0 |
 | npm | `~/.npmrc` | `allow-scripts-pin` | `true` | pin script approvals to exact versions so `npm install-scripts approve` cannot be satisfied by a newer, potentially tampered release | npm >= 11.15.0 |
+| npm | `~/.npmrc` | [`ignore-extension`](https://docs.npmjs.com/cli/v12/using-npm/config#ignore-extension) | `true` | never import or execute a repo-supplied `.npm-extension.mjs`/`.cjs` during install — closes a root-owned code-execution and dependency-rewrite path that install-script policy does not cover | npm >= 12.0.0 |
 | pnpm | `~/.config/pnpm/rc` | `minimum-release-age` | `1440` | 1-day publish cooldown | pnpm >= 10.6.0 |
 | pnpm | `~/.config/pnpm/rc` | `trust-policy` | `no-downgrade` | reject weaker provenance than prior install | pnpm >= 10.21.0 |
 | pnpm | `~/.config/pnpm/rc` | `block-exotic-subdeps` | `true` | no transitive git/tarball deps | pnpm >= 10.26.0; default >= 11 |
@@ -83,6 +84,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | bun | `~/.bunfig.toml` | `[install].minimumReleaseAge` | `86400` | 1-day publish cooldown | bun >= 1.3.0 |
 | bun | `~/.bunfig.toml` | `[install].ignoreScripts` | `true` | disable lifecycle scripts | bun >= 1.3.0 |
 | cargo | `$CARGO_HOME/config.toml` | `[install].minimum-release-age` | `"1d"` | 1-day publish cooldown | cargo >= 1.94.0 |
+| cargo | `$CARGO_HOME/config.toml` | [`[registry].global-min-publish-age`](https://doc.rust-lang.org/nightly/cargo/reference/config.html#registryglobal-min-publish-age) | `"1 days"` (tracks `--days`) | resolver ignores crate versions published within the cooldown unless already in `Cargo.lock` | cargo >= 1.100.0 |
 | mise | `~/.config/mise/config.toml` | `[settings].minimum_release_age` | `"1d"` | 1-day release cooldown | mise >= 2026.4.22 |
 | mise | `~/.config/mise/config.toml` | `[settings].paranoid` | `true` | always re-verify artifacts | current mise |
 | mise | `~/.config/mise/config.toml` | `[settings].gpg_verify` | `true` | require GPG when available | current mise |
