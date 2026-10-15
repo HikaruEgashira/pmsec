@@ -17,6 +17,7 @@ export const extras = [
   { key: "strict-allow-scripts", expected: "true", line: "strict-allow-scripts=true" },
   { key: "dangerously-allow-all-scripts", expected: "false", line: "dangerously-allow-all-scripts=false" },
   { key: "allow-scripts-pin", expected: "true", line: "allow-scripts-pin=true" },
+  { key: "ignore-extension", expected: "true", line: "ignore-extension=true" },
 ];
 
 export function path(ctx) { return npmrcPath(ctx.env, ctx.home); }

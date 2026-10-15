@@ -473,7 +473,8 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'strict-allow-scripts'; Expected = 'true'; Line = 'strict-allow-scripts=true'; Sep = '='; Section = '' },
         @{ Key = 'dangerously-allow-all-scripts'; Expected = 'false'; Line = 'dangerously-allow-all-scripts=false'; Sep = '='; Section = '' },
-        @{ Key = 'allow-scripts-pin'; Expected = 'true'; Line = 'allow-scripts-pin=true'; Sep = '='; Section = '' }
+        @{ Key = 'allow-scripts-pin'; Expected = 'true'; Line = 'allow-scripts-pin=true'; Sep = '='; Section = '' },
+        @{ Key = 'ignore-extension'; Expected = 'true'; Line = 'ignore-extension=true'; Sep = '='; Section = '' }
       )
     }
     'pnpm' {
@@ -557,6 +558,22 @@ function ParseDaysDw([string]$Value, [bool]$ExtraUnits = $false) {
 
 function ParseDaysMise([string]$Value) { ParseDaysDw $Value $true }
 
+# cargo [registry].global-min-publish-age (cargo >= 1.100) tracks `--days`
+# like the primary key, so it is handled alongside it instead of ToolExtras.
+$script:CargoPublishAgeKey = 'global-min-publish-age'
+$script:CargoPublishAgeSection = 'registry'
+
+function ParseCargoPublishAgeDays([string]$Value) {
+  if ($Value -match '^"\s*(\d+)\s*(days?|weeks?|months?)\s*"$') {
+    $n = [int]$Matches[1]
+    $u = $Matches[2].ToLower()
+    if ($u.StartsWith('week')) { return $n * 7 }
+    if ($u.StartsWith('month')) { return $n * 30 }
+    return $n
+  }
+  return $null
+}
+
 function ParseDaysUv([string]$Value) {
   if ($Value -match '^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$') {
     $n = [int]$Matches[1]
@@ -609,6 +626,15 @@ function ToolRead([string]$Tool) {
       Ok = $ok; DefaultEnforced = $defaultEnforced
     })
   }
+  if ($Tool -eq 'cargo') {
+    $cur = LinesReadKey $script:CargoPublishAgeKey '=' $script:CargoPublishAgeSection
+    $want = if ($null -ne $days) { $days } else { 1 }
+    $curDays = if ($null -ne $cur) { ParseCargoPublishAgeDays $cur } else { $null }
+    $extras.Add(@{
+      Key = $script:CargoPublishAgeKey; Configured = $cur; Expected = ('"{0} days"' -f $want)
+      Ok = ($null -ne $curDays -and $curDays -ge $want); DefaultEnforced = $false
+    })
+  }
   return @{ Path = $path; Configured = $val; Days = $days; Extras = $extras }
 }
 
@@ -635,6 +661,9 @@ function ToolWrite([string]$Tool, [int]$Days) {
   foreach ($e in (ToolExtras $Tool)) {
     LinesSetKey $e.Key $e.Line $e.Sep $e.Section
   }
+  if ($Tool -eq 'cargo') {
+    LinesSetKey $script:CargoPublishAgeKey ('{0} = "{1} days"' -f $script:CargoPublishAgeKey, $Days) '=' $script:CargoPublishAgeSection
+  }
   WriteAtomic $path (LinesDump)
   return @{ Path = $path }
 }
@@ -645,6 +674,9 @@ function ToolUnset([string]$Tool) {
   $removed = [bool](LinesRemoveKey (ToolKey $Tool) (ToolSep $Tool) (ToolSection $Tool))
   foreach ($e in (ToolExtras $Tool)) {
     if (LinesRemoveKey $e.Key $e.Sep $e.Section) { $removed = $true }
+  }
+  if ($Tool -eq 'cargo') {
+    if (LinesRemoveKey $script:CargoPublishAgeKey '=' $script:CargoPublishAgeSection) { $removed = $true }
   }
   if ($removed) { WriteAtomic $path (LinesDump) }
   return @{ Path = $path; Removed = $removed }

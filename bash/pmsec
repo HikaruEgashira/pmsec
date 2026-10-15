@@ -466,6 +466,7 @@ tool_extras() {
       printf 'strict-allow-scripts|true|strict-allow-scripts=true|=|\n'
       printf 'dangerously-allow-all-scripts|false|dangerously-allow-all-scripts=false|=|\n'
       printf 'allow-scripts-pin|true|allow-scripts-pin=true|=|\n'
+      printf 'ignore-extension|true|ignore-extension=true|=|\n'
       ;;
     pnpm)
       printf 'trust-policy|no-downgrade|trust-policy=no-downgrade|=|\n'
@@ -540,6 +541,24 @@ parse_days_dw() {
 
 # mise additionally accepts months/years.
 parse_days_mise() { parse_days_dw "$1" 1; }
+
+# cargo [registry].global-min-publish-age (cargo >= 1.100) tracks `--days`
+# like the primary key, so it is handled alongside it instead of tool_extras.
+CARGO_PUBLISH_AGE_KEY='global-min-publish-age'
+CARGO_PUBLISH_AGE_SECTION='registry'
+
+parse_days_cargo_publish_age() {
+  local v="$1" n lc
+  [[ "$v" =~ ^\"[[:space:]]*([0-9]+)[[:space:]]*([A-Za-z]+)[[:space:]]*\"$ ]] || return 1
+  n="${BASH_REMATCH[1]}"
+  lc=$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')
+  case "$lc" in
+    day|days) printf '%d' "$n" ;;
+    week|weeks) printf '%d' "$((n*7))" ;;
+    month|months) printf '%d' "$((n*30))" ;;
+    *) return 1 ;;
+  esac
+}
 
 # uv requires the value to be a quoted string ending in days/weeks (the toml
 # parser does not accept duration suffixes outside quotes).
@@ -621,6 +640,9 @@ tool_write() {
     [ -z "$ek" ] && continue
     lines_set_key "$ek" "$el" "$es" "$esec"
   done < <(tool_extras "$tool")
+  if [ "$tool" = "cargo" ]; then
+    lines_set_key "$CARGO_PUBLISH_AGE_KEY" "$(printf '%s = "%d days"' "$CARGO_PUBLISH_AGE_KEY" "$days")" "=" "$CARGO_PUBLISH_AGE_SECTION"
+  fi
   lines_dump | write_atomic "$path"
 }
 
@@ -635,6 +657,9 @@ tool_unset() {
     [ -z "$ek" ] && continue
     if lines_remove_key "$ek" "$es" "$esec"; then removed=1; fi
   done < <(tool_extras "$tool")
+  if [ "$tool" = "cargo" ]; then
+    if lines_remove_key "$CARGO_PUBLISH_AGE_KEY" "=" "$CARGO_PUBLISH_AGE_SECTION"; then removed=1; fi
+  fi
   if [ "$removed" = "1" ]; then
     lines_dump | write_atomic "$path" || return 1
   fi
@@ -683,6 +708,18 @@ tool_read_extras() {
     fi
     printf '%s|%s|%s|%s|%s\n' "$ek" "$cur" "$ev" "$ok" "$def"
   done < <(tool_extras "$tool")
+  if [ "$tool" = "cargo" ]; then
+    local primary want=1 cur_days
+    if primary=$(tool_read cargo) && [ -n "${primary##*|}" ]; then want="${primary##*|}"; fi
+    lines_load "$path"
+    ok=0
+    if cur=$(lines_read_key "$CARGO_PUBLISH_AGE_KEY" "=" "$CARGO_PUBLISH_AGE_SECTION"); then
+      if cur_days=$(parse_days_cargo_publish_age "$cur") && [ "$cur_days" -ge "$want" ]; then ok=1; fi
+    else
+      cur=""
+    fi
+    printf '%s|%s|%s|%s|%s\n' "$CARGO_PUBLISH_AGE_KEY" "$cur" "\"$want days\"" "$ok" 0
+  fi
 }
 
 # ---------- per-tool: preflight (silently-ignored cooldown warning) ----------

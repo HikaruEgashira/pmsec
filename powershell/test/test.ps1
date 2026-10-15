@@ -235,6 +235,7 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'npm strict-allow-scripts extra' '(?m)^strict-allow-scripts=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm dangerously-allow-all-scripts extra' '(?m)^dangerously-allow-all-scripts=false$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm allow-scripts-pin extra' '(?m)^allow-scripts-pin=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'npm ignore-extension extra' '(?m)^ignore-extension=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'pnpm trust-policy extra' '(?m)^trust-policy=no-downgrade$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'pnpm block-exotic-subdeps extra' '(?m)^block-exotic-subdeps=true$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'pnpm strict-dep-builds extra' '(?m)^strict-dep-builds=true$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
@@ -298,7 +299,7 @@ T 'enable upgrades values that are weaker than the request' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`nregistry=https://r/`n")
     [void](InvokePmsec $h $null @('--tool','npm','--days','7'))
-    return (AssertFileEq '.npmrc' "min-release-age=7`nregistry=https://r/`naudit-level=high`nallow-git=root`nallow-remote=root`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`n" (Join-Path $h '.npmrc'))
+    return (AssertFileEq '.npmrc' "min-release-age=7`nregistry=https://r/`naudit-level=high`nallow-git=root`nallow-remote=root`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`nignore-extension=true`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -308,7 +309,7 @@ T 'enable preserves stricter existing cooldowns' {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`nregistry=https://r/`n")
     $r = InvokePmsec $h $null @('--tool','npm')
     if ($r.Out -notmatch '(?m)^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)\s*$') { $script:LastFail = "expected fully-formatted keep line, got: $($r.Out)"; return $false }
-    return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`nallow-git=root`nallow-remote=root`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`n" (Join-Path $h '.npmrc'))
+    return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`nallow-git=root`nallow-remote=root`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`nignore-extension=true`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -772,6 +773,32 @@ T 'write_atomic refuses to follow a reparse point with a labeled error' {
       return $false
     }
     return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'cargo writes global-min-publish-age tracking --days' {
+  $h = NewHome
+  try {
+    $cfgPath = Join-Path (Join-Path $h '.cargo') 'config.toml'
+    [void](InvokePmsec $h $null @('--tool','cargo','--days','7'))
+    $cfg = [System.IO.File]::ReadAllText($cfgPath)
+    $ok = (AssertMatch 'install cooldown' '(?m)^minimum-release-age = "7d"$' $cfg)
+    $ok = $ok -and (AssertMatch 'registry publish age' '(?m)^global-min-publish-age = "7 days"$' $cfg)
+    if (-not $ok) { return $false }
+    $r = InvokePmsec $h $null @('--check','--tool','cargo','--days','7','--json')
+    if ($r.Code -ne 0) { $script:LastFail = "check exit $($r.Code): $($r.Out)"; return $false }
+    $extra = ($r.Out | ConvertFrom-Json).rows[0].extras[0]
+    if ($extra.key -ne 'global-min-publish-age' -or $extra.configured -ne '"7 days"' -or $extra.expected -ne '"7 days"' -or -not $extra.ok) {
+      $script:LastFail = "unexpected extra: $($r.Out)"; return $false
+    }
+    [System.IO.File]::WriteAllText($cfgPath, "[install]`nminimum-release-age = `"7d`"`n[registry]`nglobal-min-publish-age = `"1 days`"`n")
+    $r = InvokePmsec $h $null @('--check','--tool','cargo','--days','7')
+    if ($r.Code -ne 1) { $script:LastFail = "weaker publish age should fail check: $($r.Code)"; return $false }
+    [System.IO.File]::WriteAllText($cfgPath, "[install]`nminimum-release-age = `"7d`"`n[registry]`nglobal-min-publish-age = `"2 weeks`"`n")
+    $r = InvokePmsec $h $null @('--check','--tool','cargo','--days','7')
+    if ($r.Code -ne 0) { $script:LastFail = "stricter publish age should pass check: $($r.Code)"; return $false }
+    [void](InvokePmsec $h $null @('--disable','--tool','cargo'))
+    return (AssertFileEq 'disable removes both' "[install]`n[registry]`n" $cfgPath)
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 

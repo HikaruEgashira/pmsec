@@ -66,6 +66,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "strict-allow-scripts=true" in npmrc
     assert "dangerously-allow-all-scripts=false" in npmrc
     assert "allow-scripts-pin=true" in npmrc
+    assert "ignore-extension=true" in npmrc
     assert "minimum-release-age" not in npmrc, "pnpm keys must not leak into .npmrc"
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
     assert "minimum-release-age=1440" in pnpmrc
@@ -161,7 +162,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
     )
 
 
@@ -171,7 +172,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     assert code == 0
     assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\n"
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
     )
 
 
@@ -433,3 +434,25 @@ def test_explain_fs_error_emits_chown_hint_for_permission_denied(tmp_path):
     finally:
         (tmp_path).chmod(0o700)
         (tmp_path / ".npmrc").chmod(0o600)
+
+
+def test_cargo_enable_writes_global_min_publish_age(tmp_path):
+    cargo_home = tmp_path / "cargo"
+    env = {"CARGO_HOME": str(cargo_home)}
+    run(["--tool", "cargo", "--days", "7"], tmp_path, **env)
+    cfg = (cargo_home / "config.toml").read_text()
+    assert '[install]\nminimum-release-age = "7d"' in cfg
+    assert '[registry]\nglobal-min-publish-age = "7 days"' in cfg
+    code, out, _ = run(["--check", "--tool", "cargo", "--days", "7", "--json"], tmp_path, **env)
+    assert code == 0
+    assert json.loads(out)["rows"][0]["extras"] == [
+        {"key": "global-min-publish-age", "configured": '"7 days"', "expected": '"7 days"', "ok": True}
+    ]
+    (cargo_home / "config.toml").write_text('[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n')
+    code, _, _ = run(["--check", "--tool", "cargo", "--days", "7"], tmp_path, **env)
+    assert code == 1
+    (cargo_home / "config.toml").write_text('[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "2 weeks"\n')
+    code, _, _ = run(["--check", "--tool", "cargo", "--days", "7"], tmp_path, **env)
+    assert code == 0
+    run(["--disable", "--tool", "cargo"], tmp_path, **env)
+    assert (cargo_home / "config.toml").read_text() == "[install]\n[registry]\n"
