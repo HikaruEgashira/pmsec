@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 
 from pmsec import __version__
-from pmsec.tools import aube, bun, bundler, cargo, mise, npm, pnpm, uv, yarn
+from pmsec.tools import aube, bun, bundler, cargo, composer, mise, npm, pnpm, uv, yarn
 from pmsec.util.context import Context
 from pmsec.util.paths import current_platform
 
-TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv, bundler, aube]
+TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv, bundler, aube, composer]
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 BUNDLE_DAYS = 1
@@ -42,7 +42,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="pmsec",
         description=(
             "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, "
-            "bun, cargo, mise, uv, and bundler. Default action enables every "
+            "bun, cargo, mise, uv, bundler, aube, and composer. Default action enables every "
             "safe-by-default key each tool exposes (cooldown, audit-level, "
             "trust-policy, hardened mode, attestation re-verification, ...). No knobs."
         ),
@@ -54,7 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--check", action="store_true", help="verify the bundle is in place (exit 1 if anything missing)")
     mode.add_argument("--disable", action="store_true", help="remove the hardening bundle from selected tools")
     mode.add_argument("--doctor", action="store_true", help="diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)")
-    p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler)")
+    p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)")
     p.add_argument("--json", action="store_true", help="emit JSON output")
     p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
     p.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns (otherwise enable is monotonic)")

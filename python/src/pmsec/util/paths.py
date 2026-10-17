@@ -86,6 +86,22 @@ def aube_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     return base / "aube" / "config.toml"
 
 
+def composer_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
+    """Composer keeps its global config in $COMPOSER_HOME/config.json. The
+    default COMPOSER_HOME follows platform conventions (XDG on Unix,
+    Application Support on macOS, APPDATA on Windows), matching Composer's
+    own resolution."""
+    if "COMPOSER_HOME" in env:
+        return Path(env["COMPOSER_HOME"]) / "config.json"
+    if platform == "win32":
+        base = Path(env["APPDATA"]) if "APPDATA" in env else home / "AppData" / "Roaming"
+        return base / "Composer" / "config.json"
+    if platform == "darwin":
+        return home / "Library" / "Application Support" / "composer" / "config.json"
+    base = Path(env["XDG_CONFIG_HOME"]) if "XDG_CONFIG_HOME" in env else home / ".config"
+    return base / "composer" / "config.json"
+
+
 def current_platform() -> str:
     if os.name == "nt":
         return "win32"

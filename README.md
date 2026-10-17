@@ -5,7 +5,7 @@
 <h1 align="center">pmsec</h1>
 
 <p align="center">
-  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube.
+  Zero-config install-time hardening for npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube / composer.
 </p>
 
 <p align="center">
@@ -44,7 +44,7 @@ The downloaded pmsec payload is pinned to a commit SHA for reproducible rollout.
 verify, `--disable` to remove, and `--doctor --json` to inspect paths and
 writability.
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube`, `--days N`,
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer`, `--days N`,
 `--force`, `--json`.
 
 Bootstrap through registries that already enforce cooldowns:
@@ -109,6 +109,11 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | bundler | `~/.bundle/config` | `BUNDLE_COOLDOWN` | `"1"` | 1-day gem cooldown | bundler >= 4.0.13 |
 | aube | `~/.config/aube/config.toml` | `minimumReleaseAge` | `1440` | 1-day publish cooldown | aube >= 1.0.0 |
 | aube | `~/.config/aube/config.toml` | `paranoid` | `true` | strict-security bundle | aube >= 1.0.0 |
+| composer | `$COMPOSER_HOME/config.json` | `config.minimum-release-age` | `1` (tracks `--days`) | 1-day publish cooldown | current Composer |
+| composer | `$COMPOSER_HOME/config.json` | `config.allow-plugins` | `false` | disable Composer plugins | current Composer |
+| composer | `$COMPOSER_HOME/config.json` | `config.secure-http` | `true` | never allow plaintext HTTP downloads | current Composer |
+| composer | `$COMPOSER_HOME/config.json` | `config.disable-tls` | `false` | keep TLS enforcement enabled | current Composer |
+| composer | `$COMPOSER_HOME/config.json` | `config.audit.abandoned` | `"fail"` | fail audit on abandoned packages | current Composer |
 
 ## Overrides
 
@@ -128,6 +133,7 @@ Relax policy in the project that needs it, not in pmsec:
 | uv | `<project>/pyproject.toml` (`[tool.uv]`) / `uv.toml` |
 | bundler | `<project>/.bundle/config` |
 | aube | `<project>/aube.toml` |
+| composer | `<project>/composer.json` |
 
 Example:
 

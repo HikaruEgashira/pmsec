@@ -25,7 +25,7 @@ npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec --check
 | `pmsec --doctor` | Prints read-only path, ownership, and writability diagnostics. |
 | `pmsec --version` | Prints the version. |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube`, `--days N`,
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer`, `--days N`,
 `--force`, `--json`.
 
 See the root README for the full key table.
