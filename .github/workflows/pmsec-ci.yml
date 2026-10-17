@@ -1,5 +1,6 @@
 name: pmsec ci
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
