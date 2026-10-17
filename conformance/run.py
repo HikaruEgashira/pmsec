@@ -83,15 +83,17 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
     case = json.loads(case_path.read_text())
     home = Path(tempfile.mkdtemp(prefix="pmsec-conf-"))
     try:
+        env = env_for(impl, home)
+        env.update(case.get("env", {}))
         for rel, body in case.get("setup", {}).items():
             target = home / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body)
         for step in case.get("pre", []):
-            subprocess.run(build_cmd(impl, step), env=env_for(impl, home), cwd=REPO, check=False, capture_output=True)
+            subprocess.run(build_cmd(impl, step), env=env, cwd=REPO, check=False, capture_output=True)
         proc = subprocess.run(
             build_cmd(impl, case["args"]),
-            env=env_for(impl, home), cwd=REPO, capture_output=True, text=True,
+            env=env, cwd=REPO, capture_output=True, text=True,
         )
         if proc.returncode != case.get("expected_exit", 0):
             return False, f"exit {proc.returncode} != expected {case.get('expected_exit', 0)}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"

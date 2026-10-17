@@ -55,6 +55,13 @@ path_pnpm() {
   fi
   printf '%s/.config/pnpm/rc' "$home"
 }
+# pnpm >= 11 reads pnpm-specific settings from config.yaml (camelCase) instead
+# of the registry/auth-only rc file. Keep it next to the rc path so custom
+# PMSEC_PNPM_CONFIG_FILE overrides remain self-contained.
+path_pnpm_config_yaml() {
+  if [ -n "${PMSEC_PNPM_CONFIG_YAML:-}" ]; then printf '%s' "$PMSEC_PNPM_CONFIG_YAML"; return; fi
+  printf '%s/config.yaml' "$(dirname -- "$(path_pnpm)")"
+}
 path_uv() {
   local home; home=$(_pmsec_home)
   if [ -n "${UV_CONFIG_FILE:-}" ]; then printf '%s' "$UV_CONFIG_FILE"; return; fi
@@ -428,7 +435,7 @@ tool_key() {
     pnpm)  printf 'minimum-release-age' ;;
     yarn)  printf 'npmMinimalAgeGate' ;;
     bun)   printf 'minimumReleaseAge' ;;
-    cargo) printf 'minimum-release-age' ;;
+    cargo) printf 'global-min-publish-age' ;;
     mise)  printf 'minimum_release_age' ;;
     uv)    printf 'exclude-newer' ;;
     bundler) printf 'BUNDLE_COOLDOWN' ;;
@@ -439,7 +446,7 @@ tool_key() {
 tool_section() {
   case "$1" in
     bun)   printf 'install' ;;
-    cargo) printf 'install' ;;
+    cargo) printf 'registry' ;;
     mise)  printf 'settings' ;;
     *)     printf '' ;;
   esac
@@ -516,6 +523,24 @@ tool_extras() {
   esac
 }
 
+# pnpm >= 11 uses camelCase keys in config.yaml. Keep these in sync with the
+# kebab-case entries above; enable/disable touch both files.
+tool_extras_yaml() {
+  case "$1" in
+    pnpm)
+      printf 'trustPolicy|no-downgrade|trustPolicy: no-downgrade|:||\n'
+      printf 'blockExoticSubdeps|true|blockExoticSubdeps: true|:||\n'
+      printf 'strictDepBuilds|true|strictDepBuilds: true|:||\n'
+      printf 'verifyDepsBeforeRun|error|verifyDepsBeforeRun: error|:||\n'
+      printf 'minimumReleaseAgeStrict|true|minimumReleaseAgeStrict: true|:||\n'
+      printf 'dangerouslyAllowAllBuilds|false|dangerouslyAllowAllBuilds: false|:||\n'
+      printf 'trustLockfile|false|trustLockfile: false|:||\n'
+      printf 'minimumReleaseAgeIgnoreMissingTime|false|minimumReleaseAgeIgnoreMissingTime: false|:||\n'
+      ;;
+    *) ;;
+  esac
+}
+
 # ---------- per-tool: read (configured value + days) ----------
 # Echoes "configured|days" (configured may contain anything, days is integer or
 # empty when unparseable). Return 1 if the key is absent.
@@ -542,11 +567,8 @@ parse_days_dw() {
 # mise additionally accepts months/years.
 parse_days_mise() { parse_days_dw "$1" 1; }
 
-# cargo [registry].global-min-publish-age (cargo >= 1.100) tracks `--days`
-# like the primary key, so it is handled alongside it instead of tool_extras.
-CARGO_PUBLISH_AGE_KEY='global-min-publish-age'
-CARGO_PUBLISH_AGE_SECTION='registry'
-
+# cargo [registry].global-min-publish-age (cargo >= 1.100) uses a quoted
+# human duration such as "7 days" rather than the old "7d" syntax.
 parse_days_cargo_publish_age() {
   local v="$1" n lc
   [[ "$v" =~ ^\"[[:space:]]*([0-9]+)[[:space:]]*([A-Za-z]+)[[:space:]]*\"$ ]] || return 1
@@ -576,10 +598,21 @@ parse_days_uv() {
   return 1
 }
 
+pnpm_uses_yaml() {
+  local v
+  v=$(version_detect pnpm) || return 1
+  set -- $v
+  [ "$1" -ge 11 ]
+}
+
 tool_read() {
   local tool="$1" key sep section path val days bval
   key=$(tool_key "$tool"); sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
   path=$(tool_path "$tool")
+  if [ "$tool" = "pnpm" ] && pnpm_uses_yaml; then
+    key='minimumReleaseAge'; sep=':'; section=''
+    path=$(path_pnpm_config_yaml)
+  fi
   lines_load "$path"
   if ! val=$(lines_read_key "$key" "$sep" "$section"); then
     return 1
@@ -594,7 +627,8 @@ tool_read() {
     bun)
       if [[ "$val" =~ ^[0-9]+$ ]]; then days=$((val / 86400)); else days=""; fi
       ;;
-    yarn|cargo) days=$(parse_days_dw "$val") || days="" ;;
+    yarn) days=$(parse_days_dw "$val") || days="" ;;
+    cargo) days=$(parse_days_cargo_publish_age "$val") || days=$(parse_days_dw "$val") || days="" ;;
     mise) days=$(parse_days_mise "$val") || days="" ;;
     uv) days=$(parse_days_uv "$val") || days="" ;;
     bundler)
@@ -620,7 +654,7 @@ tool_write_value_line() {
     pnpm)  printf '%s=%d' "$key" "$((days * 1440))" ;;
     yarn)  printf '%s: "%dd"' "$key" "$days" ;;
     bun)   printf '%s = %d' "$key" "$((days * 86400))" ;;
-    cargo) printf '%s = "%dd"' "$key" "$days" ;;
+    cargo) printf '%s = "%d days"' "$key" "$days" ;;
     mise)  printf '%s = "%dd"' "$key" "$days" ;;
     uv)    printf '%s = "%d days"' "$key" "$days" ;;
     bundler) printf '%s: "%d"' "$key" "$days" ;;
@@ -628,40 +662,67 @@ tool_write_value_line() {
   esac
 }
 
+_tool_write_one() {
+  local path="$1" key="$2" line="$3" sep="$4" section="$5" tool="$6" yaml="${7:-0}"
+  local ek ev el es esec esafe extras_fn=tool_extras
+  [ "$yaml" = "1" ] && extras_fn=tool_extras_yaml
+  lines_load "$path"
+  lines_set_key "$key" "$line" "$sep" "$section"
+  while IFS='|' read -r ek ev el es esec esafe; do
+    [ -z "$ek" ] && continue
+    lines_set_key "$ek" "$el" "$es" "$esec"
+  done < <("$extras_fn" "$tool")
+  if [ "$tool" = "cargo" ] && [ "$yaml" = "0" ]; then
+    # Drop the pre-2026.10 key: cargo never implemented it.
+    lines_remove_key 'minimum-release-age' '=' 'install' || true
+  fi
+  lines_dump | write_atomic "$path"
+}
+
 tool_write() {
   local tool="$1" days="$2" path key sep section line
   path=$(tool_path "$tool"); key=$(tool_key "$tool")
   sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
   line=$(tool_write_value_line "$tool" "$days")
-  lines_load "$path"
-  lines_set_key "$key" "$line" "$sep" "$section"
-  local ek ev el es esec esafe
-  while IFS='|' read -r ek ev el es esec esafe; do
-    [ -z "$ek" ] && continue
-    lines_set_key "$ek" "$el" "$es" "$esec"
-  done < <(tool_extras "$tool")
-  if [ "$tool" = "cargo" ]; then
-    lines_set_key "$CARGO_PUBLISH_AGE_KEY" "$(printf '%s = "%d days"' "$CARGO_PUBLISH_AGE_KEY" "$days")" "=" "$CARGO_PUBLISH_AGE_SECTION"
+  _tool_write_one "$path" "$key" "$line" "$sep" "$section" "$tool" 0 || return 1
+  if [ "$tool" = "pnpm" ]; then
+    _tool_write_one "$(path_pnpm_config_yaml)" 'minimumReleaseAge' \
+      "minimumReleaseAge: $((days * 1440))" ':' '' "$tool" 1 || return 1
   fi
-  lines_dump | write_atomic "$path"
 }
 
-tool_unset() {
-  local tool="$1" path key sep section removed=0
-  path=$(tool_path "$tool"); key=$(tool_key "$tool")
-  sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
+_tool_unset_one() {
+  local path="$1" tool="$2" yaml="${3:-0}" key sep section removed=0
+  if [ "$yaml" = "1" ]; then
+    key='minimumReleaseAge'; sep=':'; section=''
+  else
+    key=$(tool_key "$tool"); sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
+  fi
   lines_load "$path"
   if lines_remove_key "$key" "$sep" "$section"; then removed=1; fi
-  local ek ev el es esec esafe
+  local ek ev el es esec esafe extras_fn=tool_extras
+  [ "$yaml" = "1" ] && extras_fn=tool_extras_yaml
   while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
     if lines_remove_key "$ek" "$es" "$esec"; then removed=1; fi
-  done < <(tool_extras "$tool")
-  if [ "$tool" = "cargo" ]; then
-    if lines_remove_key "$CARGO_PUBLISH_AGE_KEY" "=" "$CARGO_PUBLISH_AGE_SECTION"; then removed=1; fi
+  done < <("$extras_fn" "$tool")
+  if [ "$tool" = "cargo" ] && [ "$yaml" = "0" ]; then
+    if lines_remove_key 'minimum-release-age' '=' 'install'; then removed=1; fi
   fi
   if [ "$removed" = "1" ]; then
     lines_dump | write_atomic "$path" || return 1
+  fi
+  printf '%d' "$removed"
+}
+
+tool_unset() {
+  local tool="$1" path removed=0 r
+  path=$(tool_path "$tool")
+  r=$(_tool_unset_one "$path" "$tool" 0) || return 1
+  [ "$r" = "1" ] && removed=1
+  if [ "$tool" = "pnpm" ]; then
+    r=$(_tool_unset_one "$(path_pnpm_config_yaml)" "$tool" 1) || return 1
+    [ "$r" = "1" ] && removed=1
   fi
   printf '%d' "$removed"
 }
@@ -676,15 +737,21 @@ tool_unset() {
 # still secure under pnpm >= 11 — surface that instead of a false MISSING.
 tool_read_extras() {
   local tool="$1" path ek ev el es esec esafe cur ok def
-  path=$(tool_path "$tool")
-  lines_load "$path"
-  local pnpm_major=""
+  local pnpm_major="" extras_fn=tool_extras
   if [ "$tool" = "pnpm" ]; then
     if v=$(version_detect pnpm); then
       set -- $v
       pnpm_major="$1"
     fi
+    if [ -n "$pnpm_major" ] && [ "$pnpm_major" -ge 11 ]; then
+      extras_fn=tool_extras_yaml; path=$(path_pnpm_config_yaml)
+    else
+      path=$(tool_path "$tool")
+    fi
+  else
+    path=$(tool_path "$tool")
   fi
+  lines_load "$path"
   while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
     def=0
@@ -701,25 +768,16 @@ tool_read_extras() {
       fi
     else
       cur=""; ok=0
-      if [ "$tool" = "pnpm" ] && [ "$ek" = "block-exotic-subdeps" ] \
+      if [ "$tool" = "pnpm" ] && [ "$ek" = "blockExoticSubdeps" ] \
+         && [ -n "$pnpm_major" ] && [ "$pnpm_major" -ge 11 ]; then
+        ok=1; def=1
+      elif [ "$tool" = "pnpm" ] && [ "$ek" = "block-exotic-subdeps" ] \
          && [ -n "$pnpm_major" ] && [ "$pnpm_major" -ge 11 ]; then
         ok=1; def=1
       fi
     fi
     printf '%s|%s|%s|%s|%s\n' "$ek" "$cur" "$ev" "$ok" "$def"
-  done < <(tool_extras "$tool")
-  if [ "$tool" = "cargo" ]; then
-    local primary want=1 cur_days
-    if primary=$(tool_read cargo) && [ -n "${primary##*|}" ]; then want="${primary##*|}"; fi
-    lines_load "$path"
-    ok=0
-    if cur=$(lines_read_key "$CARGO_PUBLISH_AGE_KEY" "=" "$CARGO_PUBLISH_AGE_SECTION"); then
-      if cur_days=$(parse_days_cargo_publish_age "$cur") && [ "$cur_days" -ge "$want" ]; then ok=1; fi
-    else
-      cur=""
-    fi
-    printf '%s|%s|%s|%s|%s\n' "$CARGO_PUBLISH_AGE_KEY" "$cur" "\"$want days\"" "$ok" 0
-  fi
+  done < <("$extras_fn" "$tool")
 }
 
 # ---------- per-tool: preflight (silently-ignored cooldown warning) ----------
@@ -734,7 +792,7 @@ tool_preflight() {
     mise) min='2026 4 22'; msg='setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' ;;
     uv)   min='0 9 17';    msg='writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' ;;
     bundler) min='4 0 13'; msg='BUNDLE_COOLDOWN is silently ignored. Upgrade bundler (v4.0.13+) to enforce the cooldown.' ;;
-    *) return 0 ;;  # cargo: no min version gate (ships with rustup)
+    cargo) min='1 100 0';  msg='global-min-publish-age is silently ignored. Upgrade cargo to enforce the cooldown.' ;;
   esac
   v=$(version_detect "$tool") || return 0
   set -- $v
@@ -805,6 +863,8 @@ Environment:
                         Intune, Ansible, SCCM, scheduled task, RMM, …) so
                         configs land in the real user's home. Files written
                         as root are chowned back to the home dir's owner.
+  PMSEC_PNPM_CONFIG_FILE Override the pnpm rc config file path.
+  PMSEC_PNPM_CONFIG_YAML Override the pnpm config.yaml path.
   NPM_CONFIG_USERCONFIG Override the npm/pnpm config file path.
   YARN_RC_FILENAME      Override the yarn config file path.
   BUN_CONFIG_FILE       Override the bun config file path.
@@ -923,6 +983,11 @@ cmd_check() {
     if [ -z "$days" ] || [ "$days" -lt "$OPT_DAYS" ]; then failing=$((failing+1)); fi
 
     # Collect extras for this tool into parallel arrays.
+    local row_key; row_key=$(tool_key "$tool")
+    if [ "$tool" = "pnpm" ] && pnpm_uses_yaml; then
+      row_key='minimumReleaseAge'; path=$(path_pnpm_config_yaml)
+    fi
+
     local extras_keys=() extras_cur=() extras_exp=() extras_ok=() extras_def=() ek ec ee eo ed
     while IFS='|' read -r ek ec ee eo ed; do
       [ -z "$ek" ] && continue
@@ -940,7 +1005,7 @@ cmd_check() {
       first=0
       rows_json+=$'    {'
       rows_json+="\"tool\": $(json_str "$tool"), "
-      rows_json+="\"key\": $(json_str "$(tool_key "$tool")"), "
+      rows_json+="\"key\": $(json_str "$row_key"), "
       rows_json+="\"path\": $(json_str "$path"), "
       rows_json+="\"configured\": $cfg_json, "
       rows_json+="\"days\": $days_json, "
@@ -960,7 +1025,7 @@ cmd_check() {
       local status display
       if [ -z "$val" ]; then display="(unset)"; else display="$val"; fi
       status=$(status_for "$days" "$OPT_DAYS")
-      printf '%s %s %s = %s  [%s]\n' "$status" "$(pad4 "$tool")" "$(tool_key "$tool")" "$display" "$path"
+      printf '%s %s %s = %s  [%s]\n' "$status" "$(pad4 "$tool")" "$row_key" "$display" "$path"
       if [ -n "$warn" ]; then printf '       \xe2\x9a\xa0 %s\n' "$warn"; fi
       local ei ex_status ex_display
       for ((ei=0; ei<${#extras_keys[@]}; ei++)); do

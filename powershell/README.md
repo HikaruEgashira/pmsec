@@ -93,6 +93,8 @@ identify the failing step.
 | --- | --- |
 | `PMSEC_HOME` | Home dir to operate on. |
 | `PMSEC_NO_WSL` | Skip WSL when set to `1`. |
+| `PMSEC_PNPM_CONFIG_FILE` | pnpm rc config path. |
+| `PMSEC_PNPM_CONFIG_YAML` | pnpm `config.yaml` path. |
 | `NPM_CONFIG_USERCONFIG` | npm/pnpm config path. |
 | `YARN_RC_FILENAME` | yarn config path. |
 | `BUN_CONFIG_FILE` | bun config path. |

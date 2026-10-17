@@ -91,9 +91,10 @@ T() {
 t_enable_writes_all() {
   local home; home=$(setup_home)
   run_pmsec "$home" -- >/dev/null
-  local npmrc pnpmrc bunfig yarnrc uvtoml mise bundle
+  local npmrc pnpmrc pnmyaml bunfig yarnrc uvtoml mise bundle
   npmrc=$(cat "$home/.npmrc")
   pnpmrc=$(cat "$home/.config/pnpm/rc")
+  pnmyaml=$(cat "$home/.config/pnpm/config.yaml")
   bunfig=$(cat "$home/.bunfig.toml")
   yarnrc=$(cat "$home/.yarnrc.yml")
   uvtoml=$(cat "$home/.config/uv/uv.toml")
@@ -139,6 +140,15 @@ t_enable_writes_all() {
   assert_match "pnpm dangerously-allow-all-builds extra" '^dangerously-allow-all-builds=false$' "$pnpmrc" || return
   assert_match "pnpm trust-lockfile extra" '^trust-lockfile=false$' "$pnpmrc" || return
   assert_match "pnpm minimum-release-age-ignore-missing-time extra" '^minimum-release-age-ignore-missing-time=false$' "$pnpmrc" || return
+  assert_match "pnpm yaml cooldown" '^minimumReleaseAge: 1440$' "$pnmyaml" || return
+  assert_match "pnpm yaml trustPolicy" '^trustPolicy: no-downgrade$' "$pnmyaml" || return
+  assert_match "pnpm yaml blockExoticSubdeps" '^blockExoticSubdeps: true$' "$pnmyaml" || return
+  assert_match "pnpm yaml strictDepBuilds" '^strictDepBuilds: true$' "$pnmyaml" || return
+  assert_match "pnpm yaml verifyDepsBeforeRun" '^verifyDepsBeforeRun: error$' "$pnmyaml" || return
+  assert_match "pnpm yaml minimumReleaseAgeStrict" '^minimumReleaseAgeStrict: true$' "$pnmyaml" || return
+  assert_match "pnpm yaml dangerouslyAllowAllBuilds" '^dangerouslyAllowAllBuilds: false$' "$pnmyaml" || return
+  assert_match "pnpm yaml trustLockfile" '^trustLockfile: false$' "$pnmyaml" || return
+  assert_match "pnpm yaml minimumReleaseAgeIgnoreMissingTime" '^minimumReleaseAgeIgnoreMissingTime: false$' "$pnmyaml" || return
   assert_match "yarn enableHardenedMode extra" '^enableHardenedMode: true$' "$yarnrc" || return
   assert_match "yarn enableScripts extra" '^enableScripts: false$' "$yarnrc" || return
   assert_match "yarn approvedGitRepositories extra" '^approvedGitRepositories: \[\]$' "$yarnrc" || return
@@ -184,6 +194,7 @@ t_disable_preserves_unrelated_keys() {
   printf 'registry=https://r/\nmin-release-age=3\n' > "$home/.npmrc"
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=4320\nstore-dir=/tmp/pstore\n' > "$home/.config/pnpm/rc"
+  printf 'minimumReleaseAge: 4320\nstoreDir: /tmp/pstore\n' > "$home/.config/pnpm/config.yaml"
   mkdir -p "$home/.config/uv"
   printf 'exclude-newer = "3 days"\nlink-mode = "copy"\n' > "$home/.config/uv/uv.toml"
   printf '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
@@ -193,6 +204,8 @@ t_disable_preserves_unrelated_keys() {
 ' "$home/.npmrc" || { rm -rf "$home"; return 1; }
   assert_file_eq "pnpm rc" 'store-dir=/tmp/pstore
 ' "$home/.config/pnpm/rc" || { rm -rf "$home"; return 1; }
+  assert_file_eq "pnpm config.yaml" 'storeDir: /tmp/pstore
+' "$home/.config/pnpm/config.yaml" || { rm -rf "$home"; return 1; }
   assert_file_eq "uv.toml" 'link-mode = "copy"
 ' "$home/.config/uv/uv.toml" || { rm -rf "$home"; return 1; }
   assert_file_eq "bunfig" '[install]
@@ -371,6 +384,7 @@ t_days_overrides_bundle_cooldown() {
   run_pmsec "$home" -- --days 7 >/dev/null
   assert_match "npm cooldown 7" '^min-release-age=7$' "$(cat "$home/.npmrc")" || { rm -rf "$home"; return 1; }
   assert_match "pnpm cooldown 10080m" '^minimum-release-age=10080$' "$(cat "$home/.config/pnpm/rc")" || { rm -rf "$home"; return 1; }
+  assert_match "pnpm yaml cooldown 10080m" '^minimumReleaseAge: 10080$' "$(cat "$home/.config/pnpm/config.yaml")" || { rm -rf "$home"; return 1; }
   assert_match "uv 7 days" 'exclude-newer = "7 days"' "$(cat "$home/.config/uv/uv.toml")" || { rm -rf "$home"; return 1; }
   assert_match "bun 7d secs" 'minimumReleaseAge = 604800' "$(cat "$home/.bunfig.toml")" || { rm -rf "$home"; return 1; }
   assert_match "aube 7d mins" 'minimumReleaseAge = 10080' "$(cat "$home/.config/aube/config.toml")" || { rm -rf "$home"; return 1; }
@@ -513,14 +527,29 @@ T "--version prints PMSEC_VERSION" t_version_flag
 t_pnpm_11_default_enforced() {
   local home; home=$(setup_home)
   mkdir -p "$home/.config/pnpm"
-  printf 'minimum-release-age=4320\n' > "$home/.config/pnpm/rc"
+  printf 'minimumReleaseAge: 4320\n' > "$home/.config/pnpm/config.yaml"
   local out rc
   out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=11.0.0 -- --check --json --tool pnpm 2>/dev/null); rc=$?
   rm -rf -- "$home"
-  # block-exotic-subdeps should be reported as ok+defaultEnforced; trust-policy still missing.
-  assert_match "block-exotic-subdeps default-enforced" '"key": "block-exotic-subdeps", "configured": null,[^}]*"ok": true,[^}]*"defaultEnforced": true' "$out" || return 1
-  assert_match "trust-policy still failing" '"key": "trust-policy", "configured": null,[^}]*"ok": false' "$out" || return 1
-  assert_eq "exit code (trust-policy still failing)" "1" "$rc"
+  # pnpm 11 reads config.yaml, not the legacy rc file.
+  assert_match "yaml path" '"path": ".*/config.yaml"' "$out" || return 1
+  assert_match "yaml key" '"key": "minimumReleaseAge"' "$out" || return 1
+  # blockExoticSubdeps should be reported as ok+defaultEnforced; trustPolicy still missing.
+  assert_match "blockExoticSubdeps default-enforced" '"key": "blockExoticSubdeps", "configured": null,[^}]*"ok": true,[^}]*"defaultEnforced": true' "$out" || return 1
+  assert_match "trustPolicy still failing" '"key": "trustPolicy", "configured": null,[^}]*"ok": false' "$out" || return 1
+  assert_eq "exit code (trustPolicy still failing)" "1" "$rc"
+}
+
+t_pnpm_11_ignores_legacy_rc() {
+  local home; home=$(setup_home)
+  mkdir -p "$home/.config/pnpm"
+  printf 'minimum-release-age=10080\ntrust-policy=no-downgrade\n' > "$home/.config/pnpm/rc"
+  local out rc
+  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=11.28.5 -- --check --json --tool pnpm 2>/dev/null); rc=$?
+  rm -rf -- "$home"
+  assert_eq "legacy rc-only check fails" "1" "$rc" || return 1
+  assert_match "legacy rc value ignored" '"configured": null' "$out" || return 1
+  assert_match "yaml path" '"path": ".*/config.yaml"' "$out"
 }
 
 t_pnpm_pre11_no_default_enforcement() {
@@ -530,13 +559,15 @@ t_pnpm_pre11_no_default_enforcement() {
   local out
   out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=10.26.0 -- --check --json --tool pnpm 2>/dev/null)
   rm -rf -- "$home"
-  # No defaultEnforced field, ok must be false.
+  # pnpm 10 still reads rc. No defaultEnforced field, ok must be false.
+  assert_match "rc path" '"path": ".*/rc"' "$out" || return 1
   ! printf '%s' "$out" | grep -q 'defaultEnforced' || { LAST_FAIL="pnpm 10 must not set defaultEnforced"; return 1; }
   assert_match "block-exotic-subdeps not ok under pnpm 10" '"key": "block-exotic-subdeps", "configured": null, "expected": "true", "ok": false' "$out"
 }
 
 T "hardening extras roundtrip (check / enable / disable)" t_hardening_extras_roundtrip
-T "pnpm 11 default-enforces missing block-exotic-subdeps" t_pnpm_11_default_enforced
+T "pnpm 11 reads config.yaml and default-enforces missing blockExoticSubdeps" t_pnpm_11_default_enforced
+T "pnpm 11 ignores legacy rc values" t_pnpm_11_ignores_legacy_rc
 T "pnpm <11 still flags missing block-exotic-subdeps" t_pnpm_pre11_no_default_enforcement
 
 # PMSEC_HOME redirects writes off of $HOME so root-context orchestrators
@@ -637,17 +668,19 @@ t_cargo_global_min_publish_age() {
   local ch="$home/cargo" out rc
   run_pmsec "$home" CARGO_HOME="$ch" -- --tool cargo --days 7 >/dev/null
   out=$(cat "$ch/config.toml")
-  assert_match "install cooldown" '^minimum-release-age = "7d"$' "$out" || { rm -rf -- "$home"; return 1; }
   assert_match "registry publish age" '^global-min-publish-age = "7 days"$' "$out" || { rm -rf -- "$home"; return 1; }
+  ! printf '%s' "$out" | grep -q 'minimum-release-age' || { LAST_FAIL="legacy install key still written"; rm -rf -- "$home"; return 1; }
   out=$(run_pmsec "$home" CARGO_HOME="$ch" -- --check --tool cargo --days 7 --json); rc=$?
   assert_eq "check passes" "0" "$rc" || { rm -rf -- "$home"; return 1; }
-  assert_match "extra row" '"key": "global-min-publish-age", "configured": "\\"7 days\\"", "expected": "\\"7 days\\"", "ok": true' "$out" || { rm -rf -- "$home"; return 1; }
-  printf '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n' > "$ch/config.toml"
+  assert_match "primary row" '"key": "global-min-publish-age", "path": "[^"]*config.toml", "configured": "\\"7 days\\"", "days": 7' "$out" || { rm -rf -- "$home"; return 1; }
+  assert_match "no extra rows" '"extras": \[\]' "$out" || { rm -rf -- "$home"; return 1; }
+  printf '[registry]\nglobal-min-publish-age = "1 days"\n' > "$ch/config.toml"
   run_pmsec "$home" CARGO_HOME="$ch" -- --check --tool cargo --days 7 >/dev/null 2>&1; rc=$?
   assert_eq "weaker publish age fails check" "1" "$rc" || { rm -rf -- "$home"; return 1; }
-  printf '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "2 weeks"\n' > "$ch/config.toml"
+  printf '[registry]\nglobal-min-publish-age = "2 weeks"\n' > "$ch/config.toml"
   run_pmsec "$home" CARGO_HOME="$ch" -- --check --tool cargo --days 7 >/dev/null 2>&1; rc=$?
   assert_eq "stricter publish age passes check" "0" "$rc" || { rm -rf -- "$home"; return 1; }
+  printf '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n' > "$ch/config.toml"
   run_pmsec "$home" CARGO_HOME="$ch" -- --disable --tool cargo >/dev/null
   assert_file_eq "disable removes both" '[install]
 [registry]

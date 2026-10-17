@@ -68,23 +68,22 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | npm | `~/.npmrc` | `dangerously-allow-all-scripts` | `false` | set user-level default for the install-script bypass escape hatch to disabled; project config, env vars, or CLI flags can still override | npm >= 11.16.0 |
 | npm | `~/.npmrc` | `allow-scripts-pin` | `true` | pin script approvals to exact versions so `npm install-scripts approve` cannot be satisfied by a newer, potentially tampered release | npm >= 11.15.0 |
 | npm | `~/.npmrc` | [`ignore-extension`](https://docs.npmjs.com/cli/v12/using-npm/config#ignore-extension) | `true` | never import or execute a repo-supplied `.npm-extension.mjs`/`.cjs` during install — closes a root-owned code-execution and dependency-rewrite path that install-script policy does not cover | npm >= 12.0.0 |
-| pnpm | `~/.config/pnpm/rc` | `minimum-release-age` | `1440` | 1-day publish cooldown | pnpm >= 10.6.0 |
-| pnpm | `~/.config/pnpm/rc` | `trust-policy` | `no-downgrade` | reject weaker provenance than prior install | pnpm >= 10.21.0 |
-| pnpm | `~/.config/pnpm/rc` | `block-exotic-subdeps` | `true` | no transitive git/tarball deps | pnpm >= 10.26.0; default >= 11 |
-| pnpm | `~/.config/pnpm/rc` | `strict-dep-builds` | `true` | unreviewed lifecycle scripts fail install | pnpm >= 10.3.0 |
-| pnpm | `~/.config/pnpm/rc` | `verify-deps-before-run` | `error` | abort `pnpm run` if lockfile is out of sync | pnpm >= 10.12.0 |
-| pnpm | `~/.config/pnpm/rc` | `minimum-release-age-strict` | `true` | treat minimum-release-age violations as hard errors | pnpm >= 10.12.0 |
-| pnpm | `~/.config/pnpm/rc` | `dangerously-allow-all-builds` | `false` | close the all-builds escape hatch so that `strict-dep-builds=true` cannot be silently bypassed at the user level | pnpm >= 10.9.0 |
-| pnpm | `~/.config/pnpm/rc` | `trust-lockfile` | `false` | re-run release-age and trust-policy gates on every install even against a committed lockfile, closing the lockfile-poisoning bypass | pnpm >= 11.3.0 |
-| pnpm | `~/.config/pnpm/rc` | `minimum-release-age-ignore-missing-time` | `false` | block packages whose registry metadata omits a publish timestamp, preventing attackers from bypassing the age gate by stripping the `time` field | pnpm >= 10.6.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `minimum-release-age` / `minimumReleaseAge` | `1440` | 1-day publish cooldown | pnpm >= 10.6.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `trust-policy` / `trustPolicy` | `no-downgrade` | reject weaker provenance than prior install | pnpm >= 10.21.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `block-exotic-subdeps` / `blockExoticSubdeps` | `true` | no transitive git/tarball deps | pnpm >= 10.26.0; default >= 11 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `strict-dep-builds` / `strictDepBuilds` | `true` | unreviewed lifecycle scripts fail install | pnpm >= 10.3.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `verify-deps-before-run` / `verifyDepsBeforeRun` | `error` | abort `pnpm run` if lockfile is out of sync | pnpm >= 10.12.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `minimum-release-age-strict` / `minimumReleaseAgeStrict` | `true` | treat minimum-release-age violations as hard errors | pnpm >= 10.12.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `dangerously-allow-all-builds` / `dangerouslyAllowAllBuilds` | `false` | close the all-builds escape hatch so that `strict-dep-builds=true` cannot be silently bypassed at the user level | pnpm >= 10.9.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `trust-lockfile` / `trustLockfile` | `false` | re-run release-age and trust-policy gates on every install even against a committed lockfile, closing the lockfile-poisoning bypass | pnpm >= 11.3.0 |
+| pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `minimum-release-age-ignore-missing-time` / `minimumReleaseAgeIgnoreMissingTime` | `false` | block packages whose registry metadata omits a publish timestamp, preventing attackers from bypassing the age gate by stripping the `time` field | pnpm >= 10.6.0 |
 | yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `"1d"` | 1-day publish cooldown | yarn >= 4.10.0 |
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |
 | yarn | `~/.yarnrc.yml` | `approvedGitRepositories` | `[]` | block all git-sourced dependencies | yarn >= 4.14.0 |
 | bun | `~/.bunfig.toml` | `[install].minimumReleaseAge` | `86400` | 1-day publish cooldown | bun >= 1.3.0 |
 | bun | `~/.bunfig.toml` | `[install].ignoreScripts` | `true` | disable lifecycle scripts | bun >= 1.3.0 |
-| cargo | `$CARGO_HOME/config.toml` | `[install].minimum-release-age` | `"1d"` | 1-day publish cooldown | cargo >= 1.94.0 |
-| cargo | `$CARGO_HOME/config.toml` | [`[registry].global-min-publish-age`](https://doc.rust-lang.org/nightly/cargo/reference/config.html#registryglobal-min-publish-age) | `"1 days"` (tracks `--days`) | resolver ignores crate versions published within the cooldown unless already in `Cargo.lock` | cargo >= 1.100.0 |
+| cargo | `$CARGO_HOME/config.toml` | [`[registry].global-min-publish-age`](https://doc.rust-lang.org/nightly/cargo/reference/config.html#registryglobal-min-publish-age) | `"1 days"` (tracks `--days`) | 1-day publish cooldown; resolver ignores crate versions published within it unless already in `Cargo.lock` | cargo >= 1.100.0 |
 | mise | `~/.config/mise/config.toml` | `[settings].minimum_release_age` | `"1d"` | 1-day release cooldown | mise >= 2026.4.22 |
 | mise | `~/.config/mise/config.toml` | `[settings].paranoid` | `true` | always re-verify artifacts | current mise |
 | mise | `~/.config/mise/config.toml` | `[settings].gpg_verify` | `true` | require GPG when available | current mise |
@@ -109,6 +108,9 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | bundler | `~/.bundle/config` | `BUNDLE_COOLDOWN` | `"1"` | 1-day gem cooldown | bundler >= 4.0.13 |
 | aube | `~/.config/aube/config.toml` | `minimumReleaseAge` | `1440` | 1-day publish cooldown | aube >= 1.0.0 |
 | aube | `~/.config/aube/config.toml` | `paranoid` | `true` | strict-security bundle | aube >= 1.0.0 |
+
+For pnpm, pmsec writes both files so the same bundle works on pnpm 10 and 11+.
+`--check` reads the YAML file when pnpm >= 11 and the legacy rc file otherwise.
 
 ## Overrides
 

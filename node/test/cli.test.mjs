@@ -56,6 +56,16 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(pnpmrc, /^dangerously-allow-all-builds=false$/m);
   assert.match(pnpmrc, /^trust-lockfile=false$/m);
   assert.match(pnpmrc, /^minimum-release-age-ignore-missing-time=false$/m);
+  const pnpmYaml = await readFile(join(home, ".config", "pnpm", "config.yaml"), "utf8");
+  assert.match(pnpmYaml, /^minimumReleaseAge: 1440$/m);
+  assert.match(pnpmYaml, /^trustPolicy: no-downgrade$/m);
+  assert.match(pnpmYaml, /^blockExoticSubdeps: true$/m);
+  assert.match(pnpmYaml, /^strictDepBuilds: true$/m);
+  assert.match(pnpmYaml, /^verifyDepsBeforeRun: error$/m);
+  assert.match(pnpmYaml, /^minimumReleaseAgeStrict: true$/m);
+  assert.match(pnpmYaml, /^dangerouslyAllowAllBuilds: false$/m);
+  assert.match(pnpmYaml, /^trustLockfile: false$/m);
+  assert.match(pnpmYaml, /^minimumReleaseAgeIgnoreMissingTime: false$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "1 days"$/m);
   assert.match(uvtoml, /^index-strategy = "first-index"$/m);
@@ -118,6 +128,7 @@ test("--disable preserves unrelated keys per file", async () => {
   await writeFile(join(home, ".npmrc"), "registry=https://r/\nmin-release-age=3\n");
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=4320\nstore-dir=/tmp/pstore\n");
+  await writeFile(join(home, ".config", "pnpm", "config.yaml"), "minimumReleaseAge: 4320\nstoreDir: /tmp/pstore\n");
   await mkdir(join(home, ".config", "uv"), { recursive: true });
   await writeFile(join(home, ".config", "uv", "uv.toml"), 'exclude-newer = "3 days"\nlink-mode = "copy"\n');
   await writeFile(join(home, ".bunfig.toml"), "[install]\nminimumReleaseAge = 259200\nregistry = \"https://x/\"\n");
@@ -125,6 +136,7 @@ test("--disable preserves unrelated keys per file", async () => {
   await runCli(["--disable"], home);
   assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://r/\n");
   assert.equal(await readFile(join(home, ".config", "pnpm", "rc"), "utf8"), "store-dir=/tmp/pstore\n");
+  assert.equal(await readFile(join(home, ".config", "pnpm", "config.yaml"), "utf8"), "storeDir: /tmp/pstore\n");
   assert.equal(await readFile(join(home, ".config", "uv", "uv.toml"), "utf8"), 'link-mode = "copy"\n');
   assert.equal(await readFile(join(home, ".bunfig.toml"), "utf8"), "[install]\nregistry = \"https://x/\"\n");
   assert.equal(await readFile(join(home, ".yarnrc.yml"), "utf8"), "npmRegistryServer: \"https://r/\"\n");
@@ -330,22 +342,36 @@ test("hardening extras: --check fails when extras missing, default enable fixes 
   assert.doesNotMatch(after2, /minimum-release-age/);
 });
 
-test("pnpm 11 treats missing block-exotic-subdeps as default-enforced (ok=true)", async () => {
+test("pnpm 11 reads config.yaml and treats missing blockExoticSubdeps as default-enforced", async () => {
   const home = await setupHome();
-  // Cooldown present, but extras lines absent. Under pnpm 11 the runtime still
-  // blocks exotic subdeps by default, so check must report it as OK rather
-  // than MISSING (trust-policy stays MISSING — no default change there).
+  // Cooldown present in YAML, but extras lines absent. Under pnpm 11 the
+  // runtime still blocks exotic subdeps by default, so check must report it as
+  // OK rather than MISSING (trustPolicy stays MISSING — no default change).
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
-  await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=4320\n");
+  await writeFile(join(home, ".config", "pnpm", "config.yaml"), "minimumReleaseAge: 4320\n");
   const { code, out } = await runCli(["--check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "11.0.0" });
   const data = JSON.parse(out);
-  const beSub = data.rows[0].extras.find(e => e.key === "block-exotic-subdeps");
-  const trust = data.rows[0].extras.find(e => e.key === "trust-policy");
+  assert.equal(data.rows[0].key, "minimumReleaseAge");
+  assert.equal(data.rows[0].path, join(home, ".config", "pnpm", "config.yaml"));
+  assert.equal(data.rows[0].days, 3);
+  const beSub = data.rows[0].extras.find(e => e.key === "blockExoticSubdeps");
+  const trust = data.rows[0].extras.find(e => e.key === "trustPolicy");
   assert.equal(beSub.ok, true);
   assert.equal(beSub.defaultEnforced, true);
   assert.equal(beSub.configured, null);
   assert.equal(trust.ok, false);
-  assert.equal(code, 1, "trust-policy still missing — overall check fails");
+  assert.equal(code, 1, "trustPolicy still missing — overall check fails");
+});
+
+test("pnpm 11 check ignores values that only exist in the legacy rc file", async () => {
+  const home = await setupHome();
+  await mkdir(join(home, ".config", "pnpm"), { recursive: true });
+  await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=10080\ntrust-policy=no-downgrade\n");
+  const { code, out } = await runCli(["--check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "11.28.5" });
+  const data = JSON.parse(out);
+  assert.equal(code, 1);
+  assert.equal(data.rows[0].configured, null);
+  assert.equal(data.rows[0].path, join(home, ".config", "pnpm", "config.yaml"));
 });
 
 test("pnpm <11 still flags missing block-exotic-subdeps as STALE", async () => {
@@ -371,6 +397,8 @@ test("--days N overrides bundle cooldown for enable and check", async () => {
   // pnpm uses minutes: 7 * 1440 = 10080, in its own rc file.
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
   assert.match(pnpmrc, /^minimum-release-age=10080$/m);
+  const pnpmYaml = await readFile(join(home, ".config", "pnpm", "config.yaml"), "utf8");
+  assert.match(pnpmYaml, /^minimumReleaseAge: 10080$/m);
   // aube uses minutes: 7 * 1440 = 10080
   const aubetoml = await readFile(join(home, ".config", "aube", "config.toml"), "utf8");
   assert.match(aubetoml, /^minimumReleaseAge = 10080$/m);
@@ -466,18 +494,22 @@ test("cargo enable writes registry.global-min-publish-age tracking --days", asyn
   const env = { CARGO_HOME: cargoHome };
   await runCli(["--tool", "cargo", "--days", "7"], home, "linux", env);
   const cfg = await readFile(join(cargoHome, "config.toml"), "utf8");
-  assert.match(cfg, /\[install\]\nminimum-release-age = "7d"/);
-  assert.match(cfg, /\[registry\]\nglobal-min-publish-age = "7 days"/);
+  assert.match(cfg, /^\[registry\]\nglobal-min-publish-age = "7 days"$/m);
+  assert.doesNotMatch(cfg, /minimum-release-age/);
   let r = await runCli(["--check", "--tool", "cargo", "--days", "7", "--json"], home, "linux", env);
   assert.equal(r.code, 0);
-  assert.deepEqual(JSON.parse(r.out).rows[0].extras,
-    [{ key: "global-min-publish-age", configured: '"7 days"', expected: '"7 days"', ok: true }]);
-  await writeFile(join(cargoHome, "config.toml"), '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n');
+  const row = JSON.parse(r.out).rows[0];
+  assert.equal(row.key, "global-min-publish-age");
+  assert.equal(row.configured, '"7 days"');
+  assert.equal(row.days, 7);
+  assert.deepEqual(row.extras, []);
+  await writeFile(join(cargoHome, "config.toml"), '[registry]\nglobal-min-publish-age = "1 days"\n');
   r = await runCli(["--check", "--tool", "cargo", "--days", "7"], home, "linux", env);
   assert.equal(r.code, 1);
-  await writeFile(join(cargoHome, "config.toml"), '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "2 weeks"\n');
+  await writeFile(join(cargoHome, "config.toml"), '[registry]\nglobal-min-publish-age = "2 weeks"\n');
   r = await runCli(["--check", "--tool", "cargo", "--days", "7"], home, "linux", env);
   assert.equal(r.code, 0);
+  await writeFile(join(cargoHome, "config.toml"), '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n');
   await runCli(["--disable", "--tool", "cargo"], home, "linux", env);
   assert.equal(await readFile(join(cargoHome, "config.toml"), "utf8"), "[install]\n[registry]\n");
 });

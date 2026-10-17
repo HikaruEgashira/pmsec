@@ -1,0 +1,28 @@
+{
+  "env": { "PMSEC_PNPM_VERSION": "11.28.5" },
+  "setup": {
+    ".config/pnpm/rc": "minimum-release-age=10080\ntrust-policy=no-downgrade\n"
+  },
+  "args": ["--tool", "pnpm", "--check", "--json"],
+  "expected_exit": 1,
+  "expected_json": {
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "pnpm", "key": "minimumReleaseAge", "path": "<HOME>/.config/pnpm/config.yaml",
+        "configured": null, "days": null, "warn": null,
+        "extras": [
+          {"key": "trustPolicy", "configured": null, "expected": "no-downgrade", "ok": false},
+          {"key": "blockExoticSubdeps", "configured": null, "expected": "true", "ok": true, "defaultEnforced": true},
+          {"key": "strictDepBuilds", "configured": null, "expected": "true", "ok": false},
+          {"key": "verifyDepsBeforeRun", "configured": null, "expected": "error", "ok": false},
+          {"key": "minimumReleaseAgeStrict", "configured": null, "expected": "true", "ok": false},
+          {"key": "dangerouslyAllowAllBuilds", "configured": null, "expected": "false", "ok": false},
+          {"key": "trustLockfile", "configured": null, "expected": "false", "ok": false},
+          {"key": "minimumReleaseAgeIgnoreMissingTime", "configured": null, "expected": "false", "ok": false}
+        ]
+      }
+    ],
+    "ok": false
+  }
+}

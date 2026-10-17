@@ -99,7 +99,7 @@ async function gatherStatus(targets, ctx) {
   return Promise.all(targets.map(async t => {
     const r = await t.read(ctx);
     return {
-      tool: t.name, key: t.key, path: r.path,
+      tool: t.name, key: r.key ?? t.key, path: r.path,
       configured: r.configured, days: r.days,
       extras: r.extras ?? [],
       warn: preflightWarn(t, ctx)
