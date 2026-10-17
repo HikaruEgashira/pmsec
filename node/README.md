@@ -25,7 +25,7 @@ uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pms
 | `pmsec --doctor` | Prints read-only path, ownership, and writability diagnostics. |
 | `pmsec --version` | Prints the version. |
 
-Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube`, `--days N`,
+Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer`, `--days N`,
 `--force`, `--json`.
 
 Write failures include the target path and ownership hint. pmsec never escalates

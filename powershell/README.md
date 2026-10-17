@@ -100,6 +100,7 @@ identify the failing step.
 | `MISE_GLOBAL_CONFIG_FILE` | mise config path. |
 | `UV_CONFIG_FILE` | uv config path. |
 | `AUBE_CONFIG_FILE` | aube config path. |
+| `COMPOSER_HOME` | Composer home; writes `$COMPOSER_HOME\config.json`. |
 
 ## Tests
 

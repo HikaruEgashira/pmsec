@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # pmsec — zero-config install-time supply-chain hardening for
-# npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube. `enable` writes the cooldown
+# npm / pnpm / yarn / bun / cargo / mise / uv / bundler / aube / composer. `enable` writes the cooldown
 # plus every safe-by-default key the tool exposes (audit-level, trust-policy,
 # hardened mode, attestation re-verification, ...). `--days N` overrides the
 # default cooldown.
@@ -24,7 +24,7 @@ $script:PmsecVersion = '2026.10.1'
 # Default cooldown for the hardening bundle. Override per-invocation with
 # `--days N`; the default tracks the safest value we'd recommend.
 $script:BundleDays = 1
-$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler','aube')
+$script:Tools = @('npm','pnpm','yarn','bun','cargo','mise','uv','bundler','aube','composer')
 
 # ---------- scope / platform / paths ----------
 
@@ -126,6 +126,19 @@ function Get-AubePath {
     return (PathJoin $base 'aube' 'config.toml')
   }
   return (PathJoin (Get-PmsecHome) '.config' 'aube' 'config.toml')
+}
+# Composer keeps its global config in $COMPOSER_HOME/config.json. The default
+# follows platform conventions (XDG on Unix, Application Support on macOS,
+# APPDATA on Windows), matching Composer's own resolution.
+function Get-ComposerPath {
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    if ($env:COMPOSER_HOME) { return (PathJoin $env:COMPOSER_HOME 'config.json') }
+    $base = if ($env:APPDATA) { $env:APPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Roaming' }
+    return (PathJoin $base 'Composer' 'config.json')
+  }
+  if ($env:COMPOSER_HOME) { return (PathJoin $env:COMPOSER_HOME 'config.json') }
+  # WSL scopes use the Linux default; the Windows env override does not apply.
+  return (PathJoin (Get-PmsecHome) '.config' 'composer' 'config.json')
 }
 
 # ---------- scope discovery ----------
@@ -320,6 +333,250 @@ function LinesRemoveKey([string]$Key, [string]$Sep = '=', [string]$Section = '')
   return $true
 }
 
+# ---------- minimal JSON object editor ----------
+# Composer stores its global config as JSON. Keep unrelated keys in place by
+# editing the pretty-printed object line by line instead of round-tripping the
+# whole document (and so the bash/node/python ports produce the same bytes).
+
+function JsonScanDepth([string]$Line, [int]$Depth) {
+  $inString = $false; $escaped = $false
+  foreach ($ch in $Line.ToCharArray()) {
+    if ($inString) {
+      if ($escaped) { $escaped = $false }
+      elseif ($ch -eq '\') { $escaped = $true }
+      elseif ($ch -eq '"') { $inString = $false }
+    } elseif ($ch -eq '"') { $inString = $true }
+    elseif ($ch -eq '{') { $Depth++ }
+    elseif ($ch -eq '}') { $Depth-- }
+  }
+  return $Depth
+}
+
+function JsonNormalizeLines {
+  $out = [System.Collections.ArrayList]::new()
+  foreach ($line in $script:LinesBuf) {
+    $current = ''; $inString = $false; $escaped = $false
+    $text = [string]$line
+    for ($i = 0; $i -lt $text.Length; $i++) {
+      $ch = $text[$i]
+      if ($inString) {
+        $current += [string]$ch
+        if ($escaped) { $escaped = $false }
+        elseif ($ch -eq '\') { $escaped = $true }
+        elseif ($ch -eq '"') { $inString = $false }
+        continue
+      }
+      if ($ch -eq '"') { $inString = $true; $current += [string]$ch }
+      elseif ($ch -eq '{' -or $ch -eq ',') {
+        $current += [string]$ch
+        if ($text.Substring($i + 1).Trim() -ne '') { [void]$out.Add($current); $current = '' }
+      } elseif ($ch -eq '}') {
+        if ($current.Trim() -ne '') { [void]$out.Add($current); $current = '' }
+        $current += [string]$ch
+      } else { $current += [string]$ch }
+    }
+    if ($current.Trim() -ne '' -or $out.Count -eq 0) { [void]$out.Add($current) }
+  }
+  $script:LinesBuf = $out
+}
+
+function JsonDepthMaps {
+  JsonNormalizeLines
+  $script:JsonStart = New-Object System.Collections.Generic.List[int]
+  $script:JsonEnd = New-Object System.Collections.Generic.List[int]
+  $depth = 0
+  foreach ($line in $script:LinesBuf) {
+    $script:JsonStart.Add($depth)
+    $depth = JsonScanDepth ([string]$line) $depth
+    $script:JsonEnd.Add($depth)
+  }
+}
+
+function JsonRootRange {
+  $n = $script:LinesBuf.Count
+  $open = -1
+  for ($i = 0; $i -lt $n; $i++) {
+    if (([string]$script:LinesBuf[$i]).Contains('{')) { $open = $i; break }
+  }
+  if ($open -lt 0) { return $null }
+  $base = $script:JsonStart[$open]
+  $close = -1
+  if ($script:JsonEnd[$open] -eq $base) {
+    $close = $open
+  } else {
+    for ($i = $open + 1; $i -lt $n; $i++) {
+      if ($script:JsonEnd[$i] -eq $base) { $close = $i; break }
+    }
+  }
+  if ($close -lt 0) { return $null }
+  return @{ Open = $open; Close = $close; Start = $open + 1; End = $close; Depth = $base + 1 }
+}
+
+function JsonObjectRange([string[]]$Path) {
+  JsonDepthMaps
+  $current = JsonRootRange
+  if ($null -eq $current) { return $null }
+  if ($null -eq $Path) { $Path = @() }
+  foreach ($key in $Path) {
+    $escaped = [regex]::Escape($key)
+    $idx = -1
+    for ($i = $current.Start; $i -lt $current.End; $i++) {
+      if ($script:JsonStart[$i] -ne $current.Depth) { continue }
+      if (([string]$script:LinesBuf[$i]) -match ('^\s*"' + $escaped + '"\s*:')) { $idx = $i; break }
+    }
+    if ($idx -lt 0) { return $null }
+    $open = -1
+    for ($i = $idx; $i -lt $current.End; $i++) {
+      if (([string]$script:LinesBuf[$i]).Contains('{')) { $open = $i; break }
+    }
+    if ($open -lt 0) { return $null }
+    $base = $script:JsonStart[$idx]
+    $close = -1
+    if ($script:JsonEnd[$open] -eq $base) {
+      $close = $open
+    } else {
+      for ($i = $open + 1; $i -lt $current.End; $i++) {
+        if ($script:JsonEnd[$i] -eq $base) { $close = $i; break }
+      }
+    }
+    if ($close -lt 0) { return $null }
+    $current = @{ Open = $open; Close = $close; Start = $open + 1; End = $close; Depth = $base + 1 }
+  }
+  return $current
+}
+
+function JsonFindMember($Range, [string]$Key) {
+  $escaped = [regex]::Escape($Key)
+  for ($i = $Range.Start; $i -lt $Range.End; $i++) {
+    if ($script:JsonStart[$i] -ne $Range.Depth) { continue }
+    if (([string]$script:LinesBuf[$i]) -match ('^\s*"' + $escaped + '"\s*:')) { return $i }
+  }
+  return -1
+}
+
+function JsonIndent([int]$Level) {
+  return ('  ' * $Level)
+}
+
+function JsonLastContentLine($Range) {
+  for ($i = $Range.End - 1; $i -ge $Range.Start; $i--) {
+    if (([string]$script:LinesBuf[$i]).Trim() -ne '') { return $i }
+  }
+  return -1
+}
+
+function JsonEnsureComma($Range) {
+  $last = JsonLastContentLine $Range
+  if ($last -ge 0 -and ([string]$script:LinesBuf[$last]) -notmatch ',\s*$') {
+    $script:LinesBuf[$last] = [string]$script:LinesBuf[$last] + ','
+  }
+}
+
+function JsonExpandEmptyObject($Range) {
+  if ($Range.Open -ne $Range.Close) { return $true }
+  $line = [string]$script:LinesBuf[$Range.Open]
+  $open = $line.IndexOf('{')
+  $close = $line.LastIndexOf('}')
+  if ($open -lt 0 -or $close -lt $open) { return $false }
+  $head = $line.Substring(0, $open + 1)
+  $tail = $line.Substring($close + 1)
+  $script:LinesBuf[$Range.Open] = $head
+  [void]$script:LinesBuf.Insert($Range.Open + 1, ((JsonIndent ($Range.Depth - 1)) + '}' + $tail))
+  return $true
+}
+
+function JsonInsertObject([string]$Key, [string[]]$Parent) {
+  if ($null -eq $Parent) { $Parent = @() }
+  $range = JsonObjectRange $Parent
+  if ($null -eq $range) { return $false }
+  if ($range.Open -eq $range.Close) {
+    if (-not (JsonExpandEmptyObject $range)) { return $false }
+    $range = JsonObjectRange $Parent
+    if ($null -eq $range) { return $false }
+  }
+  JsonEnsureComma $range
+  $memberIndent = JsonIndent $range.Depth
+  [void]$script:LinesBuf.Insert($range.End, ($memberIndent + '"' + $Key + '": {'))
+  [void]$script:LinesBuf.Insert($range.End + 1, ($memberIndent + '}'))
+  return $true
+}
+
+function JsonEnsureObject([string[]]$Path) {
+  if ($null -eq $Path) { $Path = @() }
+  if ($null -ne (JsonObjectRange $Path)) { return $true }
+  if ($Path.Count -eq 0) {
+    $script:LinesBuf = [System.Collections.ArrayList]::new()
+    [void]$script:LinesBuf.Add('{')
+    [void]$script:LinesBuf.Add('}')
+    return $true
+  }
+  $parent = @()
+  if ($Path.Count -gt 1) { $parent = $Path[0..($Path.Count - 2)] }
+  if (-not (JsonEnsureObject $parent)) { return $false }
+  return (JsonInsertObject $Path[$Path.Count - 1] $parent)
+}
+
+function JsonReadKey([string]$Key, [string[]]$Parent) {
+  if ($null -eq $Parent) { $Parent = @() }
+  $range = JsonObjectRange $Parent
+  if ($null -eq $range) { return $null }
+  $idx = JsonFindMember $range $Key
+  if ($idx -lt 0) { return $null }
+  if (([string]$script:LinesBuf[$idx]) -match '^\s*"[^"]+"\s*:\s*(.*?)\s*,?\s*$') {
+    return $Matches[1]
+  }
+  return $null
+}
+
+function JsonSetKey([string]$Value, [string]$Key, [string[]]$Parent) {
+  if ($null -eq $Parent) { $Parent = @() }
+  if (-not (JsonEnsureObject $Parent)) { return $false }
+  $range = JsonObjectRange $Parent
+  if ($null -eq $range) { return $false }
+  $memberIndent = JsonIndent $range.Depth
+  $escaped = [regex]::Escape($Key)
+  $idx = JsonFindMember $range $Key
+  if ($idx -ge 0) {
+    if (([string]$script:LinesBuf[$idx]) -match ('^(\s*"' + $escaped + '"\s*:\s*)(.*[^\s])(\s*,)?\s*$')) {
+      $prefix = $Matches[1]
+      $comma = if ($Matches[3]) { ',' } else { '' }
+      $script:LinesBuf[$idx] = $prefix + $Value + $comma
+      return $true
+    }
+  }
+  if ($range.Open -eq $range.Close) {
+    if (-not (JsonExpandEmptyObject $range)) { return $false }
+    $range = JsonObjectRange $Parent
+    if ($null -eq $range) { return $false }
+    $memberIndent = JsonIndent $range.Depth
+  }
+  JsonEnsureComma $range
+  [void]$script:LinesBuf.Insert($range.End, ($memberIndent + '"' + $Key + '": ' + $Value))
+  return $true
+}
+
+function JsonRemoveKey([string]$Key, [string[]]$Parent) {
+  if ($null -eq $Parent) { $Parent = @() }
+  $range = JsonObjectRange $Parent
+  if ($null -eq $range) { return $false }
+  $idx = JsonFindMember $range $Key
+  if ($idx -lt 0) { return $false }
+  $script:LinesBuf.RemoveAt($idx)
+  JsonDepthMaps
+  $range2 = JsonObjectRange $Parent
+  if ($null -ne $range2) {
+    $hasLater = $false
+    for ($i = $idx; $i -lt $range2.End; $i++) {
+      if ($script:JsonStart[$i] -eq $range2.Depth) { $hasLater = $true; break }
+    }
+    if (-not $hasLater) {
+      $prev = JsonLastContentLine $range2
+      if ($prev -ge 0) { $script:LinesBuf[$prev] = ([string]$script:LinesBuf[$prev]) -replace ',\s*$', '' }
+    }
+  }
+  return $true
+}
+
 # ---------- atomic write ----------
 
 function WriteAtomic([string]$Path, [string]$Content) {
@@ -390,6 +647,7 @@ function VersionOverrideEnvVar([string]$Bin) {
     'uv'    { 'PMSEC_UV_VERSION' }
     'bundler' { 'PMSEC_BUNDLER_VERSION' }
     'aube'  { 'PMSEC_AUBE_VERSION' }
+    'composer' { 'PMSEC_COMPOSER_VERSION' }
     default { '' }
   }
 }
@@ -431,6 +689,7 @@ function ToolPath([string]$Tool) {
     'uv'    { return Get-UvPath }
     'bundler' { return Get-BundlerPath }
     'aube' { return Get-AubePath }
+    'composer' { return Get-ComposerPath }
   }
 }
 function ToolKey([string]$Tool) {
@@ -444,6 +703,7 @@ function ToolKey([string]$Tool) {
     'uv'    { 'exclude-newer' }
     'bundler' { 'BUNDLE_COOLDOWN' }
     'aube' { 'minimumReleaseAge' }
+    'composer' { 'minimum-release-age' }
   }
 }
 function ToolSection([string]$Tool) {
@@ -451,6 +711,7 @@ function ToolSection([string]$Tool) {
     'bun'   { 'install' }
     'cargo' { 'install' }
     'mise'  { 'settings' }
+    'composer' { 'config' }
     default { '' }
   }
 }
@@ -535,6 +796,14 @@ function ToolExtras([string]$Tool) {
         @{ Key = 'paranoid'; Expected = 'true'; Line = 'paranoid = true'; Sep = '='; Section = '' }
       )
     }
+    'composer' {
+      return ,@(
+        @{ Key = 'allow-plugins'; Expected = 'false'; Path = @('config') },
+        @{ Key = 'secure-http'; Expected = 'true'; Path = @('config') },
+        @{ Key = 'disable-tls'; Expected = 'false'; Path = @('config') },
+        @{ Key = 'abandoned'; Expected = '"fail"'; Path = @('config','audit') }
+      )
+    }
     default { return ,@() }
   }
 }
@@ -584,7 +853,74 @@ function ParseDaysUv([string]$Value) {
   return $null
 }
 
+$script:ComposerPrimaryAliases = @('minimum-release-age','min-release-age','minimum_release_age','minimumReleaseAge')
+
+function ParseDaysComposer([string]$Value) {
+  $v = $Value.Trim('"').Trim()
+  if ($v -match '^(\d+)\s*([A-Za-z]+)$') {
+    $n = [int]$Matches[1]
+    $u = $Matches[2].ToLower()
+    if (@('d','day','days') -contains $u) { return $n }
+    if (@('w','week','weeks') -contains $u) { return $n * 7 }
+    return $null
+  }
+  if ($v -match '^\d+$') {
+    $n = [int]$v
+    if ($n -ge 86400) { return [int][math]::Floor($n / 86400.0) }
+    if ($n -ge 1440 -and ($n % 1440) -eq 0) { return [int]($n / 1440) }
+    return $n
+  }
+  return $null
+}
+
+function ToolReadComposer {
+  $path = ToolPath 'composer'
+  LinesLoad $path
+  $val = $null
+  foreach ($alias in $script:ComposerPrimaryAliases) {
+    $cur = JsonReadKey $alias @('config')
+    if ($null -ne $cur) { $val = $cur; break }
+  }
+  $days = if ($null -ne $val) { ParseDaysComposer $val } else { $null }
+  $extras = New-Object System.Collections.Generic.List[hashtable]
+  foreach ($e in (ToolExtras 'composer')) {
+    $cur = JsonReadKey $e.Key $e.Path
+    $extras.Add(@{
+      Key = $e.Key; Configured = $cur; Expected = $e.Expected
+      Ok = ($null -ne $cur -and $cur -eq $e.Expected); DefaultEnforced = $false
+    })
+  }
+  return @{ Path = $path; Configured = $val; Days = $days; Extras = $extras }
+}
+
+function ToolWriteComposer([int]$Days) {
+  $path = ToolPath 'composer'
+  LinesLoad $path
+  [void](JsonSetKey ([string]$Days) 'minimum-release-age' @('config'))
+  [void](JsonSetKey 'false' 'allow-plugins' @('config'))
+  [void](JsonSetKey 'true' 'secure-http' @('config'))
+  [void](JsonSetKey 'false' 'disable-tls' @('config'))
+  [void](JsonSetKey '"fail"' 'abandoned' @('config','audit'))
+  WriteAtomic $path (LinesDump)
+  return @{ Path = $path }
+}
+
+function ToolUnsetComposer {
+  $path = ToolPath 'composer'
+  LinesLoad $path
+  $removed = $false
+  foreach ($alias in $script:ComposerPrimaryAliases) {
+    if (JsonRemoveKey $alias @('config')) { $removed = $true }
+  }
+  foreach ($e in (ToolExtras 'composer')) {
+    if (JsonRemoveKey $e.Key $e.Path) { $removed = $true }
+  }
+  if ($removed) { WriteAtomic $path (LinesDump) }
+  return @{ Path = $path; Removed = $removed }
+}
+
 function ToolRead([string]$Tool) {
+  if ($Tool -eq 'composer') { return (ToolReadComposer) }
   $key = ToolKey $Tool
   $sep = ToolSep $Tool
   $section = ToolSection $Tool
@@ -650,10 +986,12 @@ function ToolWriteValueLine([string]$Tool, [int]$Days) {
     'uv'    { return ('{0} = "{1} days"' -f $key, $Days) }
     'bundler' { return ('{0}: "{1}"' -f $key, $Days) }
     'aube'  { return ("$key = " + ($Days * 1440)) }
+    'composer' { return [string]$Days }
   }
 }
 
 function ToolWrite([string]$Tool, [int]$Days) {
+  if ($Tool -eq 'composer') { return (ToolWriteComposer $Days) }
   $path = ToolPath $Tool
   $line = ToolWriteValueLine $Tool $Days
   LinesLoad $path
@@ -669,6 +1007,7 @@ function ToolWrite([string]$Tool, [int]$Days) {
 }
 
 function ToolUnset([string]$Tool) {
+  if ($Tool -eq 'composer') { return (ToolUnsetComposer) }
   $path = ToolPath $Tool
   LinesLoad $path
   $removed = [bool](LinesRemoveKey (ToolKey $Tool) (ToolSep $Tool) (ToolSection $Tool))
@@ -751,7 +1090,7 @@ function PrintUsage {
 pmsec [options]
 
 Zero-config install-time supply-chain hardening across npm, pnpm, yarn,
-bun, cargo, mise, uv, bundler, aube. Default action enables every safe-by-default
+bun, cargo, mise, uv, bundler, aube, composer. Default action enables every safe-by-default
 key each tool exposes (cooldown, audit-level, trust-policy, hardened mode,
 attestation re-verification, ...). No knobs.
 
@@ -759,7 +1098,7 @@ Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
-  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube)
+  --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
   --days N              Override cooldown days (default 1)
   --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
   --no-wsl              Skip the WSL pass; only configure the Windows host
@@ -785,8 +1124,9 @@ Environment:
   CARGO_HOME              Override the cargo dir; pmsec writes `$CARGO_HOME\config.toml`.
   MISE_GLOBAL_CONFIG_FILE Override the mise config file path.
   AUBE_CONFIG_FILE        Override the aube config file path.
+  COMPOSER_HOME           Override the Composer home dir; pmsec writes `$COMPOSER_HOME\config.json`.
   UV_CONFIG_FILE          Override the uv config file path.
-  XDG_CONFIG_HOME         Override the XDG config root (affects mise, aube, uv on linux/mac).
+  XDG_CONFIG_HOME         Override the XDG config root (affects mise, aube, uv, composer on linux/mac).
 "@
 }
 
