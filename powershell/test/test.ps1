@@ -44,6 +44,7 @@ function NewHome {
 function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   $envKeys = @(
     'NPM_CONFIG_USERCONFIG','UV_CONFIG_FILE','BUN_CONFIG_FILE',
+    'PMSEC_PNPM_CONFIG_FILE','PMSEC_PNPM_CONFIG_YAML',
     'YARN_RC_FILENAME','CARGO_HOME','MISE_GLOBAL_CONFIG_FILE',
     'AUBE_CONFIG_FILE','COMPOSER_HOME',
     'BUNDLE_USER_CONFIG','BUNDLE_USER_HOME',
@@ -195,6 +196,7 @@ T 'enable writes the bundle for every tool' {
     $r = InvokePmsec $h $null @()
     if ($r.Code -ne 0) { $script:LastFail = "exit code $($r.Code)`n$($r.Out)"; return $false }
     $pnpmrcPath = PathJoin $h '.config' 'pnpm' 'rc'
+    $pnmyamlPath = PathJoin $h '.config' 'pnpm' 'config.yaml'
     $ok = $true
     $ok = $ok -and (AssertMatch 'npm key' '(?m)^min-release-age=1$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'pnpm key' '(?m)^minimum-release-age=1440$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
@@ -245,6 +247,15 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'pnpm dangerously-allow-all-builds extra' '(?m)^dangerously-allow-all-builds=false$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'pnpm trust-lockfile extra' '(?m)^trust-lockfile=false$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
     $ok = $ok -and (AssertMatch 'pnpm minimum-release-age-ignore-missing-time extra' '(?m)^minimum-release-age-ignore-missing-time=false$' ([System.IO.File]::ReadAllText($pnpmrcPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml cooldown' '(?m)^minimumReleaseAge: 1440$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml trustPolicy' '(?m)^trustPolicy: no-downgrade$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml blockExoticSubdeps' '(?m)^blockExoticSubdeps: true$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml strictDepBuilds' '(?m)^strictDepBuilds: true$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml verifyDepsBeforeRun' '(?m)^verifyDepsBeforeRun: error$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml minimumReleaseAgeStrict' '(?m)^minimumReleaseAgeStrict: true$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml dangerouslyAllowAllBuilds' '(?m)^dangerouslyAllowAllBuilds: false$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml trustLockfile' '(?m)^trustLockfile: false$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
+    $ok = $ok -and (AssertMatch 'pnpm yaml minimumReleaseAgeIgnoreMissingTime' '(?m)^minimumReleaseAgeIgnoreMissingTime: false$' ([System.IO.File]::ReadAllText($pnmyamlPath)))
     $ok = $ok -and (AssertMatch 'yarn enableHardenedMode extra' '(?m)^enableHardenedMode: true$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'yarn enableScripts extra' '(?m)^enableScripts: false$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'bundler key' '(?m)^BUNDLE_COOLDOWN: "1"$' ([System.IO.File]::ReadAllText((PathJoin $h '.bundle' 'config'))))
@@ -286,6 +297,7 @@ T 'disable preserves unrelated keys per file' {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "registry=https://r/`nmin-release-age=3`n")
     [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.config' 'pnpm'))
     [System.IO.File]::WriteAllText((PathJoin $h '.config' 'pnpm' 'rc'), "minimum-release-age=4320`nstore-dir=/tmp/pstore`n")
+    [System.IO.File]::WriteAllText((PathJoin $h '.config' 'pnpm' 'config.yaml'), "minimumReleaseAge: 4320`nstoreDir: /tmp/pstore`n")
     [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.config' 'uv'))
     [System.IO.File]::WriteAllText((PathJoin $h '.config' 'uv' 'uv.toml'), "exclude-newer = ""3 days""`nlink-mode = ""copy""`n")
     [System.IO.File]::WriteAllText((Join-Path $h '.bunfig.toml'), "[install]`nminimumReleaseAge = 259200`nregistry = ""https://x/""`n")
@@ -294,6 +306,7 @@ T 'disable preserves unrelated keys per file' {
     $ok = $true
     $ok = $ok -and (AssertFileEq '.npmrc'    "registry=https://r/`n"                                  (Join-Path $h '.npmrc'))
     $ok = $ok -and (AssertFileEq 'pnpm rc'   "store-dir=/tmp/pstore`n"                                (PathJoin $h '.config' 'pnpm' 'rc'))
+    $ok = $ok -and (AssertFileEq 'pnpm config.yaml' "storeDir: /tmp/pstore`n"                         (PathJoin $h '.config' 'pnpm' 'config.yaml'))
     $ok = $ok -and (AssertFileEq 'uv.toml'   "link-mode = ""copy""`n"                                 (PathJoin $h '.config' 'uv' 'uv.toml'))
     $ok = $ok -and (AssertFileEq '.bunfig'   "[install]`nregistry = ""https://x/""`n"                 (Join-Path $h '.bunfig.toml'))
     $ok = $ok -and (AssertFileEq '.yarnrc'   "npmRegistryServer: ""https://r/""`n"                    (Join-Path $h '.yarnrc.yml'))
@@ -534,6 +547,8 @@ T '--days N overrides bundle cooldown for enable and check' {
     if ($npm -notmatch '(?m)^min-release-age=7$') { $script:LastFail = "min-release-age not 7: $npm"; return $false }
     $pnpm = [System.IO.File]::ReadAllText((PathJoin $h '.config' 'pnpm' 'rc'))
     if ($pnpm -notmatch '(?m)^minimum-release-age=10080$') { $script:LastFail = "minimum-release-age not 10080: $pnpm"; return $false }
+    $pnmyaml = [System.IO.File]::ReadAllText((PathJoin $h '.config' 'pnpm' 'config.yaml'))
+    if ($pnmyaml -notmatch '(?m)^minimumReleaseAge: 10080$') { $script:LastFail = "minimumReleaseAge not 10080: $pnmyaml"; return $false }
     $uv = [System.IO.File]::ReadAllText((Join-Path $h '.config/uv/uv.toml'))
     if ($uv -notmatch 'exclude-newer = "7 days"') { $script:LastFail = "uv not 7 days: $uv"; return $false }
     $bun = [System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))
@@ -578,23 +593,40 @@ T '--version prints PmsecVersion' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
-T 'pnpm 11 default-enforces missing block-exotic-subdeps' {
+T 'pnpm 11 reads config.yaml and default-enforces missing blockExoticSubdeps' {
+  $h = NewHome
+  try {
+    $pnpmConfigDir = PathJoin $h 'AppData' 'Local' 'pnpm' 'config'
+    [void](New-Item -ItemType Directory -Force -Path $pnpmConfigDir)
+    [System.IO.File]::WriteAllText((Join-Path $pnpmConfigDir 'config.yaml'), "minimumReleaseAge: 4320`n")
+    # An explicit version override lets the YAML path run on the fake Linux
+    # scope used by the test harness too.
+    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '11.0.0' } @('--check','--json','--tool','pnpm')
+    if ($r.Code -ne 1) { $script:LastFail = "expected exit 1 (trustPolicy still missing) got $($r.Code)`n$($r.Out)"; return $false }
+    $data = $r.Out | ConvertFrom-Json
+    if ($data.rows[0].key -ne 'minimumReleaseAge') { $script:LastFail = "expected yaml key`n$($r.Out)"; return $false }
+    if ($data.rows[0].path -notmatch 'config\.yaml$') { $script:LastFail = "expected config.yaml path`n$($r.Out)"; return $false }
+    $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'blockExoticSubdeps' }
+    $trust = $data.rows[0].extras | Where-Object { $_.key -eq 'trustPolicy' }
+    if (-not $beSub.ok) { $script:LastFail = "blockExoticSubdeps ok must be true`n$($r.Out)"; return $false }
+    if (-not $beSub.defaultEnforced) { $script:LastFail = "blockExoticSubdeps defaultEnforced must be true`n$($r.Out)"; return $false }
+    if ($null -ne $beSub.configured) { $script:LastFail = "blockExoticSubdeps configured must be null`n$($r.Out)"; return $false }
+    if ($trust.ok) { $script:LastFail = "trustPolicy ok must be false`n$($r.Out)"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'pnpm 11 ignores legacy rc values' {
   $h = NewHome
   try {
     $pnpmrcDir = PathJoin $h 'AppData' 'Local' 'pnpm' 'config'
     [void](New-Item -ItemType Directory -Force -Path $pnpmrcDir)
-    [System.IO.File]::WriteAllText((Join-Path $pnpmrcDir 'rc'), "minimum-release-age=4320`n")
-    # Default-enforcement detection runs the local pnpm binary, so it only
-    # fires on the Windows host scope.
-    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '11.0.0' } @('--check','--json','--tool','pnpm')
-    if ($r.Code -ne 1) { $script:LastFail = "expected exit 1 (trust-policy still missing) got $($r.Code)`n$($r.Out)"; return $false }
+    [System.IO.File]::WriteAllText((Join-Path $pnpmrcDir 'rc'), "minimum-release-age=10080`ntrust-policy=no-downgrade`n")
+    $r = InvokePmsec $h @{ PMSEC_FAKE_SCOPES = "windows|$h|win32"; PMSEC_PNPM_VERSION = '11.28.5' } @('--check','--json','--tool','pnpm')
+    if ($r.Code -ne 1) { $script:LastFail = "legacy rc-only check should fail, got $($r.Code)`n$($r.Out)"; return $false }
     $data = $r.Out | ConvertFrom-Json
-    $beSub = $data.rows[0].extras | Where-Object { $_.key -eq 'block-exotic-subdeps' }
-    $trust = $data.rows[0].extras | Where-Object { $_.key -eq 'trust-policy' }
-    if (-not $beSub.ok) { $script:LastFail = "block-exotic-subdeps ok must be true`n$($r.Out)"; return $false }
-    if (-not $beSub.defaultEnforced) { $script:LastFail = "block-exotic-subdeps defaultEnforced must be true`n$($r.Out)"; return $false }
-    if ($null -ne $beSub.configured) { $script:LastFail = "block-exotic-subdeps configured must be null`n$($r.Out)"; return $false }
-    if ($trust.ok) { $script:LastFail = "trust-policy ok must be false`n$($r.Out)"; return $false }
+    if ($null -ne $data.rows[0].configured) { $script:LastFail = "legacy rc value should be ignored`n$($r.Out)"; return $false }
+    if ($data.rows[0].path -notmatch 'config\.yaml$') { $script:LastFail = "expected config.yaml path`n$($r.Out)"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -789,21 +821,22 @@ T 'cargo writes global-min-publish-age tracking --days' {
     $cfgPath = Join-Path (Join-Path $h '.cargo') 'config.toml'
     [void](InvokePmsec $h $null @('--tool','cargo','--days','7'))
     $cfg = [System.IO.File]::ReadAllText($cfgPath)
-    $ok = (AssertMatch 'install cooldown' '(?m)^minimum-release-age = "7d"$' $cfg)
-    $ok = $ok -and (AssertMatch 'registry publish age' '(?m)^global-min-publish-age = "7 days"$' $cfg)
+    $ok = (AssertMatch 'registry publish age' '(?m)^global-min-publish-age = "7 days"$' $cfg)
+    if ($cfg -match 'minimum-release-age') { $script:LastFail = "legacy install key still written: $cfg"; return $false }
     if (-not $ok) { return $false }
     $r = InvokePmsec $h $null @('--check','--tool','cargo','--days','7','--json')
     if ($r.Code -ne 0) { $script:LastFail = "check exit $($r.Code): $($r.Out)"; return $false }
-    $extra = ($r.Out | ConvertFrom-Json).rows[0].extras[0]
-    if ($extra.key -ne 'global-min-publish-age' -or $extra.configured -ne '"7 days"' -or $extra.expected -ne '"7 days"' -or -not $extra.ok) {
-      $script:LastFail = "unexpected extra: $($r.Out)"; return $false
+    $row = ($r.Out | ConvertFrom-Json).rows[0]
+    if ($row.key -ne 'global-min-publish-age' -or $row.configured -ne '"7 days"' -or $row.days -ne 7 -or $row.extras.Count -ne 0) {
+      $script:LastFail = "unexpected row: $($r.Out)"; return $false
     }
-    [System.IO.File]::WriteAllText($cfgPath, "[install]`nminimum-release-age = `"7d`"`n[registry]`nglobal-min-publish-age = `"1 days`"`n")
+    [System.IO.File]::WriteAllText($cfgPath, "[registry]`nglobal-min-publish-age = `"1 days`"`n")
     $r = InvokePmsec $h $null @('--check','--tool','cargo','--days','7')
     if ($r.Code -ne 1) { $script:LastFail = "weaker publish age should fail check: $($r.Code)"; return $false }
-    [System.IO.File]::WriteAllText($cfgPath, "[install]`nminimum-release-age = `"7d`"`n[registry]`nglobal-min-publish-age = `"2 weeks`"`n")
+    [System.IO.File]::WriteAllText($cfgPath, "[registry]`nglobal-min-publish-age = `"2 weeks`"`n")
     $r = InvokePmsec $h $null @('--check','--tool','cargo','--days','7')
     if ($r.Code -ne 0) { $script:LastFail = "stricter publish age should pass check: $($r.Code)"; return $false }
+    [System.IO.File]::WriteAllText($cfgPath, "[install]`nminimum-release-age = `"7d`"`n[registry]`nglobal-min-publish-age = `"1 days`"`n")
     [void](InvokePmsec $h $null @('--disable','--tool','cargo'))
     return (AssertFileEq 'disable removes both' "[install]`n[registry]`n" $cfgPath)
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }

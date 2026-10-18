@@ -79,6 +79,16 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "dangerously-allow-all-builds=false" in pnpmrc
     assert "trust-lockfile=false" in pnpmrc
     assert "minimum-release-age-ignore-missing-time=false" in pnpmrc
+    pnpm_yaml = (tmp_path / ".config" / "pnpm" / "config.yaml").read_text()
+    assert "minimumReleaseAge: 1440" in pnpm_yaml
+    assert "trustPolicy: no-downgrade" in pnpm_yaml
+    assert "blockExoticSubdeps: true" in pnpm_yaml
+    assert "strictDepBuilds: true" in pnpm_yaml
+    assert "verifyDepsBeforeRun: error" in pnpm_yaml
+    assert "minimumReleaseAgeStrict: true" in pnpm_yaml
+    assert "dangerouslyAllowAllBuilds: false" in pnpm_yaml
+    assert "trustLockfile: false" in pnpm_yaml
+    assert "minimumReleaseAgeIgnoreMissingTime: false" in pnpm_yaml
     uvtoml = (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert 'exclude-newer = "1 days"' in uvtoml
     assert 'index-strategy = "first-index"' in uvtoml
@@ -146,6 +156,7 @@ def test_disable_preserves_other_keys(tmp_path):
     pnpm_dir = tmp_path / ".config" / "pnpm"
     pnpm_dir.mkdir(parents=True)
     (pnpm_dir / "rc").write_text("minimum-release-age=4320\nstore-dir=/tmp/pstore\n")
+    (pnpm_dir / "config.yaml").write_text("minimumReleaseAge: 4320\nstoreDir: /tmp/pstore\n")
     uv_dir = tmp_path / ".config" / "uv"
     uv_dir.mkdir(parents=True)
     (uv_dir / "uv.toml").write_text(
@@ -160,6 +171,7 @@ def test_disable_preserves_other_keys(tmp_path):
     run(["--disable"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == "registry=https://r/\n"
     assert (pnpm_dir / "rc").read_text() == "store-dir=/tmp/pstore\n"
+    assert (pnpm_dir / "config.yaml").read_text() == "storeDir: /tmp/pstore\n"
     assert (uv_dir / "uv.toml").read_text() == 'link-mode = "copy"\n'
     assert (tmp_path / ".bunfig.toml").read_text() == '[install]\nregistry = "https://x/"\n'
     assert (tmp_path / ".yarnrc.yml").read_text() == 'npmRegistryServer: "https://r/"\n'
@@ -320,21 +332,35 @@ def test_hardening_extras_roundtrip(tmp_path):
     assert "minimum-release-age" not in after
 
 
-def test_pnpm_11_default_enforced_block_exotic_subdeps(tmp_path):
-    # Cooldown present, but extras lines absent. Under pnpm 11 the runtime
-    # still blocks exotic subdeps by default, so check must report it as OK
-    # rather than MISSING (trust-policy stays MISSING — no default change).
+def test_pnpm_11_reads_config_yaml_and_default_enforces_block_exotic_subdeps(tmp_path):
+    # Cooldown present in YAML, but extras lines absent. Under pnpm 11 the
+    # runtime still blocks exotic subdeps by default, so check must report it as
+    # OK rather than MISSING (trustPolicy stays MISSING — no default change).
     pnpm_dir = tmp_path / ".config" / "pnpm"
     pnpm_dir.mkdir(parents=True)
-    (pnpm_dir / "rc").write_text("minimum-release-age=4320\n")
+    (pnpm_dir / "config.yaml").write_text("minimumReleaseAge: 4320\n")
     code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="11.0.0")
     data = json.loads(out)
+    assert data["rows"][0]["key"] == "minimumReleaseAge"
+    assert data["rows"][0]["path"] == str(pnpm_dir / "config.yaml")
+    assert data["rows"][0]["days"] == 3
     extras = {e["key"]: e for e in data["rows"][0]["extras"]}
-    assert extras["block-exotic-subdeps"]["ok"] is True
-    assert extras["block-exotic-subdeps"]["defaultEnforced"] is True
-    assert extras["block-exotic-subdeps"]["configured"] is None
-    assert extras["trust-policy"]["ok"] is False
+    assert extras["blockExoticSubdeps"]["ok"] is True
+    assert extras["blockExoticSubdeps"]["defaultEnforced"] is True
+    assert extras["blockExoticSubdeps"]["configured"] is None
+    assert extras["trustPolicy"]["ok"] is False
     assert code == 1
+
+
+def test_pnpm_11_check_ignores_legacy_rc_values(tmp_path):
+    pnpm_dir = tmp_path / ".config" / "pnpm"
+    pnpm_dir.mkdir(parents=True)
+    (pnpm_dir / "rc").write_text("minimum-release-age=10080\ntrust-policy=no-downgrade\n")
+    code, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="11.28.5")
+    data = json.loads(out)
+    assert code == 1
+    assert data["rows"][0]["configured"] is None
+    assert data["rows"][0]["path"] == str(pnpm_dir / "config.yaml")
 
 
 def test_pnpm_pre11_still_flags_block_exotic_subdeps(tmp_path):
@@ -354,6 +380,7 @@ def test_days_flag_overrides_bundle_cooldown(tmp_path):
     assert "min-release-age=7" in npmrc
     pnpmrc = (tmp_path / ".config" / "pnpm" / "rc").read_text()
     assert "minimum-release-age=10080" in pnpmrc
+    assert "minimumReleaseAge: 10080" in (tmp_path / ".config" / "pnpm" / "config.yaml").read_text()
     assert 'exclude-newer = "7 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
     assert "minimumReleaseAge = 604800" in (tmp_path / ".bunfig.toml").read_text()
     assert "minimumReleaseAge = 10080" in (tmp_path / ".config" / "aube" / "config.toml").read_text()
@@ -448,19 +475,22 @@ def test_cargo_enable_writes_global_min_publish_age(tmp_path):
     env = {"CARGO_HOME": str(cargo_home)}
     run(["--tool", "cargo", "--days", "7"], tmp_path, **env)
     cfg = (cargo_home / "config.toml").read_text()
-    assert '[install]\nminimum-release-age = "7d"' in cfg
     assert '[registry]\nglobal-min-publish-age = "7 days"' in cfg
+    assert "minimum-release-age" not in cfg
     code, out, _ = run(["--check", "--tool", "cargo", "--days", "7", "--json"], tmp_path, **env)
     assert code == 0
-    assert json.loads(out)["rows"][0]["extras"] == [
-        {"key": "global-min-publish-age", "configured": '"7 days"', "expected": '"7 days"', "ok": True}
-    ]
-    (cargo_home / "config.toml").write_text('[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n')
+    row = json.loads(out)["rows"][0]
+    assert row["key"] == "global-min-publish-age"
+    assert row["configured"] == '"7 days"'
+    assert row["days"] == 7
+    assert row["extras"] == []
+    (cargo_home / "config.toml").write_text('[registry]\nglobal-min-publish-age = "1 days"\n')
     code, _, _ = run(["--check", "--tool", "cargo", "--days", "7"], tmp_path, **env)
     assert code == 1
-    (cargo_home / "config.toml").write_text('[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "2 weeks"\n')
+    (cargo_home / "config.toml").write_text('[registry]\nglobal-min-publish-age = "2 weeks"\n')
     code, _, _ = run(["--check", "--tool", "cargo", "--days", "7"], tmp_path, **env)
     assert code == 0
+    (cargo_home / "config.toml").write_text('[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n')
     run(["--disable", "--tool", "cargo"], tmp_path, **env)
     assert (cargo_home / "config.toml").read_text() == "[install]\n[registry]\n"
 

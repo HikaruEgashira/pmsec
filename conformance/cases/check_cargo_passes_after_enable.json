@@ -8,11 +8,9 @@
     "bundleDays": 7,
     "rows": [
       {
-        "tool": "cargo", "key": "minimum-release-age", "path": "<HOME>/.cargo/config.toml",
-        "configured": "\"7d\"", "days": 7, "warn": null,
-        "extras": [
-          {"key": "global-min-publish-age", "configured": "\"7 days\"", "expected": "\"7 days\"", "ok": true}
-        ]
+        "tool": "cargo", "key": "global-min-publish-age", "path": "<HOME>/.cargo/config.toml",
+        "configured": "\"7 days\"", "days": 7, "warn": null,
+        "extras": []
       }
     ],
     "ok": true

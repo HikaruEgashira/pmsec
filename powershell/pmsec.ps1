@@ -69,6 +69,14 @@ function Get-PnpmRcPath {
   # WSL scopes: use Linux default (XDG_CONFIG_HOME isn't propagated through \\wsl$).
   return (PathJoin (Get-PmsecHome) '.config' 'pnpm' 'rc')
 }
+# pnpm >= 11 reads pnpm-specific settings from config.yaml (camelCase) instead
+# of the registry/auth-only rc file. Keep it next to the rc path so custom
+# overrides remain self-contained.
+function Get-PnpmConfigPath {
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:PMSEC_PNPM_CONFIG_YAML) { return $env:PMSEC_PNPM_CONFIG_YAML }
+  $rc = Get-PnpmRcPath
+  return (Join-Path (Split-Path -Parent $rc) 'config.yaml')
+}
 # PathJoin keeps the first segment as a base path and joins each subsequent
 # argument's components through Join-Path so the platform separator wins
 # even when the input string itself contains a foreign separator.
@@ -698,7 +706,7 @@ function ToolKey([string]$Tool) {
     'pnpm'  { 'minimum-release-age' }
     'yarn'  { 'npmMinimalAgeGate' }
     'bun'   { 'minimumReleaseAge' }
-    'cargo' { 'minimum-release-age' }
+    'cargo' { 'global-min-publish-age' }
     'mise'  { 'minimum_release_age' }
     'uv'    { 'exclude-newer' }
     'bundler' { 'BUNDLE_COOLDOWN' }
@@ -709,7 +717,7 @@ function ToolKey([string]$Tool) {
 function ToolSection([string]$Tool) {
   switch ($Tool) {
     'bun'   { 'install' }
-    'cargo' { 'install' }
+    'cargo' { 'registry' }
     'mise'  { 'settings' }
     'composer' { 'config' }
     default { '' }
@@ -808,6 +816,26 @@ function ToolExtras([string]$Tool) {
   }
 }
 
+# pnpm >= 11 uses camelCase keys in config.yaml. Keep these in sync with the
+# kebab-case entries above; enable/disable touch both files.
+function ToolExtrasYaml([string]$Tool) {
+  switch ($Tool) {
+    'pnpm' {
+      return ,@(
+        @{ Key = 'trustPolicy'; Expected = 'no-downgrade'; Line = 'trustPolicy: no-downgrade'; Sep = ':'; Section = '' },
+        @{ Key = 'blockExoticSubdeps'; Expected = 'true'; Line = 'blockExoticSubdeps: true'; Sep = ':'; Section = ''; DefaultSinceMajor = 11 },
+        @{ Key = 'strictDepBuilds'; Expected = 'true'; Line = 'strictDepBuilds: true'; Sep = ':'; Section = '' },
+        @{ Key = 'verifyDepsBeforeRun'; Expected = 'error'; Line = 'verifyDepsBeforeRun: error'; Sep = ':'; Section = '' },
+        @{ Key = 'minimumReleaseAgeStrict'; Expected = 'true'; Line = 'minimumReleaseAgeStrict: true'; Sep = ':'; Section = '' },
+        @{ Key = 'dangerouslyAllowAllBuilds'; Expected = 'false'; Line = 'dangerouslyAllowAllBuilds: false'; Sep = ':'; Section = '' },
+        @{ Key = 'trustLockfile'; Expected = 'false'; Line = 'trustLockfile: false'; Sep = ':'; Section = '' },
+        @{ Key = 'minimumReleaseAgeIgnoreMissingTime'; Expected = 'false'; Line = 'minimumReleaseAgeIgnoreMissingTime: false'; Sep = ':'; Section = '' }
+      )
+    }
+    default { return ,@() }
+  }
+}
+
 # ---------- per-tool: read / write / unset ----------
 
 function ParseDaysDw([string]$Value, [bool]$ExtraUnits = $false) {
@@ -826,22 +854,6 @@ function ParseDaysDw([string]$Value, [bool]$ExtraUnits = $false) {
 }
 
 function ParseDaysMise([string]$Value) { ParseDaysDw $Value $true }
-
-# cargo [registry].global-min-publish-age (cargo >= 1.100) tracks `--days`
-# like the primary key, so it is handled alongside it instead of ToolExtras.
-$script:CargoPublishAgeKey = 'global-min-publish-age'
-$script:CargoPublishAgeSection = 'registry'
-
-function ParseCargoPublishAgeDays([string]$Value) {
-  if ($Value -match '^"\s*(\d+)\s*(days?|weeks?|months?)\s*"$') {
-    $n = [int]$Matches[1]
-    $u = $Matches[2].ToLower()
-    if ($u.StartsWith('week')) { return $n * 7 }
-    if ($u.StartsWith('month')) { return $n * 30 }
-    return $n
-  }
-  return $null
-}
 
 function ParseDaysUv([string]$Value) {
   if ($Value -match '^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$') {
@@ -921,10 +933,19 @@ function ToolUnsetComposer {
 
 function ToolRead([string]$Tool) {
   if ($Tool -eq 'composer') { return (ToolReadComposer) }
-  $key = ToolKey $Tool
-  $sep = ToolSep $Tool
-  $section = ToolSection $Tool
-  $path = ToolPath $Tool
+  $toolVersion = $null
+  # Version detection runs the local binary; only meaningful for the host
+  # scope. For a WSL scope we'd have to shell into the distro and that's not
+  # worth the complexity normally, but an explicit PMSEC_PNPM_VERSION override
+  # still lets tests/conformance exercise the pnpm 11+ YAML path everywhere.
+  if ($Tool -eq 'pnpm' -and ((Get-PmsecPlatform) -eq 'win32' -or $env:PMSEC_PNPM_VERSION)) {
+    $toolVersion = VersionDetect 'pnpm'
+  }
+  $useYaml = ($Tool -eq 'pnpm' -and $null -ne $toolVersion -and $toolVersion.Major -ge 11)
+  $key = if ($useYaml) { 'minimumReleaseAge' } else { ToolKey $Tool }
+  $sep = if ($useYaml) { ':' } else { ToolSep $Tool }
+  $section = if ($useYaml) { '' } else { ToolSection $Tool }
+  $path = if ($useYaml) { Get-PnpmConfigPath } else { ToolPath $Tool }
   LinesLoad $path
   $val = LinesReadKey $key $sep $section
   $days = $null
@@ -942,12 +963,8 @@ function ToolRead([string]$Tool) {
     }
   }
   $extras = New-Object System.Collections.Generic.List[hashtable]
-  $toolVersion = $null
-  # Version detection runs the local binary; only meaningful for the host
-  # scope. For a WSL scope we'd have to shell into the distro and that's
-  # not worth the complexity for the default-enforcement heuristic.
-  if ($Tool -eq 'pnpm' -and (Get-PmsecPlatform) -eq 'win32') { $toolVersion = VersionDetect 'pnpm' }
-  foreach ($e in (ToolExtras $Tool)) {
+  $extraDefs = if ($useYaml) { ToolExtrasYaml $Tool } else { ToolExtras $Tool }
+  foreach ($e in $extraDefs) {
     $cur = LinesReadKey $e.Key $e.Sep $e.Section
     $safeValues = if ($e.ContainsKey('SafeValues')) { $e.SafeValues } else { @($e.Expected) }
     $ok = ($null -ne $cur -and $safeValues -contains $cur)
@@ -962,16 +979,7 @@ function ToolRead([string]$Tool) {
       Ok = $ok; DefaultEnforced = $defaultEnforced
     })
   }
-  if ($Tool -eq 'cargo') {
-    $cur = LinesReadKey $script:CargoPublishAgeKey '=' $script:CargoPublishAgeSection
-    $want = if ($null -ne $days) { $days } else { 1 }
-    $curDays = if ($null -ne $cur) { ParseCargoPublishAgeDays $cur } else { $null }
-    $extras.Add(@{
-      Key = $script:CargoPublishAgeKey; Configured = $cur; Expected = ('"{0} days"' -f $want)
-      Ok = ($null -ne $curDays -and $curDays -ge $want); DefaultEnforced = $false
-    })
-  }
-  return @{ Path = $path; Configured = $val; Days = $days; Extras = $extras }
+  return @{ Key = $key; Path = $path; Configured = $val; Days = $days; Extras = $extras }
 }
 
 function ToolWriteValueLine([string]$Tool, [int]$Days) {
@@ -981,7 +989,7 @@ function ToolWriteValueLine([string]$Tool, [int]$Days) {
     'pnpm'  { return ("$key=" + ($Days * 1440)) }
     'yarn'  { return ('{0}: "{1}d"' -f $key, $Days) }
     'bun'   { return ("$key = " + ($Days * 86400)) }
-    'cargo' { return ('{0} = "{1}d"' -f $key, $Days) }
+    'cargo' { return ('{0} = "{1} days"' -f $key, $Days) }
     'mise'  { return ('{0} = "{1}d"' -f $key, $Days) }
     'uv'    { return ('{0} = "{1} days"' -f $key, $Days) }
     'bundler' { return ('{0}: "{1}"' -f $key, $Days) }
@@ -990,34 +998,57 @@ function ToolWriteValueLine([string]$Tool, [int]$Days) {
   }
 }
 
+function ToolWriteFile([string]$Path, [string]$Key, [string]$Line, [string]$Sep, [string]$Section, [string]$Tool, [bool]$YamlExtras) {
+  LinesLoad $Path
+  LinesSetKey $Key $Line $Sep $Section
+  $extraDefs = if ($YamlExtras) { ToolExtrasYaml $Tool } else { ToolExtras $Tool }
+  foreach ($e in $extraDefs) {
+    LinesSetKey $e.Key $e.Line $e.Sep $e.Section
+  }
+  if ($Tool -eq 'cargo' -and -not $YamlExtras) {
+    # Drop the pre-2026.10 key: cargo never implemented it.
+    [void](LinesRemoveKey 'minimum-release-age' '=' 'install')
+  }
+  WriteAtomic $Path (LinesDump)
+}
+
 function ToolWrite([string]$Tool, [int]$Days) {
   if ($Tool -eq 'composer') { return (ToolWriteComposer $Days) }
   $path = ToolPath $Tool
   $line = ToolWriteValueLine $Tool $Days
-  LinesLoad $path
-  LinesSetKey (ToolKey $Tool) $line (ToolSep $Tool) (ToolSection $Tool)
-  foreach ($e in (ToolExtras $Tool)) {
-    LinesSetKey $e.Key $e.Line $e.Sep $e.Section
+  ToolWriteFile $path (ToolKey $Tool) $line (ToolSep $Tool) (ToolSection $Tool) $Tool $false
+  if ($Tool -eq 'pnpm') {
+    ToolWriteFile (Get-PnpmConfigPath) 'minimumReleaseAge' ('minimumReleaseAge: ' + ($Days * 1440)) ':' '' $Tool $true
   }
-  if ($Tool -eq 'cargo') {
-    LinesSetKey $script:CargoPublishAgeKey ('{0} = "{1} days"' -f $script:CargoPublishAgeKey, $Days) '=' $script:CargoPublishAgeSection
-  }
-  WriteAtomic $path (LinesDump)
   return @{ Path = $path }
+}
+
+function ToolUnsetFile([string]$Path, [string]$Tool, [bool]$YamlExtras) {
+  if ($YamlExtras) {
+    $key = 'minimumReleaseAge'; $sep = ':'; $section = ''
+  } else {
+    $key = ToolKey $Tool; $sep = ToolSep $Tool; $section = ToolSection $Tool
+  }
+  LinesLoad $Path
+  $removed = [bool](LinesRemoveKey $key $sep $section)
+  $extraDefs = if ($YamlExtras) { ToolExtrasYaml $Tool } else { ToolExtras $Tool }
+  foreach ($e in $extraDefs) {
+    if (LinesRemoveKey $e.Key $e.Sep $e.Section) { $removed = $true }
+  }
+  if ($Tool -eq 'cargo' -and -not $YamlExtras) {
+    if (LinesRemoveKey 'minimum-release-age' '=' 'install') { $removed = $true }
+  }
+  if ($removed) { WriteAtomic $Path (LinesDump) }
+  return $removed
 }
 
 function ToolUnset([string]$Tool) {
   if ($Tool -eq 'composer') { return (ToolUnsetComposer) }
   $path = ToolPath $Tool
-  LinesLoad $path
-  $removed = [bool](LinesRemoveKey (ToolKey $Tool) (ToolSep $Tool) (ToolSection $Tool))
-  foreach ($e in (ToolExtras $Tool)) {
-    if (LinesRemoveKey $e.Key $e.Sep $e.Section) { $removed = $true }
+  $removed = ToolUnsetFile $path $Tool $false
+  if ($Tool -eq 'pnpm') {
+    if (ToolUnsetFile (Get-PnpmConfigPath) $Tool $true) { $removed = $true }
   }
-  if ($Tool -eq 'cargo') {
-    if (LinesRemoveKey $script:CargoPublishAgeKey '=' $script:CargoPublishAgeSection) { $removed = $true }
-  }
-  if ($removed) { WriteAtomic $path (LinesDump) }
   return @{ Path = $path; Removed = $removed }
 }
 
@@ -1035,7 +1066,8 @@ function ToolPreflight([string]$Tool) {
     'mise' { $min = @(2026,4,22); $msg = 'setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' }
     'uv'   { $min = @(0,9,17);    $msg = 'writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' }
     'bundler' { $min = @(4,0,13); $msg = 'BUNDLE_COOLDOWN is silently ignored. Upgrade bundler (v4.0.13+) to enforce the cooldown.' }
-    default { return $null }  # cargo: no min version gate (ships with rustup)
+    'cargo' { $min = @(1,100,0); $msg = 'global-min-publish-age is silently ignored. Upgrade cargo to enforce the cooldown.' }
+    default { return $null }
   }
   $v = VersionDetect $Tool
   if ($null -eq $v) { return $null }
@@ -1118,6 +1150,8 @@ Environment:
                           / `$env:HOME`). Set this when running as SYSTEM via
                           an orchestrator (Intune, SCCM, GPO, scheduled task,
                           RMM, …) so configs land in the real user's profile.
+  PMSEC_PNPM_CONFIG_FILE  Override the pnpm rc config file path.
+  PMSEC_PNPM_CONFIG_YAML  Override the pnpm config.yaml path.
   NPM_CONFIG_USERCONFIG   Override the npm/pnpm config file path.
   YARN_RC_FILENAME        Override the yarn config file path.
   BUN_CONFIG_FILE         Override the bun config file path.
@@ -1208,7 +1242,7 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
       foreach ($e in $r.Extras) { if (-not $e.Ok) { $failingExtras++ } }
       $rows.Add(@{
         Scope = $scope.Label
-        Tool = $t; Key = (ToolKey $t); Path = $r.Path
+        Tool = $t; Key = $r.Key; Path = $r.Path
         Configured = $r.Configured; Days = $r.Days; Warn = $warn
         Extras = $r.Extras
       })

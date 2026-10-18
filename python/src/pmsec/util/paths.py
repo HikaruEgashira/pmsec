@@ -27,6 +27,15 @@ def pnpm_rc_path(env: dict[str, str], home: Path, platform: str) -> Path:
     return home / ".config" / "pnpm" / "rc"
 
 
+def pnpm_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
+    """pnpm >= 11 reads pnpm-specific settings from config.yaml (camelCase)
+    instead of the registry/auth-only rc file. Keep it next to the rc path so
+    custom PMSEC_PNPM_CONFIG_FILE overrides remain self-contained."""
+    if "PMSEC_PNPM_CONFIG_YAML" in env:
+        return Path(env["PMSEC_PNPM_CONFIG_YAML"])
+    return pnpm_rc_path(env, home, platform).parent / "config.yaml"
+
+
 def bun_config_path(env: dict[str, str], home: Path) -> Path:
     if "BUN_CONFIG_FILE" in env:
         return Path(env["BUN_CONFIG_FILE"])

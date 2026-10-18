@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export function npmrcPath(env = process.env, home = homedir()) {
   return env.NPM_CONFIG_USERCONFIG || join(home, ".npmrc");
@@ -17,6 +17,14 @@ export function pnpmRcPath(env = process.env, home = homedir(), platform = proce
     return join(base, "pnpm", "config", "rc");
   }
   return join(home, ".config", "pnpm", "rc");
+}
+
+// pnpm >= 11 reads pnpm-specific settings from config.yaml (camelCase) instead
+// of the registry/auth-only rc file. Keep it next to the rc path so custom
+// PMSEC_PNPM_CONFIG_FILE overrides remain self-contained.
+export function pnpmConfigPath(env = process.env, home = homedir(), platform = process.platform) {
+  if (env.PMSEC_PNPM_CONFIG_YAML) return env.PMSEC_PNPM_CONFIG_YAML;
+  return join(dirname(pnpmRcPath(env, home, platform)), "config.yaml");
 }
 
 export function uvConfigPath(env = process.env, home = homedir(), platform = process.platform) {
