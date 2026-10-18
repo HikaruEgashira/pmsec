@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [hikae-flash, macos-latest, windows-latest]
         node: [22, 24]
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [hikae-flash, macos-latest, windows-latest]
         python: ['3.10', '3.11', '3.12', '3.13']
     defaults:
       run:
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [hikae-flash, macos-latest]
     defaults:
       run:
         working-directory: bash
@@ -95,7 +95,7 @@ jobs:
         include:
           - { os: windows-latest, shell: pwsh }
           - { os: windows-latest, shell: powershell }
-          - { os: ubuntu-latest,  shell: pwsh }
+          - { os: hikae-flash,  shell: pwsh }
           - { os: macos-latest,   shell: pwsh }
     defaults:
       run:
@@ -119,11 +119,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, impl: bash }
+          - { os: hikae-flash, impl: bash }
           - { os: macos-latest,  impl: bash }
-          - { os: ubuntu-latest, impl: node }
+          - { os: hikae-flash, impl: node }
           - { os: macos-latest,  impl: node }
-          - { os: ubuntu-latest, impl: python }
+          - { os: hikae-flash, impl: python }
           - { os: macos-latest,  impl: python }
           - { os: windows-latest, impl: powershell }
     steps:
