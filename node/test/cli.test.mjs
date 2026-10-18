@@ -21,7 +21,7 @@ function envFor(home, overrides = {}) {
   // Hide the host pnpm/bundler by default so version-aware behavior (pnpm 11
   // default enforcement, bundler preflight warnings) doesn't depend on what's
   // installed on the test machine.
-  return { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PMSEC_PNPM_VERSION: "none", PMSEC_BUNDLER_VERSION: "none", ...overrides };
+  return { HOME: home, XDG_CONFIG_HOME: join(home, ".config"), PMSEC_PNPM_VERSION: "none", PMSEC_BUNDLER_VERSION: "none", PMSEC_COMPOSER_VERSION: "none", ...overrides };
 }
 
 async function runCli(argv, home, platform = "linux", envOverrides = {}) {
@@ -105,6 +105,12 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(aube, /^paranoid = true$/m);
   const bundle = await readFile(join(home, ".bundle", "config"), "utf8");
   assert.match(bundle, /^BUNDLE_COOLDOWN: "1"$/m);
+  const composer = await readFile(join(home, ".config", "composer", "config.json"), "utf8");
+  assert.match(composer, /"minimum-release-age": 1/);
+  assert.match(composer, /"allow-plugins": false/);
+  assert.match(composer, /"secure-http": true/);
+  assert.match(composer, /"disable-tls": false/);
+  assert.match(composer, /"abandoned": "fail"/);
 });
 
 test("--check passes after default enable across all tools", async () => {
@@ -118,7 +124,7 @@ test("--check fails when the bundle is missing", async () => {
   const home = await setupHome();
   const { code, out } = await runCli(["--check"], home);
   assert.equal(code, 1);
-  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]) {
+  for (const t of ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube", "composer"]) {
     assert.match(out, new RegExp(`MISSING ${t}`));
   }
 });
@@ -226,8 +232,8 @@ test("--json emits parseable JSON for --check", async () => {
   const data = JSON.parse(out);
   assert.equal(data.ok, false);
   assert.equal(data.bundleDays, 1);
-  assert.equal(data.rows.length, 9);
-  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]);
+  assert.equal(data.rows.length, 10);
+  assert.deepEqual(data.rows.map(r => r.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube", "composer"]);
 });
 
 test("bun enable inserts key inside existing [install] section", async () => {
@@ -456,7 +462,7 @@ test("--doctor --json reports per-tool writability and exits 0 on a fresh home",
   assert.equal(data.doctor, true);
   assert.equal(data.ok, true);
   assert.equal(code, 0);
-  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]);
+  assert.deepEqual(data.tools.map(t => t.tool), ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube", "composer"]);
   for (const t of data.tools) {
     for (const key of ["path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"]) {
       assert.ok(key in t, `${t.tool} missing ${key}`);
@@ -512,4 +518,38 @@ test("cargo enable writes registry.global-min-publish-age tracking --days", asyn
   await writeFile(join(cargoHome, "config.toml"), '[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n');
   await runCli(["--disable", "--tool", "cargo"], home, "linux", env);
   assert.equal(await readFile(join(cargoHome, "config.toml"), "utf8"), "[install]\n[registry]\n");
+});
+
+test("composer enable writes JSON config and check/disable roundtrip", async () => {
+  const home = await setupHome();
+  await runCli(["--tool", "composer", "--days", "7"], home);
+  const cfg = JSON.parse(await readFile(join(home, ".config", "composer", "config.json"), "utf8"));
+  assert.equal(cfg.config["minimum-release-age"], 7);
+  assert.equal(cfg.config["allow-plugins"], false);
+  assert.equal(cfg.config["secure-http"], true);
+  assert.equal(cfg.config["disable-tls"], false);
+  assert.equal(cfg.config.audit.abandoned, "fail");
+  let r = await runCli(["--check", "--json", "--tool", "composer", "--days", "7"], home);
+  assert.equal(r.code, 0);
+  assert.equal(JSON.parse(r.out).rows[0].days, 7);
+  await runCli(["--disable", "--tool", "composer"], home);
+  r = await runCli(["--check", "--tool", "composer"], home);
+  assert.match(r.out, /MISSING composer/);
+});
+
+test("composer preserves unrelated JSON keys and accepts COMPOSER_HOME", async () => {
+  const home = await setupHome();
+  const composerHome = join(home, "composer-home");
+  await mkdir(composerHome, { recursive: true });
+  await writeFile(join(composerHome, "config.json"), '{\n  "config": {\n    "preferred-install": "dist",\n    "audit": {\n      "ignore": ["vendor/pkg"]\n    }\n  },\n  "repositories": {\n    "packagist": false\n  }\n}\n');
+  await runCli(["--tool", "composer"], home, "linux", { COMPOSER_HOME: composerHome });
+  const cfg = JSON.parse(await readFile(join(composerHome, "config.json"), "utf8"));
+  assert.equal(cfg.config["preferred-install"], "dist");
+  assert.deepEqual(cfg.config.audit.ignore, ["vendor/pkg"]);
+  assert.equal(cfg.repositories.packagist, false);
+  await runCli(["--disable", "--tool", "composer"], home, "linux", { COMPOSER_HOME: composerHome });
+  const after = JSON.parse(await readFile(join(composerHome, "config.json"), "utf8"));
+  assert.equal(after.config["preferred-install"], "dist");
+  assert.deepEqual(after.config.audit.ignore, ["vendor/pkg"]);
+  assert.equal(after.repositories.packagist, false);
 });

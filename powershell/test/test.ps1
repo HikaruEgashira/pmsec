@@ -46,14 +46,14 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
     'NPM_CONFIG_USERCONFIG','UV_CONFIG_FILE','BUN_CONFIG_FILE',
     'PMSEC_PNPM_CONFIG_FILE','PMSEC_PNPM_CONFIG_YAML',
     'YARN_RC_FILENAME','CARGO_HOME','MISE_GLOBAL_CONFIG_FILE',
-    'AUBE_CONFIG_FILE',
+    'AUBE_CONFIG_FILE','COMPOSER_HOME',
     'BUNDLE_USER_CONFIG','BUNDLE_USER_HOME',
     'APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME',
     'PMSEC_HOME','HOME','USERPROFILE','PMSEC_FAKE_SCOPES','PMSEC_NO_WSL',
     'PMSEC_NPM_VERSION','PMSEC_PNPM_VERSION','PMSEC_YARN_VERSION',
     'PMSEC_BUN_VERSION','PMSEC_CARGO_VERSION','PMSEC_MISE_VERSION','PMSEC_UV_VERSION',
     'PMSEC_AUBE_VERSION',
-    'PMSEC_BUNDLER_VERSION'
+    'PMSEC_BUNDLER_VERSION','PMSEC_COMPOSER_VERSION'
   )
   $saved = @{}
   foreach ($k in $envKeys) {
@@ -81,6 +81,7 @@ function InvokePmsec([string]$HomeDir, [hashtable]$Extra, [string[]]$Argv) {
   [Environment]::SetEnvironmentVariable('PMSEC_UV_VERSION',      'none', 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_AUBE_VERSION',    'none', 'Process')
   [Environment]::SetEnvironmentVariable('PMSEC_BUNDLER_VERSION', 'none', 'Process')
+  [Environment]::SetEnvironmentVariable('PMSEC_COMPOSER_VERSION', 'none', 'Process')
   if ($Extra) {
     foreach ($k in $Extra.Keys) {
       [Environment]::SetEnvironmentVariable($k, $Extra[$k], 'Process')
@@ -258,6 +259,12 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'yarn enableHardenedMode extra' '(?m)^enableHardenedMode: true$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'yarn enableScripts extra' '(?m)^enableScripts: false$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'bundler key' '(?m)^BUNDLE_COOLDOWN: "1"$' ([System.IO.File]::ReadAllText((PathJoin $h '.bundle' 'config'))))
+    $composer = [System.IO.File]::ReadAllText((PathJoin $h '.config' 'composer' 'config.json'))
+    $ok = $ok -and (AssertMatch 'composer cooldown' '"minimum-release-age": 1' $composer)
+    $ok = $ok -and (AssertMatch 'composer allow-plugins' '"allow-plugins": false' $composer)
+    $ok = $ok -and (AssertMatch 'composer secure-http' '"secure-http": true' $composer)
+    $ok = $ok -and (AssertMatch 'composer disable-tls' '"disable-tls": false' $composer)
+    $ok = $ok -and (AssertMatch 'composer abandoned' '"abandoned": "fail"' $composer)
     return $ok
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -277,7 +284,7 @@ T 'check fails when bundle missing' {
   try {
     $r = InvokePmsec $h $null @('--check')
     if ($r.Code -ne 1) { $script:LastFail = "expected exit 1, got $($r.Code)`n$($r.Out)"; return $false }
-    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv','bundler','aube') {
+    foreach ($t in 'npm','pnpm','yarn','bun','cargo','mise','uv','bundler','aube','composer') {
       if (-not (AssertMatch "MISSING $t" "MISSING $t" $r.Out)) { return $false }
     }
     return $true
@@ -396,9 +403,9 @@ T '--json emits parseable JSON for check' {
     try { $data = $r.Out | ConvertFrom-Json } catch { $script:LastFail = "json parse failed: $_`n$($r.Out)"; return $false }
     if ($data.ok -ne $false) { $script:LastFail = "expected ok=false, got $($data.ok)"; return $false }
     if ($data.bundleDays -ne 1) { $script:LastFail = "expected bundleDays=1, got $($data.bundleDays)"; return $false }
-    if ($data.rows.Count -ne 9) { $script:LastFail = "expected 9 rows, got $($data.rows.Count)"; return $false }
+    if ($data.rows.Count -ne 10) { $script:LastFail = "expected 10 rows, got $($data.rows.Count)"; return $false }
     $names = ($data.rows | ForEach-Object { $_.tool }) -join ','
-    if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube') { $script:LastFail = "row order: $names"; return $false }
+    if ($names -ne 'npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer') { $script:LastFail = "row order: $names"; return $false }
     return $true
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
@@ -759,7 +766,7 @@ T 'doctor --json reports per-tool writability on a fresh home' {
     if ($data.ok -ne $true) { $script:LastFail = "ok=false on fresh home: $($r.Out)"; return $false }
     if ($data.platform -ne 'win32') { $script:LastFail = "platform=$($data.platform)"; return $false }
     $tools = @($data.tools | ForEach-Object { $_.tool })
-    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','aube','uv','bundler')) {
+    foreach ($t in @('npm','pnpm','yarn','bun','cargo','mise','aube','uv','bundler','composer')) {
       if ($tools -notcontains $t) { $script:LastFail = "tool $t missing from doctor output"; return $false }
     }
     foreach ($row in $data.tools) {
@@ -832,6 +839,50 @@ T 'cargo writes global-min-publish-age tracking --days' {
     [System.IO.File]::WriteAllText($cfgPath, "[install]`nminimum-release-age = `"7d`"`n[registry]`nglobal-min-publish-age = `"1 days`"`n")
     [void](InvokePmsec $h $null @('--disable','--tool','cargo'))
     return (AssertFileEq 'disable removes both' "[install]`n[registry]`n" $cfgPath)
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'composer writes JSON config and check/disable roundtrip' {
+  $h = NewHome
+  try {
+    $r = InvokePmsec $h $null @('--tool','composer','--days','7')
+    if ($r.Code -ne 0) { $script:LastFail = "enable exit $($r.Code)`n$($r.Out)`n$($r.Err)"; return $false }
+    $cfgPath = PathJoin $h '.config' 'composer' 'config.json'
+    $cfg = [System.IO.File]::ReadAllText($cfgPath)
+    $ok = (AssertMatch 'composer cooldown' '"minimum-release-age": 7' $cfg)
+    $ok = $ok -and (AssertMatch 'composer allow-plugins' '"allow-plugins": false' $cfg)
+    $ok = $ok -and (AssertMatch 'composer secure-http' '"secure-http": true' $cfg)
+    $ok = $ok -and (AssertMatch 'composer disable-tls' '"disable-tls": false' $cfg)
+    $ok = $ok -and (AssertMatch 'composer abandoned' '"abandoned": "fail"' $cfg)
+    if (-not $ok) { return $false }
+    $r = InvokePmsec $h $null @('--check','--json','--tool','composer','--days','7')
+    if ($r.Code -ne 0) { $script:LastFail = "check exit $($r.Code)`n$($r.Out)"; return $false }
+    if (($r.Out | ConvertFrom-Json).rows[0].days -ne 7) { $script:LastFail = 'composer days != 7'; return $false }
+    [void](InvokePmsec $h $null @('--disable','--tool','composer'))
+    $r = InvokePmsec $h $null @('--check','--tool','composer')
+    if ($r.Out -notmatch 'MISSING composer') { $script:LastFail = "composer not missing after disable`n$($r.Out)"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'composer preserves unrelated JSON keys and honors COMPOSER_HOME' {
+  $h = NewHome
+  try {
+    $ch = PathJoin $h 'composer-home'
+    [void](New-Item -ItemType Directory -Force -Path $ch)
+    $cfgPath = Join-Path $ch 'config.json'
+    [System.IO.File]::WriteAllText($cfgPath, "{`n  `"config`": {`n    `"preferred-install`": `"dist`",`n    `"audit`": {`n      `"ignore`": [`"vendor/pkg`"]`n    }`n  },`n  `"repositories`": {`n    `"packagist`": false`n  }`n}`n")
+    $r = InvokePmsec $h @{ COMPOSER_HOME = $ch } @('--tool','composer')
+    if ($r.Code -ne 0) { $script:LastFail = "enable exit $($r.Code)`n$($r.Err)"; return $false }
+    $text = [System.IO.File]::ReadAllText($cfgPath)
+    $ok = (AssertMatch 'preferred-install preserved' '"preferred-install": "dist"' $text)
+    $ok = $ok -and (AssertMatch 'audit ignore preserved' '"ignore": \["vendor/pkg"\]' $text)
+    $ok = $ok -and (AssertMatch 'repositories preserved' '"packagist": false' $text)
+    if (-not $ok) { return $false }
+    [void](InvokePmsec $h @{ COMPOSER_HOME = $ch } @('--disable','--tool','composer'))
+    $text = [System.IO.File]::ReadAllText($cfgPath)
+    if ($text -match 'minimum-release-age') { $script:LastFail = 'composer cooldown not removed'; return $false }
+    return (AssertMatch 'preferred-install kept after disable' '"preferred-install": "dist"' $text)
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 

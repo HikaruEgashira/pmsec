@@ -1,0 +1,23 @@
+{
+  "pre": [
+    ["--tool", "composer", "--days", "7"]
+  ],
+  "args": ["--tool", "composer", "--days", "7", "--check", "--json"],
+  "expected_exit": 0,
+  "expected_json": {
+    "bundleDays": 7,
+    "rows": [
+      {
+        "tool": "composer", "key": "minimum-release-age", "path": "<HOME>/.config/composer/config.json",
+        "configured": "7", "days": 7, "warn": null,
+        "extras": [
+          {"key": "allow-plugins", "configured": "false", "expected": "false", "ok": true},
+          {"key": "secure-http", "configured": "true", "expected": "true", "ok": true},
+          {"key": "disable-tls", "configured": "false", "expected": "false", "ok": true},
+          {"key": "abandoned", "configured": "\"fail\"", "expected": "\"fail\"", "ok": true}
+        ]
+      }
+    ],
+    "ok": true
+  }
+}

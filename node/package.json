@@ -4,7 +4,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun, cargo, mise, uv, and bundler.",
+  "description": "Zero-config install-time supply-chain hardening for npm, pnpm, yarn, bun, cargo, mise, uv, bundler, aube, and composer.",
   "homepage": "https://github.com/HikaruEgashira/pmsec#readme",
   "repository": {
     "type": "git",
@@ -43,6 +43,8 @@
     "cargo",
     "mise",
     "uv",
+    "bundler",
+    "composer",
     "pmsec"
   ]
 }

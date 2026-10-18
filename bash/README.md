@@ -59,7 +59,8 @@ step: `mkdir`, `mktemp`, `body-write`, or `rename`.
 | `MISE_GLOBAL_CONFIG_FILE` | mise config path. |
 | `UV_CONFIG_FILE` | uv config path. |
 | `AUBE_CONFIG_FILE` | aube config path. |
-| `XDG_CONFIG_HOME` | XDG root for mise, uv, and aube. |
+| `COMPOSER_HOME` | Composer home; writes `$COMPOSER_HOME/config.json`. |
+| `XDG_CONFIG_HOME` | XDG root for mise, uv, aube, and composer. |
 
 ## Tests
 

@@ -22,6 +22,7 @@ def env_for(home: Path, **overrides: str) -> dict[str, str]:
         "XDG_CONFIG_HOME": str(home / ".config"),
         "PMSEC_PNPM_VERSION": "none",
         "PMSEC_BUNDLER_VERSION": "none",
+        "PMSEC_COMPOSER_VERSION": "none",
     }
     base.update(overrides)
     return base
@@ -127,6 +128,12 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "paranoid = true" in aube
     bundle = (tmp_path / ".bundle" / "config").read_text()
     assert 'BUNDLE_COOLDOWN: "1"' in bundle
+    composer = (tmp_path / ".config" / "composer" / "config.json").read_text()
+    assert '"minimum-release-age": 1' in composer
+    assert '"allow-plugins": false' in composer
+    assert '"secure-http": true' in composer
+    assert '"disable-tls": false' in composer
+    assert '"abandoned": "fail"' in composer
 
 
 def test_check_passes_after_default_enable(tmp_path):
@@ -138,7 +145,7 @@ def test_check_passes_after_default_enable(tmp_path):
 def test_check_fails_when_bundle_missing(tmp_path):
     code, out, _ = run(["--check"], tmp_path)
     assert code == 1
-    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"):
+    for tool in ("npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube", "composer"):
         assert f"MISSING {tool}" in out
 
 
@@ -222,8 +229,8 @@ def test_check_json(tmp_path):
     data = json.loads(out)
     assert data["ok"] is False
     assert data["bundleDays"] == 1
-    assert len(data["rows"]) == 9
-    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]
+    assert len(data["rows"]) == 10
+    assert [r["tool"] for r in data["rows"]] == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube", "composer"]
 
 
 def test_bun_section_insert(tmp_path):
@@ -420,7 +427,7 @@ def test_doctor_json_reports_per_tool_writability(tmp_path):
     assert code == 0
     # All eight tools surfaced in stable order with the writability quintet.
     tools = [t["tool"] for t in data["tools"]]
-    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube"]
+    assert tools == ["npm", "pnpm", "yarn", "bun", "cargo", "mise", "uv", "bundler", "aube", "composer"]
     for t in data["tools"]:
         for key in ("path", "parent", "exists", "writable", "parentExists", "parentWritable", "owner"):
             assert key in t, f"{t['tool']} missing {key}"
@@ -486,3 +493,43 @@ def test_cargo_enable_writes_global_min_publish_age(tmp_path):
     (cargo_home / "config.toml").write_text('[install]\nminimum-release-age = "7d"\n[registry]\nglobal-min-publish-age = "1 days"\n')
     run(["--disable", "--tool", "cargo"], tmp_path, **env)
     assert (cargo_home / "config.toml").read_text() == "[install]\n[registry]\n"
+
+
+def test_composer_roundtrip(tmp_path):
+    code, _, _ = run(["--tool", "composer", "--days", "7"], tmp_path)
+    assert code == 0
+    cfg_path = tmp_path / ".config" / "composer" / "config.json"
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["config"]["minimum-release-age"] == 7
+    assert cfg["config"]["allow-plugins"] is False
+    assert cfg["config"]["secure-http"] is True
+    assert cfg["config"]["disable-tls"] is False
+    assert cfg["config"]["audit"]["abandoned"] == "fail"
+    code, out, _ = run(["--check", "--json", "--tool", "composer", "--days", "7"], tmp_path)
+    assert code == 0
+    assert json.loads(out)["rows"][0]["days"] == 7
+    run(["--disable", "--tool", "composer"], tmp_path)
+    code, out, _ = run(["--check", "--tool", "composer"], tmp_path)
+    assert code == 1
+    assert "MISSING composer" in out
+
+
+def test_composer_preserves_unrelated_keys_and_honors_home(tmp_path):
+    composer_home = tmp_path / "composer-home"
+    composer_home.mkdir()
+    cfg_path = composer_home / "config.json"
+    cfg_path.write_text(
+        '{\n  "config": {\n    "preferred-install": "dist",\n'
+        '    "audit": {\n      "ignore": ["vendor/pkg"]\n    }\n  },\n'
+        '  "repositories": {\n    "packagist": false\n  }\n}\n'
+    )
+    run(["--tool", "composer"], tmp_path, COMPOSER_HOME=str(composer_home))
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["config"]["preferred-install"] == "dist"
+    assert cfg["config"]["audit"]["ignore"] == ["vendor/pkg"]
+    assert cfg["repositories"]["packagist"] is False
+    run(["--disable", "--tool", "composer"], tmp_path, COMPOSER_HOME=str(composer_home))
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["config"]["preferred-install"] == "dist"
+    assert cfg["config"]["audit"]["ignore"] == ["vendor/pkg"]
+    assert cfg["repositories"]["packagist"] is False

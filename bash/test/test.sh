@@ -101,6 +101,8 @@ t_enable_writes_all() {
   mise=$(cat "$home/.config/mise/config.toml")
   aube=$(cat "$home/.config/aube/config.toml")
   bundle=$(cat "$home/.bundle/config")
+  local composer
+  composer=$(cat "$home/.config/composer/config.json")
   assert_match "npm key" '^min-release-age=1$' "$npmrc" || return
   assert_match "pnpm key" '^minimum-release-age=1440$' "$pnpmrc" || return
   if printf '%s' "$npmrc" | grep -q 'minimum-release-age'; then
@@ -165,6 +167,11 @@ t_enable_writes_all() {
   assert_match "mise swift.gpg_verify extra" '^swift\.gpg_verify = true$' "$mise" || return
   assert_match "mise not_found_system_fallback extra" '^not_found_system_fallback = false$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
+  assert_match "composer cooldown" '"minimum-release-age": 1' "$composer" || return
+  assert_match "composer allow-plugins" '"allow-plugins": false' "$composer" || return
+  assert_match "composer secure-http" '"secure-http": true' "$composer" || return
+  assert_match "composer disable-tls" '"disable-tls": false' "$composer" || return
+  assert_match "composer audit abandoned" '"abandoned": "fail"' "$composer" || return
   rm -rf -- "$home"
 }
 
@@ -184,7 +191,7 @@ t_check_fails_when_missing() {
   rc=$?
   rm -rf -- "$home"
   assert_eq "exit code" "1" "$rc" || return
-  for t in npm pnpm yarn bun cargo mise uv bundler aube; do
+  for t in npm pnpm yarn bun cargo mise uv bundler aube composer; do
     assert_match "MISSING $t" "MISSING $t" "$out" || return
   done
 }
@@ -603,7 +610,7 @@ t_doctor_json_shape() {
   assert_match "doctor=true" '"doctor": true' "$out" || return 1
   assert_match "ok=true" '"ok": true' "$out" || return 1
   assert_match "pmsecHomeSource=HOME" '"pmsecHomeSource": "HOME"' "$out" || return 1
-  for tool in npm pnpm yarn bun cargo mise aube uv; do
+  for tool in npm pnpm yarn bun cargo mise aube uv bundler composer; do
     assert_match "$tool entry present" "\"tool\": \"$tool\"" "$out" || return 1
   done
   assert_match "parentWritable surfaced" '"parentWritable": true' "$out" || return 1
@@ -689,6 +696,46 @@ t_cargo_global_min_publish_age() {
 }
 
 T "cargo writes global-min-publish-age tracking --days" t_cargo_global_min_publish_age
+
+t_composer_roundtrip() {
+  local home; home=$(setup_home)
+  local cfg="$home/.config/composer/config.json"
+  run_pmsec "$home" -- --tool composer --days 7 >/dev/null
+  local text; text=$(cat "$cfg")
+  assert_match "composer cooldown" '"minimum-release-age": 7' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "composer allow-plugins" '"allow-plugins": false' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "composer secure-http" '"secure-http": true' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "composer disable-tls" '"disable-tls": false' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "composer abandoned" '"abandoned": "fail"' "$text" || { rm -rf "$home"; return 1; }
+  run_pmsec "$home" -- --check --json --tool composer --days 7 >/dev/null
+  assert_eq "composer check exit" "0" "$?" || { rm -rf "$home"; return 1; }
+  run_pmsec "$home" -- --disable --tool composer >/dev/null
+  local out; out=$(run_pmsec "$home" -- --check --tool composer 2>/dev/null)
+  rm -rf -- "$home"
+  assert_match "composer missing after disable" 'MISSING composer' "$out"
+}
+
+T "composer writes JSON config and check/disable roundtrip" t_composer_roundtrip
+
+t_composer_preserves_unrelated_keys() {
+  local home; home=$(setup_home)
+  local ch="$home/composer-home"
+  mkdir -p "$ch"
+  printf '{\n  "config": {\n    "preferred-install": "dist",\n    "audit": {\n      "ignore": ["vendor/pkg"]\n    }\n  },\n  "repositories": {\n    "packagist": false\n  }\n}\n' > "$ch/config.json"
+  run_pmsec "$home" COMPOSER_HOME="$ch" -- --tool composer >/dev/null
+  local text; text=$(cat "$ch/config.json")
+  assert_match "unrelated config preserved" '"preferred-install": "dist"' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "unrelated audit entry preserved" '"ignore": \["vendor/pkg"\]' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "unrelated top-level preserved" '"packagist": false' "$text" || { rm -rf "$home"; return 1; }
+  run_pmsec "$home" COMPOSER_HOME="$ch" -- --disable --tool composer >/dev/null
+  text=$(cat "$ch/config.json")
+  rm -rf -- "$home"
+  assert_match "unrelated config kept after disable" '"preferred-install": "dist"' "$text" || return 1
+  ! printf '%s' "$text" | grep -q 'minimum-release-age' || { LAST_FAIL="composer cooldown not removed"; return 1; }
+  return 0
+}
+
+T "composer preserves unrelated JSON keys" t_composer_preserves_unrelated_keys
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]
