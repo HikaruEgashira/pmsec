@@ -43,6 +43,9 @@ def env_for(impl: str, home: Path) -> dict[str, str]:
         "PATH": os.environ.get("PATH", ""),
         "HOME": str(home),
         "XDG_CONFIG_HOME": str(home / ".config"),
+        # Composer uses Application Support on macOS instead of XDG. Pin its
+        # home so one case exercises the same path on every runner.
+        "COMPOSER_HOME": str(home / ".config" / "composer"),
     }
     # Hide every host-installed package manager so version-aware preflight
     # warnings are deterministic (otherwise CI runners that ship npm/yarn/etc
