@@ -902,7 +902,7 @@ function ToolReadComposer {
       Ok = ($null -ne $cur -and $cur -eq $e.Expected); DefaultEnforced = $false
     })
   }
-  return @{ Path = $path; Configured = $val; Days = $days; Extras = $extras }
+  return @{ Key = 'minimum-release-age'; Path = $path; Configured = $val; Days = $days; Extras = $extras }
 }
 
 function ToolWriteComposer([int]$Days) {

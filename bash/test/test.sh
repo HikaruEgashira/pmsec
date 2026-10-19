@@ -635,7 +635,11 @@ t_doctor_blocks_on_unwritable_parent() {
   assert_match "parentWritable=false" '"parentWritable": false' "$out" || return 1
 }
 
-T "doctor blocks when parent directory is not writable" t_doctor_blocks_on_unwritable_parent
+if [ "$(id -u)" -eq 0 ]; then
+  printf 'SKIP  doctor blocks when parent directory is not writable (root bypasses permission bits)\n'
+else
+  T "doctor blocks when parent directory is not writable" t_doctor_blocks_on_unwritable_parent
+fi
 
 # explain_fs_error must surface a chown hint when the underlying write fails
 # with Permission denied. We force this by chmod 500-ing the home dir so the
@@ -653,7 +657,11 @@ t_explain_chown_hint_on_eacces() {
   assert_match "chown hint present" 'Check file ownership' "$err"
 }
 
-T "explain_fs_error emits chown hint on EACCES" t_explain_chown_hint_on_eacces
+if [ "$(id -u)" -eq 0 ]; then
+  printf 'SKIP  explain_fs_error emits chown hint on EACCES (root bypasses permission bits)\n'
+else
+  T "explain_fs_error emits chown hint on EACCES" t_explain_chown_hint_on_eacces
+fi
 
 # write_atomic step labels: when the target file is a symlink we refuse and
 # emit a labeled error. Use that to verify the prefix exists.

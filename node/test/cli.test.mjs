@@ -472,7 +472,13 @@ test("--doctor --json reports per-tool writability and exits 0 on a fresh home",
   assert.equal(data.pmsecHomeSource, "HOME");
 });
 
-test("--doctor blocks when the parent directory is not writable", { skip: process.platform === "win32" ? "POSIX permission semantics; Windows ignores chmod for non-execute bits" : false }, async () => {
+const permissionTestSkip = process.platform === "win32"
+  ? "POSIX permission semantics; Windows ignores chmod for non-execute bits"
+  : process.getuid?.() === 0
+    ? "permission bits are bypassed when running as root"
+    : false;
+
+test("--doctor blocks when the parent directory is not writable", { skip: permissionTestSkip }, async () => {
   const { chmod, mkdir: mk } = await import("node:fs/promises");
   const home = await setupHome();
   const ro = join(home, "ro");

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -435,7 +436,10 @@ def test_doctor_json_reports_per_tool_writability(tmp_path):
     assert data["pmsecHomeSource"] == "HOME"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission semantics; Windows ignores chmod for non-execute bits")
+@pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="POSIX permission semantics; Windows and root bypass chmod for non-execute bits",
+)
 def test_doctor_blocks_when_parent_not_writable(tmp_path):
     blocked = tmp_path / "ro" / ".npmrc"
     blocked.parent.mkdir()
@@ -452,7 +456,10 @@ def test_doctor_blocks_when_parent_not_writable(tmp_path):
         blocked.parent.chmod(0o700)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission semantics; Windows ignores chmod for non-execute bits")
+@pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="POSIX permission semantics; Windows and root bypass chmod for non-execute bits",
+)
 def test_explain_fs_error_emits_chown_hint_for_permission_denied(tmp_path):
     # Make ~/.npmrc unwritable (owned by root would be ideal but we can't
     # sudo in tests). Setting the file readonly + parent dir readonly
