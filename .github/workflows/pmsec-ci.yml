@@ -106,66 +106,32 @@ jobs:
         timeout-minutes: 5
         with:
           persist-credentials: false
-      # The flash fleet image (Ubuntu arm64) ships no pwsh. Prepare the pinned
-      # PowerShell release from its official distribution and verify integrity
-      # before extracting or executing it.
       - name: Install PowerShell (hikae-flash)
         if: matrix.os == 'hikae-flash'
         timeout-minutes: 10
         shell: bash
         working-directory: .
-        env:
-          PWSH_VERSION: '7.4.6'
         run: |
           set -euo pipefail
           case "$(uname -m)" in
-            x86_64|amd64) arch=x64 ;;
-            aarch64|arm64) arch=arm64 ;;
+            x86_64|amd64)
+              arch=x64
+              digest=6f6015203c47806c5cc444c19d8ed019695e610fbd948154264bf9ca8e157561 ;;
+            aarch64|arm64)
+              arch=arm64
+              digest=c0159b03e85f44ae1e7697818a011558da6c813d0aae848bf5ac13bf435d8624 ;;
             *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
           esac
-          asset="powershell-${PWSH_VERSION}-linux-${arch}.tar.gz"
           work="$(mktemp -d)"
-          # Primary: the immutable official release asset for the pinned version.
-          asset_url=""
-          asset_digest=""
-          if curl -fsSL --proto '=https' --tlsv1.2 \
-               "https://api.github.com/repos/PowerShell/PowerShell/releases/tags/v${PWSH_VERSION}" \
-               -o "$work/release.json" 2>/dev/null; then
-            asset_url="$(jq -r --arg a "$asset" '.assets[] | select(.name == $a) | .browser_download_url' "$work/release.json" 2>/dev/null || true)"
-            asset_digest="$(jq -r --arg a "$asset" '.assets[] | select(.name == $a) | .digest' "$work/release.json" 2>/dev/null || true)"
-          fi
-          if [ -n "$asset_url" ] && [ "$asset_url" != "null" ] \
-             && [ -n "$asset_digest" ] && [ "$asset_digest" != "null" ]; then
-            curl -fsSL --proto '=https' --tlsv1.2 "$asset_url" -o "$work/$asset"
-            # Integrity: verify the SHA-256 digest GitHub publishes for the asset.
-            printf '%s  %s\n' "${asset_digest#sha256:}" "$work/$asset" | sha256sum --check --strict -
-            mkdir -p "$work/pwsh"
-            tar -xzf "$work/$asset" -C "$work/pwsh"
-            chmod +x "$work/pwsh/pwsh"
-            export PATH="$work/pwsh:$PATH"
-            echo "$work/pwsh" >> "$GITHUB_PATH"
-          else
-            # Fallback: Microsoft's GPG-signed Ubuntu repository. apt verifies the
-            # signed metadata and package digest before installation.
-            if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
-            . /etc/os-release
-            curl -fsSL --proto '=https' --tlsv1.2 \
-              "https://packages.microsoft.com/config/ubuntu/${VERSION_ID}/packages-microsoft-prod.deb" \
-              -o "$work/packages-microsoft-prod.deb"
-            $SUDO dpkg -i "$work/packages-microsoft-prod.deb"
-            $SUDO apt-get update
-            candidate="$(apt-cache madison powershell | awk -v v="$PWSH_VERSION" '$3 ~ ("^" v "([-.]|$)") { print $3; exit }')"
-            if [ -z "$candidate" ]; then
-              candidate="$(apt-cache madison powershell | awk -v v="${PWSH_VERSION%.*}" '$3 ~ ("^" v "([-.]|$)") { print $3; exit }')"
-            fi
-            if [ -z "$candidate" ]; then
-              echo "PowerShell $PWSH_VERSION is not available from the Microsoft repository" >&2
-              exit 1
-            fi
-            $SUDO apt-get install -y --no-install-recommends "powershell=$candidate"
-          fi
-          command -v pwsh
-          pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          # Digests are from the official v7.4.6 hashes.sha256 release asset.
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            "https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/powershell-7.4.6-linux-${arch}.tar.gz" \
+            -o "$work/powershell.tar.gz"
+          printf '%s  %s\n' "$digest" "$work/powershell.tar.gz" | sha256sum --check --strict -
+          tar -xzf "$work/powershell.tar.gz" -C "$work"
+          chmod +x "$work/pwsh"
+          echo "$work" >> "$GITHUB_PATH"
+          "$work/pwsh" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
       - name: shell version
         timeout-minutes: 1
         run: $PSVersionTable | Format-List
