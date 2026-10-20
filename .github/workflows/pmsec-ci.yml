@@ -87,7 +87,7 @@ jobs:
         timeout-minutes: 5
         run: bash test/test.sh
   powershell:
-    timeout-minutes: 10
+    timeout-minutes: 15
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -106,6 +106,32 @@ jobs:
         timeout-minutes: 5
         with:
           persist-credentials: false
+      - name: Install PowerShell (hikae-flash)
+        if: matrix.os == 'hikae-flash'
+        timeout-minutes: 10
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64|amd64)
+              arch=x64
+              digest=6f6015203c47806c5cc444c19d8ed019695e610fbd948154264bf9ca8e157561 ;;
+            aarch64|arm64)
+              arch=arm64
+              digest=c0159b03e85f44ae1e7697818a011558da6c813d0aae848bf5ac13bf435d8624 ;;
+            *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          work="$(mktemp -d)"
+          # Digests are from the official v7.4.6 hashes.sha256 release asset.
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            "https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/powershell-7.4.6-linux-${arch}.tar.gz" \
+            -o "$work/powershell.tar.gz"
+          printf '%s  %s\n' "$digest" "$work/powershell.tar.gz" | sha256sum --check --strict -
+          tar -xzf "$work/powershell.tar.gz" -C "$work"
+          chmod +x "$work/pwsh"
+          echo "$work" >> "$GITHUB_PATH"
+          "$work/pwsh" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
       - name: shell version
         timeout-minutes: 1
         run: $PSVersionTable | Format-List
