@@ -1,0 +1,18 @@
+{
+  "setup": {
+    ".cargo/config.toml": "[install]\nminimum-release-age = \"7 days\"\n"
+  },
+  "args": ["--tool", "cargo", "--check", "--json"],
+  "expected_exit": 1,
+  "expected_json": {
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "cargo", "key": "global-min-publish-age", "path": "<HOME>/.cargo/config.toml",
+        "configured": null, "days": null, "warn": null,
+        "extras": []
+      }
+    ],
+    "ok": false
+  }
+}
