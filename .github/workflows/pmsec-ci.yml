@@ -140,6 +140,10 @@ jobs:
         timeout-minutes: 5
         with:
           python-version: '3.12'
+      - name: test conformance runner
+        timeout-minutes: 2
+        run: python3 -m unittest discover -s conformance -p 'test_*.py' -v
+        shell: bash
       - name: run conformance
         timeout-minutes: 5
         env:
