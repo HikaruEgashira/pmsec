@@ -676,8 +676,9 @@ t_write_atomic_step_label_on_symlink() {
 
 T "write_atomic refuses to follow a symlink with a labeled error" t_write_atomic_step_label_on_symlink
 
-# cargo writes [registry].global-min-publish-age alongside the install
-# cooldown, tracking --days, and check accepts any value at least as strict.
+# cargo writes [registry].global-min-publish-age, tracking --days, and check
+# accepts any value at least as strict. The old [install].minimum-release-age
+# key was never supported by cargo and must be removed on write.
 t_cargo_global_min_publish_age() {
   local home; home=$(setup_home)
   local ch="$home/cargo" out rc
