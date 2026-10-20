@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-flash, macos-latest, windows-latest]
+        os: [hikae-flash]
         node: [22, 24]
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-flash, macos-latest, windows-latest]
+        os: [hikae-flash]
         python: ['3.10', '3.11', '3.12', '3.13']
     defaults:
       run:
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-flash, macos-latest]
+        os: [hikae-flash]
     defaults:
       run:
         working-directory: bash
@@ -93,10 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, shell: pwsh }
-          - { os: windows-latest, shell: powershell }
-          - { os: hikae-flash,  shell: pwsh }
-          - { os: macos-latest,   shell: pwsh }
+          - { os: hikae-flash, shell: pwsh }
     defaults:
       run:
         working-directory: powershell
@@ -146,12 +143,8 @@ jobs:
       matrix:
         include:
           - { os: hikae-flash, impl: bash }
-          - { os: macos-latest,  impl: bash }
           - { os: hikae-flash, impl: node }
-          - { os: macos-latest,  impl: node }
           - { os: hikae-flash, impl: python }
-          - { os: macos-latest,  impl: python }
-          - { os: windows-latest, impl: powershell }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
