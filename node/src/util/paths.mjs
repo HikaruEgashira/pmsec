@@ -81,14 +81,15 @@ export function aubeConfigPath(env = process.env, home = homedir(), platform = p
 
 // Composer keeps its global config in $COMPOSER_HOME/config.json. The default
 // COMPOSER_HOME follows platform conventions (XDG on Unix, Application Support
-// on macOS, APPDATA on Windows), matching Composer's own resolution.
+// on macOS, APPDATA on Windows), matching Composer's own resolution. An
+// explicit XDG_CONFIG_HOME wins on every non-Windows platform, including macOS.
 export function composerConfigPath(env = process.env, home = homedir(), platform = process.platform) {
   if (env.COMPOSER_HOME) return join(env.COMPOSER_HOME, "config.json");
   if (platform === "win32") {
     const base = env.APPDATA || join(home, "AppData", "Roaming");
     return join(base, "Composer", "config.json");
   }
+  if (env.XDG_CONFIG_HOME) return join(env.XDG_CONFIG_HOME, "composer", "config.json");
   if (platform === "darwin") return join(home, "Library", "Application Support", "composer", "config.json");
-  const base = env.XDG_CONFIG_HOME || join(home, ".config");
-  return join(base, "composer", "config.json");
+  return join(home, ".config", "composer", "config.json");
 }
