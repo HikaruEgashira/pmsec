@@ -43,15 +43,14 @@ jobs:
         timeout-minutes: 1
         run: |
           prefix=$(date -u +%Y.%-m)
-          latest=$(git tag --list "pmsec-node-v${prefix}.*" --sort=-v:refname | head -1)
+          latest=$(git tag --list "pmsec-node-v${prefix}.*" "pmsec-py-v${prefix}.*" | awk -F. '$NF ~ /^[0-9]+$/ { print $NF }' | sort -nr | sed -n '1p')
           if [ -z "$latest" ]; then
             next="${prefix}.0"
           else
-            n="${latest##*.}"
-            next="${prefix}.$((n + 1))"
+            next="${prefix}.$((10#$latest + 1))"
           fi
           echo "version=$next" >> "$GITHUB_OUTPUT"
-          echo "Next version: $next (prefix: $prefix, latest tag in month: ${latest:-none})"
+          echo "Next version: $next (prefix: $prefix, latest revision in month: ${latest:-none})"
       - name: Bump all version declarations
         timeout-minutes: 5
         env:

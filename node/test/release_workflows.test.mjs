@@ -172,3 +172,26 @@ test('release source guard rejects a newer main checkout for an older successful
   const failedCI = validateSource(f, { CONCLUSION: 'failure' });
   assert.notEqual(failedCI.status, 0);
 });
+
+
+test('next release version advances beyond both package tag series', (t) => {
+  const f = fixture();
+  t.after(() => rmSync(f.directory, { recursive: true, force: true }));
+  const source = workflow('pmsec-release.yml');
+  const block = source.split('      - name: Determine next CalVer version')[1]
+    .split('        run: |\n')[1].split('      - name:')[0]
+    .replace(/^          /gm, '');
+  const prefix = execFileSync('date', ['-u', '+%Y.%-m'], { encoding: 'utf8' }).trim();
+  function check(tags, expected) {
+    for (const tag of tags) execFileSync('git', ['tag', tag], { cwd: f.directory, env: f.gitEnv });
+    writeFileSync(f.output, '');
+    const result = spawnSync('/bin/bash', ['-euo', 'pipefail', '-c', block], {
+      cwd: f.directory, env: { ...f.gitEnv, GITHUB_OUTPUT: f.output }, encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(f.output, 'utf8').trim(), `version=${prefix}.${expected}`);
+  }
+  check([], 0);
+  check([`pmsec-node-v${prefix}.3`, `pmsec-py-v${prefix}.4`], 5);
+  check([`pmsec-node-v${prefix}.10`, `pmsec-py-v${prefix}.9`], 11);
+});
