@@ -128,6 +128,10 @@ test('new package tag pushes start the matching publishers from the event SHA', 
   }
 });
 
+test('PyPI publisher uses a Docker-capable GitHub-hosted runner', () => {
+  assert.match(workflow('pmsec-release-pypi.yml'), /runs-on: ubuntu-24\.04/);
+});
+
 test('npm trusted publishing uses GitHub-hosted runners and requires a supported npm version', () => {
   const source = workflow('pmsec-release-npm.yml');
   assert.match(source, /runs-on: ubuntu-24\.04/);

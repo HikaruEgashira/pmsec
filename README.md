@@ -73,7 +73,7 @@ GitHub OIDC rather than stored registry tokens. Registry-side trusted-publisher 
 still match the repository and workflow (and PyPI's `pypi` environment); this repository change
 cannot verify those external settings. npm trusted publishing runs on GitHub-hosted
 `ubuntu-24.04` because npm does not support self-hosted runners for OIDC, and the workflow checks
-for npm `>=11.5.1` on Node 24. GitHub-hosted runner billing/availability has not been verified.
+for npm `>=11.5.1` on Node 24. The PyPI publisher also uses `ubuntu-24.04` because its publishing action requires Docker, which is absent on hikae-flash. GitHub-hosted runner billing/availability has not been verified.
 
 ## Policy
 
