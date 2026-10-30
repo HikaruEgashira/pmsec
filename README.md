@@ -54,6 +54,27 @@ npx --registry=https://registry.npmjs.org/ --min-release-age=0 pmsec --check
 uvx --index https://pypi.org/simple --exclude-newer-package pmsec=2099-01-01 pmsec --check
 ```
 
+## Releases
+
+Tracking: [Issue #159](https://github.com/HikaruEgashira/pmsec/issues/159).
+
+`pmsec release` runs after successful main CI or an explicit release dispatch. It updates the
+shared version, then atomically pushes `pmsec-node-v<version>` and `pmsec-py-v<version>` with
+the release commit. A new package tag push starts that package's publisher; each publisher
+checks out the event's commit SHA and rejects a tag, input, or package-version mismatch. An
+automatic release uses the exact successful CI head SHA; manual release dispatch is limited to
+the main branch. If main advances before the release push, the non-fast-forward push fails.
+
+GitHub does not start push-triggered workflows for tags pushed with `GITHUB_TOKEN`, so the
+release workflow also dispatches both publishers with their exact package tag as `--ref`.
+Direct publisher dispatch is restricted to `github-actions[bot]`; a newly pushed canonical tag
+can also publish directly. Existing tag updates are rejected. npm and PyPI publishers use
+GitHub OIDC rather than stored registry tokens. Registry-side trusted-publisher settings must
+still match the repository and workflow (and PyPI's `pypi` environment); this repository change
+cannot verify those external settings. npm trusted publishing runs on GitHub-hosted
+`ubuntu-24.04` because npm does not support self-hosted runners for OIDC, and the workflow checks
+for npm `>=11.5.1` on Node 24. GitHub-hosted runner billing/availability has not been verified.
+
 ## Policy
 
 | Tool | Config | Key | Value | Purpose | Min version |
