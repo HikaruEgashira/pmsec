@@ -1,12 +1,14 @@
 name: pmsec release npm
-# Only dispatched by the `pmsec release` workflow. No tag trigger: release
-# tags are pushed with GITHUB_TOKEN (which never triggers workflows), so a
-# tag-triggered run could only ever be a manual tag push — blocked by design.
+# The release workflow dispatches its GITHUB_TOKEN-created tag; new tag pushes
+# also publish directly. Both paths build the package from the event's commit.
 on:
+  push:
+    tags:
+      - 'pmsec-node-v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g. 0.12.0)'
+        description: 'Tag version to publish (e.g. 2026.10.4)'
         required: true
 permissions:
   contents: read
@@ -15,7 +17,7 @@ permissions:
 jobs:
   publish:
     timeout-minutes: 15
-    runs-on: [self-hosted, linux, arm64, hikae-flash]
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: node
@@ -23,18 +25,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         timeout-minutes: 5
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org/
-      - name: Block direct manual dispatch
+      - name: Validate tag, package version and event
+        id: release
         timeout-minutes: 1
         env:
           ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before || '' }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          [ "$ACTOR" = "github-actions[bot]" ] || { echo "publish runs only via the 'pmsec release' workflow (actor: $ACTOR)" >&2; exit 1; }
+          set -euo pipefail
+          npm_version="$(npm --version)"
+          node ../scripts/validate-npm-publish-version.mjs "$npm_version"
+          actual="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version)')"
+          bash ../scripts/validate-release-tag.sh pmsec-node-v "$actual"
       - name: Test
         timeout-minutes: 5
         run: node --test
@@ -48,4 +61,4 @@ jobs:
           subject-path: 'node/*.tgz'
       - name: Publish
         timeout-minutes: 5
-        run: npm publish *.tgz --provenance --access public
+        run: npm publish ./*.tgz --provenance --access public

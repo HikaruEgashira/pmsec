@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
   actions: write
+concurrency:
+  group: pmsec-release
+  cancel-in-progress: false
 jobs:
   release:
     if: >-
@@ -19,8 +22,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
+      - name: Verify the release source snapshot
+        timeout-minutes: 1
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+          HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name || '' }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+          REPOSITORY: ${{ github.repository }}
+        run: bash scripts/validate-release-source.sh
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         timeout-minutes: 5
       - name: Determine next CalVer version
@@ -28,15 +43,14 @@ jobs:
         timeout-minutes: 1
         run: |
           prefix=$(date -u +%Y.%-m)
-          latest=$(git tag --list "pmsec-node-v${prefix}.*" --sort=-v:refname | head -1)
+          latest=$(git tag --list "pmsec-node-v${prefix}.*" "pmsec-py-v${prefix}.*" | awk -F. '$NF ~ /^[0-9]+$/ { print $NF }' | sort -nr | sed -n '1p')
           if [ -z "$latest" ]; then
             next="${prefix}.0"
           else
-            n="${latest##*.}"
-            next="${prefix}.$((n + 1))"
+            next="${prefix}.$((10#$latest + 1))"
           fi
           echo "version=$next" >> "$GITHUB_OUTPUT"
-          echo "Next version: $next (prefix: $prefix, latest tag in month: ${latest:-none})"
+          echo "Next version: $next (prefix: $prefix, latest revision in month: ${latest:-none})"
       - name: Bump all version declarations
         timeout-minutes: 5
         env:
@@ -52,17 +66,22 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "chore: release v$VERSION"
-          git tag "pmsec-node-v$VERSION"
-          git tag "pmsec-py-v$VERSION"
-          git push origin HEAD:main "pmsec-node-v$VERSION" "pmsec-py-v$VERSION"
+          node_tag="pmsec-node-v$VERSION"
+          py_tag="pmsec-py-v$VERSION"
+          git tag "$node_tag"
+          git tag "$py_tag"
+          git push --atomic origin HEAD:main "$node_tag" "$py_tag"
       - name: Dispatch publish workflows
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh workflow run pmsec-release-npm.yml --ref main -f version="$VERSION"
-          gh workflow run pmsec-release-pypi.yml --ref main -f version="$VERSION"
+          set -euo pipefail
+          # GITHUB_TOKEN tag pushes do not start push workflows; dispatch each immutable tag as a fallback.
+          gh workflow run pmsec-release-npm.yml --ref "pmsec-node-v$VERSION" -f version="$VERSION"
+          gh workflow run pmsec-release-pypi.yml --ref "pmsec-py-v$VERSION" -f version="$VERSION"
