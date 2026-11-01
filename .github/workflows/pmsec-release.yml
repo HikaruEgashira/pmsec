@@ -36,7 +36,7 @@ jobs:
           CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
           REPOSITORY: ${{ github.repository }}
         run: bash scripts/validate-release-source.sh
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         timeout-minutes: 5
       - name: Determine next CalVer version
         id: version
