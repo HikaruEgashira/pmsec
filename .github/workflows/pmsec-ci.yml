@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-flash]
+        os: [hikae-2vcpu-ubuntu-2404-arm]
         node: [22, 24]
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-flash]
+        os: [hikae-2vcpu-ubuntu-2404-arm]
         python: ['3.10', '3.11', '3.12', '3.13']
     defaults:
       run:
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-flash]
+        os: [hikae-2vcpu-ubuntu-2404-arm]
     defaults:
       run:
         working-directory: bash
@@ -93,7 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: hikae-flash, shell: pwsh }
+          - { os: hikae-2vcpu-ubuntu-2404-arm, shell: pwsh }
     defaults:
       run:
         working-directory: powershell
@@ -103,8 +103,8 @@ jobs:
         timeout-minutes: 5
         with:
           persist-credentials: false
-      - name: Install PowerShell (hikae-flash)
-        if: matrix.os == 'hikae-flash'
+      - name: Install PowerShell (hikae-2vcpu-ubuntu-2404-arm)
+        if: matrix.os == 'hikae-2vcpu-ubuntu-2404-arm'
         timeout-minutes: 10
         shell: bash
         working-directory: .
@@ -142,9 +142,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: hikae-flash, impl: bash }
-          - { os: hikae-flash, impl: node }
-          - { os: hikae-flash, impl: python }
+          - { os: hikae-2vcpu-ubuntu-2404-arm, impl: bash }
+          - { os: hikae-2vcpu-ubuntu-2404-arm, impl: node }
+          - { os: hikae-2vcpu-ubuntu-2404-arm, impl: python }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
