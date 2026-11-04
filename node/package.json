@@ -1,6 +1,6 @@
 {
   "name": "pmsec",
-  "version": "2026.10.5",
+  "version": "2026.11.0",
   "publishConfig": {
     "access": "public"
   },
