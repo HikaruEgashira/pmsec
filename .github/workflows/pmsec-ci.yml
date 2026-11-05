@@ -135,6 +135,12 @@ jobs:
       - name: test
         timeout-minutes: 5
         run: ${{ matrix.shell }} -NoProfile -File test/test.ps1
+      # Reuses the pwsh installed above so the cross-port contract covers this port too.
+      - name: conformance
+        timeout-minutes: 5
+        shell: bash
+        working-directory: .
+        run: python3 conformance/run.py --impl powershell
   conformance:
     timeout-minutes: 10
     runs-on: ${{ matrix.os }}
