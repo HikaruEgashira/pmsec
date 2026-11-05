@@ -12,14 +12,17 @@ function headerName(line) {
   return m ? m[1].split(".").map(p => unquote(p.trim())).join(".") : null;
 }
 
+// YAML nests by indentation, so only unindented `key:` lines are top-level.
+function indentRe(sep) { return sep === ":" ? "^" : String.raw`^\s*`; }
+
 function entryKey(line, sep) {
-  const m = line.match(new RegExp(String.raw`^\s*${KEY}\s*${sep}`));
+  const m = line.match(new RegExp(String.raw`${indentRe(sep)}${KEY}\s*${sep}`));
   return m ? unquote(m[1]) : null;
 }
 
 // Value after the separator with any trailing comment removed.
 function entryValue(line, sep) {
-  const m = line.match(new RegExp(String.raw`^\s*${KEY}\s*${sep}\s*(.*?)\s*$`));
+  const m = line.match(new RegExp(String.raw`${indentRe(sep)}${KEY}\s*${sep}\s*(.*?)\s*$`));
   if (!m) return null;
   const v = m[2];
   const close = { '"': '"', "'": "'", "{": "}" }[v[0]];
@@ -28,6 +31,20 @@ function entryValue(line, sep) {
     if (end >= 0) return v.slice(0, end + 1);
   }
   return v.replace(/\s+#.*$/, "");
+}
+
+// Copy of `lines` with the body of TOML multi-line strings blanked, so text
+// inside them is never taken for a header or key. Indices stay aligned.
+function scanView(lines) {
+  let open = null;
+  return lines.map(line => {
+    const inside = open !== null;
+    for (const m of line.matchAll(/"""|'''/g)) {
+      if (open === null) open = m[0];
+      else if (open === m[0]) open = null;
+    }
+    return inside ? "" : line;
+  });
 }
 
 function rangeForSection(lines, section) {
@@ -54,7 +71,17 @@ function indexOfKey(lines, range, key, sep) {
 
 // TOML forbids `a.b = x` under [s] when [s.a] exists or `a` is an inline table,
 // so target the subtable, or report the inline-table line to edit in place.
+// A table defined at the root through dotted keys (`s.k = v`) or an inline
+// table (`s = { ... }`) cannot also get a [s] header, so keep editing it there.
 function resolve(lines, key, sep, section) {
+  if (section && sep === "=" && rangeForSection(lines, section) === null) {
+    const [, end] = rangeForSection(lines, null);
+    for (let i = 0; i < end; i++) {
+      const k = entryKey(lines[i], sep) || "";
+      if (k.startsWith(`${section}.`)) return { key: `${section}.${key}`, section: null };
+      if (k === section && (entryValue(lines[i], sep) || "").startsWith("{")) return { key, section: null, inline: i, head: section };
+    }
+  }
   if (section && sep === "=" && key.includes(".")) {
     const dot = key.indexOf(".");
     const head = key.slice(0, dot), rest = key.slice(dot + 1);
@@ -87,7 +114,7 @@ function indexOfFirstSection(lines) {
 
 export function readKey(text, key, opts = {}) {
   const sep = opts.sep || "=";
-  const lines = text.split(/\r?\n/);
+  const lines = scanView(text.split(/\r?\n/));
   const r = resolve(lines, key, sep, opts.section || null);
   if (r.inline !== undefined) {
     const pair = inlinePairs(lines[r.inline]).find(p => entryKey(p, sep) === r.key);
@@ -103,7 +130,8 @@ export function setKey(text, key, valueLine, opts = {}) {
   const sep = opts.sep || "=";
   const trailing = text.endsWith("\n") || text === "";
   const lines = text === "" ? [] : text.replace(/\r?\n$/, "").split(/\r?\n/);
-  const r = resolve(lines, key, sep, opts.section || null);
+  const scan = scanView(lines);
+  const r = resolve(scan, key, sep, opts.section || null);
   const section = r.section;
   if (r.key !== key) valueLine = r.key + valueLine.slice(key.length);
   if (r.inline !== undefined) {
@@ -114,19 +142,21 @@ export function setKey(text, key, valueLine, opts = {}) {
     return lines.join("\n") + "\n";
   }
   key = r.key;
-  let range = rangeForSection(lines, section);
+  let range = rangeForSection(scan, section);
   if (range === null) {
     if (lines.length && lines[lines.length - 1] !== "") lines.push("");
     lines.push(`[${section}]`, valueLine);
   } else {
-    const idx = indexOfKey(lines, range, key, sep);
+    const idx = indexOfKey(scan, range, key, sep);
     if (idx >= 0) {
       lines[idx] = valueLine;
     } else if (section) {
       lines.splice(range[0], 0, valueLine);
     } else {
-      const firstSec = indexOfFirstSection(lines);
+      const firstSec = indexOfFirstSection(scan);
+      // Reuse the blank line that already separates the root keys from the first table.
       if (firstSec < 0) lines.push(valueLine);
+      else if (firstSec > 0 && lines[firstSec - 1] === "") lines.splice(firstSec - 1, 0, valueLine);
       else lines.splice(firstSec, 0, valueLine, "");
     }
   }
@@ -137,7 +167,8 @@ export function removeKey(text, key, opts = {}) {
   const sep = opts.sep || "=";
   const trailing = text.endsWith("\n");
   const lines = text === "" ? [] : text.replace(/\r?\n$/, "").split(/\r?\n/);
-  const r = resolve(lines, key, sep, opts.section || null);
+  const scan = scanView(lines);
+  const r = resolve(scan, key, sep, opts.section || null);
   if (r.inline !== undefined) {
     const pairs = inlinePairs(lines[r.inline]);
     const kept = pairs.filter(p => entryKey(p, sep) !== r.key);
@@ -145,9 +176,9 @@ export function removeKey(text, key, opts = {}) {
     lines[r.inline] = inlineLine(lines[r.inline], r.head, kept);
     return { text: lines.join("\n") + (trailing ? "\n" : ""), removed: true };
   }
-  const range = rangeForSection(lines, r.section);
+  const range = rangeForSection(scan, r.section);
   if (range === null) return { text, removed: false };
-  const idx = indexOfKey(lines, range, r.key, sep);
+  const idx = indexOfKey(scan, range, r.key, sep);
   if (idx < 0) return { text, removed: false };
   lines.splice(idx, 1);
   if (idx < lines.length && lines[idx] === "") lines.splice(idx, 1);

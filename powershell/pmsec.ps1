@@ -257,14 +257,17 @@ function LinesHeaderName([string]$Line) {
   return (($Matches[1] -split '\.') | ForEach-Object { LinesUnquote $_.Trim() }) -join '.'
 }
 
+# YAML nests by indentation, so only unindented `key:` lines are top-level.
+function LinesIndentRe([string]$Sep) { if ($Sep -eq ':') { return '^' } return '^\s*' }
+
 function LinesEntryKey([string]$Line, [string]$Sep) {
-  if ($Line -match ('^\s*' + $script:LinesKeyRe + '\s*' + $Sep)) { return (LinesUnquote $Matches[1]) }
+  if ($Line -cmatch ((LinesIndentRe $Sep) + $script:LinesKeyRe + '\s*' + $Sep)) { return (LinesUnquote $Matches[1]) }
   return $null
 }
 
 # Value after the separator with any trailing comment removed.
 function LinesEntryValue([string]$Line, [string]$Sep) {
-  if ($Line -notmatch ('^\s*' + $script:LinesKeyRe + '\s*' + $Sep + '\s*(.*?)\s*$')) { return $null }
+  if ($Line -cnotmatch ((LinesIndentRe $Sep) + $script:LinesKeyRe + '\s*' + $Sep + '\s*(.*?)\s*$')) { return $null }
   $v = $Matches[2]
   $close = @{ '"' = '"'; "'" = "'"; '{' = '}' }[$v.Substring(0, [Math]::Min(1, $v.Length))]
   if ($close) {
@@ -274,30 +277,45 @@ function LinesEntryValue([string]$Line, [string]$Sep) {
   return ($v -replace '\s+#.*$', '')
 }
 
+# LinesScan mirrors LinesBuf with the body of TOML multi-line strings blanked,
+# so text inside them is never taken for a header or key. Indices stay aligned.
+$script:LinesScan = [System.Collections.ArrayList]::new()
+function LinesScanView {
+  $script:LinesScan = [System.Collections.ArrayList]::new()
+  $open = $null
+  foreach ($line in $script:LinesBuf) {
+    $inside = $null -ne $open
+    foreach ($m in [regex]::Matches($line, '"""|''''''')) {
+      if ($null -eq $open) { $open = $m.Value } elseif ($open -eq $m.Value) { $open = $null }
+    }
+    [void]$script:LinesScan.Add($(if ($inside) { '' } else { $line }))
+  }
+}
+
 function LinesSectionRange([string]$Section) {
   $n = $script:LinesBuf.Count
   if ([string]::IsNullOrEmpty($Section)) {
     for ($i = 0; $i -lt $n; $i++) {
-      if (LinesIsSection $script:LinesBuf[$i]) { return ,@(0, $i) }
+      if (LinesIsSection $script:LinesScan[$i]) { return ,@(0, $i) }
     }
     return ,@(0, $n)
   }
   $start = -1
   for ($i = 0; $i -lt $n; $i++) {
-    if ((LinesHeaderName $script:LinesBuf[$i]) -eq $Section) { $start = $i + 1; break }
+    if ((LinesHeaderName $script:LinesScan[$i]) -ceq $Section) { $start = $i + 1; break }
   }
   if ($start -lt 0) { return $null }
   $end = $n
   for ($i = $start; $i -lt $n; $i++) {
-    if (LinesIsSection $script:LinesBuf[$i]) { $end = $i; break }
+    if (LinesIsSection $script:LinesScan[$i]) { $end = $i; break }
   }
   return ,@($start, $end)
 }
 
 function LinesIndexOfKey([string]$Key, [string]$Sep, [int]$Start, [int]$End) {
   for ($i = $Start; $i -lt $End; $i++) {
-    $k = LinesEntryKey $script:LinesBuf[$i] $Sep
-    if ($k -eq $Key) { return $i }
+    $k = LinesEntryKey $script:LinesScan[$i] $Sep
+    if ($k -ceq $Key) { return $i }
   }
   return -1
 }
@@ -305,6 +323,18 @@ function LinesIndexOfKey([string]$Key, [string]$Sep, [int]$Start, [int]$End) {
 # TOML forbids `a.b = x` under [s] when [s.a] exists or `a` is an inline table,
 # so target the subtable, or report the inline-table line (Inline) to edit in place.
 function LinesResolve([string]$Key, [string]$Sep, [string]$Section) {
+  # A table defined at the root through dotted keys (`s.k = v`) or an inline
+  # table (`s = { ... }`) cannot also get a [s] header, so keep editing it there.
+  if (-not [string]::IsNullOrEmpty($Section) -and $Sep -eq '=' -and $null -eq (LinesSectionRange $Section)) {
+    $root = LinesSectionRange ''
+    for ($i = 0; $i -lt $root[1]; $i++) {
+      $k = "$(LinesEntryKey $script:LinesScan[$i] $Sep)"
+      if ($k.StartsWith("$Section.", [StringComparison]::Ordinal)) { return @{ Key = "$Section.$Key"; Section = ''; Inline = -1 } }
+      if ($k -ceq $Section -and "$(LinesEntryValue $script:LinesScan[$i] $Sep)".StartsWith('{')) {
+        return @{ Key = $Key; Section = ''; Inline = $i; Head = $Section }
+      }
+    }
+  }
   if (-not [string]::IsNullOrEmpty($Section) -and $Sep -eq '=' -and $Key.Contains('.')) {
     $dot = $Key.IndexOf('.')
     $head = $Key.Substring(0, $dot); $rest = $Key.Substring($dot + 1)
@@ -313,7 +343,7 @@ function LinesResolve([string]$Key, [string]$Sep, [string]$Section) {
     $range = LinesSectionRange $Section
     if ($null -ne $range) {
       $i = LinesIndexOfKey $head $Sep $range[0] $range[1]
-      if ($i -ge 0 -and "$(LinesEntryValue $script:LinesBuf[$i] $Sep)".StartsWith('{')) {
+      if ($i -ge 0 -and "$(LinesEntryValue $script:LinesScan[$i] $Sep)".StartsWith('{')) {
         return @{ Key = $rest; Section = $Section; Inline = $i; Head = $head }
       }
     }
@@ -337,16 +367,17 @@ function LinesInlineLine([string]$Line, [string]$Head, $Pairs) {
 function LinesFirstSectionIdx {
   $n = $script:LinesBuf.Count
   for ($i = 0; $i -lt $n; $i++) {
-    if (LinesIsSection $script:LinesBuf[$i]) { return $i }
+    if (LinesIsSection $script:LinesScan[$i]) { return $i }
   }
   return -1
 }
 
 function LinesReadKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
+  LinesScanView
   $r = LinesResolve $Key $Sep $Section
   if ($r.Inline -ge 0) {
     foreach ($p in (LinesInlinePairs $script:LinesBuf[$r.Inline])) {
-      if ((LinesEntryKey $p $Sep) -eq $r.Key) { return (LinesEntryValue $p $Sep) }
+      if ((LinesEntryKey $p $Sep) -ceq $r.Key) { return (LinesEntryValue $p $Sep) }
     }
     return $null
   }
@@ -358,13 +389,14 @@ function LinesReadKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
 }
 
 function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [string]$Section = '') {
+  LinesScanView
   $r = LinesResolve $Key $Sep $Section
   if ($r.Key -ne $Key) { $ValueLine = $r.Key + $ValueLine.Substring($Key.Length) }
   $Key = $r.Key; $Section = $r.Section
   if ($r.Inline -ge 0) {
     $pairs = [System.Collections.ArrayList]@(LinesInlinePairs $script:LinesBuf[$r.Inline])
     $at = -1
-    for ($i = 0; $i -lt $pairs.Count; $i++) { if ((LinesEntryKey $pairs[$i] $Sep) -eq $Key) { $at = $i } }
+    for ($i = 0; $i -lt $pairs.Count; $i++) { if ((LinesEntryKey $pairs[$i] $Sep) -ceq $Key) { $at = $i } }
     if ($at -ge 0) { $pairs[$at] = $ValueLine } else { [void]$pairs.Add($ValueLine) }
     $script:LinesBuf[$r.Inline] = LinesInlineLine $script:LinesBuf[$r.Inline] $r.Head $pairs
     return
@@ -387,8 +419,11 @@ function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [stri
     return
   }
   $first = LinesFirstSectionIdx
+  # Reuse the blank line that already separates the root keys from the first table.
   if ($first -lt 0) {
     [void]$script:LinesBuf.Add($ValueLine)
+  } elseif ($first -gt 0 -and $script:LinesBuf[$first - 1] -eq '') {
+    $script:LinesBuf.Insert($first - 1, $ValueLine)
   } else {
     $script:LinesBuf.Insert($first, '')
     $script:LinesBuf.Insert($first, $ValueLine)
@@ -396,10 +431,11 @@ function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [stri
 }
 
 function LinesRemoveKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
+  LinesScanView
   $r = LinesResolve $Key $Sep $Section
   if ($r.Inline -ge 0) {
     $pairs = @(LinesInlinePairs $script:LinesBuf[$r.Inline])
-    $kept = @($pairs | Where-Object { (LinesEntryKey $_ $Sep) -ne $r.Key })
+    $kept = @($pairs | Where-Object { (LinesEntryKey $_ $Sep) -cne $r.Key })
     if ($kept.Count -eq $pairs.Count) { return $false }
     $script:LinesBuf[$r.Inline] = LinesInlineLine $script:LinesBuf[$r.Inline] $r.Head $kept
     return $true

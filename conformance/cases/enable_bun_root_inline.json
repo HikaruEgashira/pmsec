@@ -1,0 +1,34 @@
+{
+  "setup": {
+    ".bunfig.toml": "install = { ignoreScripts = false }\n"
+  },
+  "args": [
+    "--tool",
+    "bun",
+    "--days",
+    "1",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true,
+    "bundleDays": 1,
+    "results": [
+      {
+        "tool": "bun",
+        "path": "<HOME>/.bunfig.toml",
+        "days": 1,
+        "requested": 1,
+        "kept": false,
+        "forced": false,
+        "ok": true,
+        "warn": null
+      }
+    ],
+    "warnings": [],
+    "ok": true
+  },
+  "expected_files": {
+    ".bunfig.toml": "install = { ignoreScripts = true, minimumReleaseAge = 86400 }\n"
+  }
+}

@@ -6,7 +6,8 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 
 export async function readSafe(path) {
-  try { return await readFile(path, "utf8"); }
+  // Editors on Windows may prepend a BOM; it would hide the first header or key.
+  try { return (await readFile(path, "utf8")).replace(/^\uFEFF/, ""); }
   catch (e) { if (e.code === "ENOENT") return ""; throw e; }
 }
 

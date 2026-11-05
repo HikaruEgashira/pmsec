@@ -1,0 +1,34 @@
+{
+  "setup": {
+    ".config/mise/config.toml": "settings.paranoid = false\n\n[tools]\nnode = \"22\"\n"
+  },
+  "args": [
+    "--tool",
+    "mise",
+    "--days",
+    "1",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true,
+    "bundleDays": 1,
+    "results": [
+      {
+        "tool": "mise",
+        "path": "<HOME>/.config/mise/config.toml",
+        "days": 1,
+        "requested": 1,
+        "kept": false,
+        "forced": false,
+        "ok": true,
+        "warn": null
+      }
+    ],
+    "warnings": [],
+    "ok": true
+  },
+  "expected_files": {
+    ".config/mise/config.toml": "settings.paranoid = true\nsettings.minimum_release_age = \"1d\"\nsettings.gpg_verify = true\nsettings.github_attestations = true\nsettings.slsa = true\nsettings.locked_verify_provenance = true\nsettings.ruby.github_attestations = true\nsettings.python.github_attestations = true\nsettings.provenance_api_failures_fatal = true\nsettings.aqua.github_attestations = true\nsettings.aqua.cosign = true\nsettings.aqua.minisign = true\nsettings.aqua.slsa = true\nsettings.github.github_attestations = true\nsettings.github.slsa = true\nsettings.node.gpg_verify = true\nsettings.swift.gpg_verify = true\nsettings.not_found_system_fallback = false\n\n[tools]\nnode = \"22\"\n"
+  }
+}

@@ -91,7 +91,8 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
         for rel, body in case.get("setup", {}).items():
             target = home / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(body)
+            # Bytes, not text mode: newline translation would hide CRLF handling.
+            target.write_bytes(body.encode("utf-8"))
         for step in case.get("pre", []):
             subprocess.run(build_cmd(impl, step), env=env, cwd=REPO, check=False, capture_output=True)
         proc = subprocess.run(
@@ -115,7 +116,7 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
         if actual_norm != expected:
             return False, "JSON mismatch:\n  expected: " + json.dumps(expected, sort_keys=True) + "\n  actual:   " + json.dumps(actual_norm, sort_keys=True)
         for rel, body in case.get("expected_files", {}).items():
-            got = (home / rel).read_text() if (home / rel).exists() else None
+            got = (home / rel).read_bytes().decode("utf-8") if (home / rel).exists() else None
             if got != body:
                 return False, f"file mismatch: {rel}\n  expected: {body!r}\n  actual:   {got!r}"
         return True, ""

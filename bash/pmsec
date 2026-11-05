@@ -134,9 +134,30 @@ lines_load() {
   local path="$1" line
   LINES_BUF=()
   [ -f "$path" ] || return 0
+  # Normalize CRLF to LF and drop a UTF-8 BOM, matching the other ports.
   while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    [ "${#LINES_BUF[@]}" -eq 0 ] && line="${line#$'\xEF\xBB\xBF'}"
     LINES_BUF[${#LINES_BUF[@]}]="$line"
   done < "$path"
+}
+
+# SCAN_BUF mirrors LINES_BUF with the body of TOML multi-line strings blanked,
+# so text inside them is never taken for a header or key. Indices stay aligned.
+SCAN_BUF=()
+lines_scan() {
+  local n=${#LINES_BUF[@]} i open="" rest tok inside
+  SCAN_BUF=()
+  for ((i=0; i<n; i++)); do
+    inside="$open"
+    rest="${LINES_BUF[i]}"
+    while [[ "$rest" =~ (\"\"\"|\'\'\') ]]; do
+      tok="${BASH_REMATCH[1]}"
+      rest="${rest#*"$tok"}"
+      if [ -z "$open" ]; then open="$tok"; elif [ "$open" = "$tok" ]; then open=""; fi
+    done
+    if [ -n "$inside" ]; then SCAN_BUF[i]=""; else SCAN_BUF[i]="${LINES_BUF[i]}"; fi
+  done
 }
 
 lines_dump() {
@@ -175,16 +196,21 @@ lines_header_name() {
   printf '%s' "${out[*]}"
 }
 
+# YAML nests by indentation, so only unindented `key:` lines are top-level.
+lines_indent_re() {
+  if [ "$1" = ":" ]; then printf '^'; else printf '^[[:space:]]*'; fi
+}
+
 # Print the key for "key=value" / "key: value", or empty.
 lines_entry_key() {
-  local re="^[[:space:]]*${LINES_KEY_RE}[[:space:]]*$2"
+  local re="$(lines_indent_re "$2")${LINES_KEY_RE}[[:space:]]*$2"
   [[ "$1" =~ $re ]] || return 1
   lines_unquote "${BASH_REMATCH[1]}"
 }
 
 # Print the value after the separator with any trailing comment removed.
 lines_entry_value() {
-  local re="^[[:space:]]*${LINES_KEY_RE}[[:space:]]*$2[[:space:]]*(.*)$" v close rest
+  local re="$(lines_indent_re "$2")${LINES_KEY_RE}[[:space:]]*$2[[:space:]]*(.*)$" v close rest
   [[ "$1" =~ $re ]] || return 1
   v=$(lines_trim "${BASH_REMATCH[2]}")
   case "${v:0:1}" in '"') close='"' ;; "'") close="'" ;; '{') close='}' ;; esac
@@ -206,18 +232,18 @@ lines_section_range() {
   local section="$1" n=${#LINES_BUF[@]} i name
   if [ -z "$section" ]; then
     for ((i=0; i<n; i++)); do
-      if lines_is_section "${LINES_BUF[i]}"; then printf '0 %d' "$i"; return 0; fi
+      if lines_is_section "${SCAN_BUF[i]}"; then printf '0 %d' "$i"; return 0; fi
     done
     printf '0 %d' "$n"; return 0
   fi
   local start=-1 end=$n
   for ((i=0; i<n; i++)); do
-    name=$(lines_header_name "${LINES_BUF[i]}") || continue
+    name=$(lines_header_name "${SCAN_BUF[i]}") || continue
     if [ "$name" = "$section" ]; then start=$((i+1)); break; fi
   done
   if [ "$start" -lt 0 ]; then return 0; fi
   for ((i=start; i<n; i++)); do
-    if lines_is_section "${LINES_BUF[i]}"; then end=$i; break; fi
+    if lines_is_section "${SCAN_BUF[i]}"; then end=$i; break; fi
   done
   printf '%d %d' "$start" "$end"
 }
@@ -225,7 +251,7 @@ lines_section_range() {
 lines_index_of_key() {
   local key="$1" sep="$2" start="$3" end="$4" i k
   for ((i=start; i<end; i++)); do
-    k=$(lines_entry_key "${LINES_BUF[i]}" "$sep") || continue
+    k=$(lines_entry_key "${SCAN_BUF[i]}" "$sep") || continue
     if [ "$k" = "$key" ]; then printf '%d' "$i"; return 0; fi
   done
   printf '%d' "-1"
@@ -236,6 +262,20 @@ lines_index_of_key() {
 # the inline-table line to edit in place (RES_INLINE=-1 otherwise).
 lines_resolve() {
   RES_KEY="$1" RES_SECTION="$3" RES_INLINE=-1 RES_HEAD=""
+  # A table defined at the root through dotted keys (`s.k = v`) or an inline
+  # table (`s = { ... }`) cannot also get a [s] header, so keep editing it there.
+  if [ -n "$3" ] && [ "$2" = "=" ] && [ -z "$(lines_section_range "$3")" ]; then
+    local root i k v
+    root=$(lines_section_range "")
+    for ((i=0; i<${root#* }; i++)); do
+      k=$(lines_entry_key "${SCAN_BUF[i]}" "=") || continue
+      if [[ "$k" == "$3."* ]]; then RES_KEY="$3.$1" RES_SECTION=""; return 0; fi
+      if [ "$k" = "$3" ]; then
+        v=$(lines_entry_value "${SCAN_BUF[i]}" "=")
+        if [ "${v:0:1}" = "{" ]; then RES_SECTION="" RES_INLINE=$i RES_HEAD="$3"; return 0; fi
+      fi
+    done
+  fi
   if [ -n "$3" ] && [ "$2" = "=" ] && [[ "$1" == *.* ]]; then
     local head="${1%%.*}" range idx val
     if [ -n "$(lines_section_range "$3.$head")" ]; then RES_KEY="${1#*.}" RES_SECTION="$3.$head"; return 0; fi
@@ -273,7 +313,7 @@ lines_inline_write() {
 lines_first_section_idx() {
   local n=${#LINES_BUF[@]} i
   for ((i=0; i<n; i++)); do
-    if lines_is_section "${LINES_BUF[i]}"; then printf '%d' "$i"; return 0; fi
+    if lines_is_section "${SCAN_BUF[i]}"; then printf '%d' "$i"; return 0; fi
   done
   printf '%d' "-1"
 }
@@ -281,6 +321,7 @@ lines_first_section_idx() {
 # Print the value of $key inside the (optional) section. Return 1 if missing.
 lines_read_key() {
   local key="$1" sep="${2:-=}" section="${3:-}" range start end idx p
+  lines_scan
   lines_resolve "$key" "$sep" "$section"; key="$RES_KEY" section="$RES_SECTION"
   if [ "$RES_INLINE" != "-1" ]; then
     lines_inline_pairs "$RES_INLINE"
@@ -320,6 +361,7 @@ _lines_splice_out() {
 lines_set_key() {
   local key="$1" value_line="$2" sep="${3:-=}" section="${4:-}"
   local n=${#LINES_BUF[@]} range start end idx first_sec
+  lines_scan
   lines_resolve "$key" "$sep" "$section"
   if [ "$RES_KEY" != "$key" ]; then value_line="$RES_KEY${value_line:${#key}}"; fi
   key="$RES_KEY" section="$RES_SECTION"
@@ -353,8 +395,11 @@ lines_set_key() {
     return 0
   fi
   first_sec=$(lines_first_section_idx)
+  # Reuse the blank line that already separates the root keys from the first table.
   if [ "$first_sec" = "-1" ]; then
     LINES_BUF[${#LINES_BUF[@]}]="$value_line"
+  elif [ "$first_sec" -gt 0 ] && [ -z "${LINES_BUF[first_sec-1]}" ]; then
+    _lines_splice_in "$((first_sec-1))" "$value_line"
   else
     _lines_splice_in "$first_sec" "$value_line" ""
   fi
@@ -364,6 +409,7 @@ lines_set_key() {
 # the key left behind, matching the node implementation.
 lines_remove_key() {
   local key="$1" sep="${2:-=}" section="${3:-}" range start end idx n
+  lines_scan
   lines_resolve "$key" "$sep" "$section"; key="$RES_KEY" section="$RES_SECTION"
   if [ "$RES_INLINE" != "-1" ]; then
     local kept=() p
