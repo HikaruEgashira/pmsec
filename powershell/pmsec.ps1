@@ -277,9 +277,9 @@ function LinesResolve([string]$Key, [string]$Sep, [string]$Section) {
   if (-not [string]::IsNullOrEmpty($Section) -and $Sep -eq '=' -and $Key.Contains('.')) {
     $dot = $Key.IndexOf('.')
     $sub = "$Section." + $Key.Substring(0, $dot)
-    if ($null -ne (LinesSectionRange $sub)) { return ,@($Key.Substring($dot + 1), $sub) }
+    if ($null -ne (LinesSectionRange $sub)) { return @($Key.Substring($dot + 1), $sub) }
   }
-  return ,@($Key, $Section)
+  return @($Key, $Section)
 }
 
 function LinesIndexOfKey([string]$Key, [string]$Sep, [int]$Start, [int]$End) {
