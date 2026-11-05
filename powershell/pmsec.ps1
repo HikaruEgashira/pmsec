@@ -238,17 +238,40 @@ function LinesDump {
   return (($script:LinesBuf -join "`n") + "`n")
 }
 
+# TOML tables may carry a trailing comment, inner whitespace, quoted names, or be [[arrays]].
+$script:LinesSectionRe = '^\s*\[\[?[^\[\]]+\]\]?\s*(#.*)?$'
+$script:LinesHeaderRe = '^\s*\[([^\[\]]+)\]\s*(#.*)?$'
+$script:LinesKeyRe = '("[^"]*"|''[^'']*''|[A-Za-z0-9_.\-]+)'
+
 function LinesIsSection([string]$Line) {
-  return ($Line -match '^\s*\[[^\]]+\]\s*$')
+  return ($Line -match $script:LinesSectionRe)
+}
+
+function LinesUnquote([string]$S) {
+  if ($S -match '^(".*"|''.*'')$') { return $S.Substring(1, $S.Length - 2) }
+  return $S
+}
+
+function LinesHeaderName([string]$Line) {
+  if ($Line -notmatch $script:LinesHeaderRe) { return $null }
+  return (($Matches[1] -split '\.') | ForEach-Object { LinesUnquote $_.Trim() }) -join '.'
 }
 
 function LinesEntryKey([string]$Line, [string]$Sep) {
-  if ($Sep -eq ':') {
-    if ($Line -match '^\s*([A-Za-z0-9_.\-]+)\s*:') { return $Matches[1] }
-  } else {
-    if ($Line -match '^\s*([A-Za-z0-9_.\-]+)\s*=') { return $Matches[1] }
-  }
+  if ($Line -match ('^\s*' + $script:LinesKeyRe + '\s*' + $Sep)) { return (LinesUnquote $Matches[1]) }
   return $null
+}
+
+# Value after the separator with any trailing comment removed.
+function LinesEntryValue([string]$Line, [string]$Sep) {
+  if ($Line -notmatch ('^\s*' + $script:LinesKeyRe + '\s*' + $Sep + '\s*(.*?)\s*$')) { return $null }
+  $v = $Matches[2]
+  $close = @{ '"' = '"'; "'" = "'"; '{' = '}' }[$v.Substring(0, [Math]::Min(1, $v.Length))]
+  if ($close) {
+    $end = $v.IndexOf($close, 1)
+    if ($end -ge 0) { return $v.Substring(0, $end + 1) }
+  }
+  return ($v -replace '\s+#.*$', '')
 }
 
 function LinesSectionRange([string]$Section) {
@@ -259,10 +282,9 @@ function LinesSectionRange([string]$Section) {
     }
     return ,@(0, $n)
   }
-  $header = "[$Section]"
   $start = -1
   for ($i = 0; $i -lt $n; $i++) {
-    if ($script:LinesBuf[$i].Trim() -eq $header) { $start = $i + 1; break }
+    if ((LinesHeaderName $script:LinesBuf[$i]) -eq $Section) { $start = $i + 1; break }
   }
   if ($start -lt 0) { return $null }
   $end = $n
@@ -272,22 +294,44 @@ function LinesSectionRange([string]$Section) {
   return ,@($start, $end)
 }
 
-# TOML forbids `a.b = x` under [s] when [s.a] exists, so target the subtable instead.
-function LinesResolve([string]$Key, [string]$Sep, [string]$Section) {
-  if (-not [string]::IsNullOrEmpty($Section) -and $Sep -eq '=' -and $Key.Contains('.')) {
-    $dot = $Key.IndexOf('.')
-    $sub = "$Section." + $Key.Substring(0, $dot)
-    if ($null -ne (LinesSectionRange $sub)) { return @($Key.Substring($dot + 1), $sub) }
-  }
-  return @($Key, $Section)
-}
-
 function LinesIndexOfKey([string]$Key, [string]$Sep, [int]$Start, [int]$End) {
   for ($i = $Start; $i -lt $End; $i++) {
     $k = LinesEntryKey $script:LinesBuf[$i] $Sep
     if ($k -eq $Key) { return $i }
   }
   return -1
+}
+
+# TOML forbids `a.b = x` under [s] when [s.a] exists or `a` is an inline table,
+# so target the subtable, or report the inline-table line (Inline) to edit in place.
+function LinesResolve([string]$Key, [string]$Sep, [string]$Section) {
+  if (-not [string]::IsNullOrEmpty($Section) -and $Sep -eq '=' -and $Key.Contains('.')) {
+    $dot = $Key.IndexOf('.')
+    $head = $Key.Substring(0, $dot); $rest = $Key.Substring($dot + 1)
+    $sub = "$Section.$head"
+    if ($null -ne (LinesSectionRange $sub)) { return @{ Key = $rest; Section = $sub; Inline = -1 } }
+    $range = LinesSectionRange $Section
+    if ($null -ne $range) {
+      $i = LinesIndexOfKey $head $Sep $range[0] $range[1]
+      if ($i -ge 0 -and "$(LinesEntryValue $script:LinesBuf[$i] $Sep)".StartsWith('{')) {
+        return @{ Key = $rest; Section = $Section; Inline = $i; Head = $head }
+      }
+    }
+  }
+  return @{ Key = $Key; Section = $Section; Inline = -1 }
+}
+
+function LinesInlinePairs([string]$Line) {
+  $v = LinesEntryValue $Line '='
+  $body = $v.Substring(1)
+  if ($body.EndsWith('}')) { $body = $body.Substring(0, $body.Length - 1) }
+  return @($body -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+}
+
+function LinesInlineLine([string]$Line, [string]$Head, $Pairs) {
+  $indent = ([regex]::Match($Line, '^\s*')).Value
+  $inner = if ($Pairs.Count -gt 0) { ' ' + ($Pairs -join ', ') + ' ' } else { '' }
+  return "$indent$Head = {$inner}"
 }
 
 function LinesFirstSectionIdx {
@@ -299,24 +343,32 @@ function LinesFirstSectionIdx {
 }
 
 function LinesReadKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
-  $Key, $Section = LinesResolve $Key $Sep $Section
-  $range = LinesSectionRange $Section
-  if ($null -eq $range) { return $null }
-  $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]
-  if ($idx -lt 0) { return $null }
-  $line = $script:LinesBuf[$idx]
-  if ($Sep -eq ':') {
-    if ($line -match '^\s*[A-Za-z0-9_.\-]+\s*:\s*(.*?)\s*$') { return $Matches[1] }
-  } else {
-    if ($line -match '^\s*[A-Za-z0-9_.\-]+\s*=\s*(.*?)\s*$') { return $Matches[1] }
+  $r = LinesResolve $Key $Sep $Section
+  if ($r.Inline -ge 0) {
+    foreach ($p in (LinesInlinePairs $script:LinesBuf[$r.Inline])) {
+      if ((LinesEntryKey $p $Sep) -eq $r.Key) { return (LinesEntryValue $p $Sep) }
+    }
+    return $null
   }
-  return $null
+  $range = LinesSectionRange $r.Section
+  if ($null -eq $range) { return $null }
+  $idx = LinesIndexOfKey $r.Key $Sep $range[0] $range[1]
+  if ($idx -lt 0) { return $null }
+  return (LinesEntryValue $script:LinesBuf[$idx] $Sep)
 }
 
 function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [string]$Section = '') {
-  $orig = $Key
-  $Key, $Section = LinesResolve $Key $Sep $Section
-  if ($Key -ne $orig) { $ValueLine = $Key + $ValueLine.Substring($orig.Length) }
+  $r = LinesResolve $Key $Sep $Section
+  if ($r.Key -ne $Key) { $ValueLine = $r.Key + $ValueLine.Substring($Key.Length) }
+  $Key = $r.Key; $Section = $r.Section
+  if ($r.Inline -ge 0) {
+    $pairs = [System.Collections.ArrayList]@(LinesInlinePairs $script:LinesBuf[$r.Inline])
+    $at = -1
+    for ($i = 0; $i -lt $pairs.Count; $i++) { if ((LinesEntryKey $pairs[$i] $Sep) -eq $Key) { $at = $i } }
+    if ($at -ge 0) { $pairs[$at] = $ValueLine } else { [void]$pairs.Add($ValueLine) }
+    $script:LinesBuf[$r.Inline] = LinesInlineLine $script:LinesBuf[$r.Inline] $r.Head $pairs
+    return
+  }
   $n = $script:LinesBuf.Count
   $range = LinesSectionRange $Section
   if ($null -eq $range) {
@@ -344,10 +396,17 @@ function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [stri
 }
 
 function LinesRemoveKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
-  $Key, $Section = LinesResolve $Key $Sep $Section
-  $range = LinesSectionRange $Section
+  $r = LinesResolve $Key $Sep $Section
+  if ($r.Inline -ge 0) {
+    $pairs = @(LinesInlinePairs $script:LinesBuf[$r.Inline])
+    $kept = @($pairs | Where-Object { (LinesEntryKey $_ $Sep) -ne $r.Key })
+    if ($kept.Count -eq $pairs.Count) { return $false }
+    $script:LinesBuf[$r.Inline] = LinesInlineLine $script:LinesBuf[$r.Inline] $r.Head $kept
+    return $true
+  }
+  $range = LinesSectionRange $r.Section
   if ($null -eq $range) { return $false }
-  $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]
+  $idx = LinesIndexOfKey $r.Key $Sep $range[0] $range[1]
   if ($idx -lt 0) { return $false }
   $script:LinesBuf.RemoveAt($idx)
   if ($idx -lt $script:LinesBuf.Count -and $script:LinesBuf[$idx] -eq '') {
@@ -1482,7 +1541,8 @@ function CmdDisable($Targets, [bool]$Json, [array]$Scopes) {
     [void]$sb.AppendLine('  "results": [')
     for ($i = 0; $i -lt $results.Count; $i++) {
       $r = $results[$i]
-      $entry = "    {""scope"": $(JsonString $r.Scope), ""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""removed"": $(JsonBool $r.Removed), ""ok"": $(JsonBool $r.Ok)"
+      $scopePrefix = if ($multiScope) { """scope"": $(JsonString $r.Scope), " } else { '' }
+      $entry = "    {$scopePrefix""tool"": $(JsonString $r.Tool), ""path"": $(JsonString $r.Path), ""removed"": $(JsonBool $r.Removed), ""ok"": $(JsonBool $r.Ok)"
       if ($r.Error) { $entry += ", ""error"": $(JsonString $r.Error)" }
       $entry += '}'
       if ($i -lt $results.Count - 1) { $entry += ',' }

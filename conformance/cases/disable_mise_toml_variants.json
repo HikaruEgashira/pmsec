@@ -1,0 +1,26 @@
+{
+  "setup": {
+    ".config/mise/config.toml": "[ settings ] # global\nexperimental = true\n\"paranoid\" = false # old\ngithub = { slsa = true }\n\n[tools] # pinned\nnode = \"22\"\n"
+  },
+  "args": [
+    "--tool",
+    "mise",
+    "--disable",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "results": [
+      {
+        "tool": "mise",
+        "path": "<HOME>/.config/mise/config.toml",
+        "removed": true,
+        "ok": true
+      }
+    ],
+    "ok": true
+  },
+  "expected_files": {
+    ".config/mise/config.toml": "[ settings ] # global\nexperimental = true\ngithub = {}\n\n[tools] # pinned\nnode = \"22\"\n"
+  }
+}

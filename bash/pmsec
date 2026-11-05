@@ -145,53 +145,81 @@ lines_dump() {
   for ((i=0; i<n; i++)); do printf '%s\n' "${LINES_BUF[i]}"; done
 }
 
+# TOML tables may carry a trailing comment, inner whitespace, quoted names, or be [[arrays]].
+LINES_SECTION_RE='^[[:space:]]*\[\[?[^][]+\]\]?[[:space:]]*(#.*)?$'
+LINES_HEADER_RE='^[[:space:]]*\[([^][]+)\][[:space:]]*(#.*)?$'
+LINES_KEY_RE="(\"[^\"]*\"|'[^']*'|[A-Za-z0-9_.-]+)"
+
 lines_is_section() {
-  [[ "$1" =~ ^[[:space:]]*\[[^]]+\][[:space:]]*$ ]]
+  [[ "$1" =~ $LINES_SECTION_RE ]]
+}
+
+lines_unquote() {
+  local s="$1"
+  if [[ "$s" =~ ^\".*\"$ || "$s" =~ ^\'.*\'$ ]]; then s="${s:1:${#s}-2}"; fi
+  printf '%s' "$s"
+}
+
+lines_trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  printf '%s' "${s%"${s##*[![:space:]]}"}"
+}
+
+# Print the normalized table name of a [header] line, or return 1.
+lines_header_name() {
+  [[ "$1" =~ $LINES_HEADER_RE ]] || return 1
+  local IFS=. part out=() p
+  read -r -a part <<< "${BASH_REMATCH[1]}"
+  for p in "${part[@]}"; do out[${#out[@]}]=$(lines_unquote "$(lines_trim "$p")"); done
+  printf '%s' "${out[*]}"
 }
 
 # Print the key for "key=value" / "key: value", or empty.
 lines_entry_key() {
-  local line="$1" sep="$2"
-  if [ "$sep" = ":" ]; then
-    [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*: ]] || return 1
-  else
-    [[ "$line" =~ ^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*= ]] || return 1
+  local re="^[[:space:]]*${LINES_KEY_RE}[[:space:]]*$2"
+  [[ "$1" =~ $re ]] || return 1
+  lines_unquote "${BASH_REMATCH[1]}"
+}
+
+# Print the value after the separator with any trailing comment removed.
+lines_entry_value() {
+  local re="^[[:space:]]*${LINES_KEY_RE}[[:space:]]*$2[[:space:]]*(.*)$" v close rest
+  [[ "$1" =~ $re ]] || return 1
+  v=$(lines_trim "${BASH_REMATCH[2]}")
+  case "${v:0:1}" in '"') close='"' ;; "'") close="'" ;; '{') close='}' ;; esac
+  if [ -n "$close" ]; then
+    rest="${v:1}"
+    if [[ "$rest" == *"$close"* ]]; then
+      rest="${rest%%"$close"*}"
+      printf '%s' "${v:0:1}$rest$close"; return 0
+    fi
   fi
-  printf '%s' "${BASH_REMATCH[1]}"
+  v="${v%%[[:space:]]#*}"
+  printf '%s' "${v%"${v##*[![:space:]]}"}"
 }
 
 # Echo "start end" for the section's [start, end) range, or empty string if
 # the named section is missing. With section="", returns the head region
 # (lines before the first section header).
 lines_section_range() {
-  local section="$1" n=${#LINES_BUF[@]} i
+  local section="$1" n=${#LINES_BUF[@]} i name
   if [ -z "$section" ]; then
     for ((i=0; i<n; i++)); do
       if lines_is_section "${LINES_BUF[i]}"; then printf '0 %d' "$i"; return 0; fi
     done
     printf '0 %d' "$n"; return 0
   fi
-  local header="[$section]" trimmed start=-1 end=$n
+  local start=-1 end=$n
   for ((i=0; i<n; i++)); do
-    trimmed="${LINES_BUF[i]}"
-    trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
-    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-    if [ "$trimmed" = "$header" ]; then start=$((i+1)); break; fi
+    name=$(lines_header_name "${LINES_BUF[i]}") || continue
+    if [ "$name" = "$section" ]; then start=$((i+1)); break; fi
   done
   if [ "$start" -lt 0 ]; then return 0; fi
   for ((i=start; i<n; i++)); do
     if lines_is_section "${LINES_BUF[i]}"; then end=$i; break; fi
   done
   printf '%d %d' "$start" "$end"
-}
-
-# TOML forbids `a.b = x` under [s] when [s.a] exists; sets RES_KEY/RES_SECTION to the subtable target.
-lines_resolve() {
-  RES_KEY="$1" RES_SECTION="$3"
-  if [ -n "$3" ] && [ "$2" = "=" ] && [[ "$1" == *.* ]]; then
-    local sub="$3.${1%%.*}"
-    if [ -n "$(lines_section_range "$sub")" ]; then RES_KEY="${1#*.}" RES_SECTION="$sub"; fi
-  fi
 }
 
 lines_index_of_key() {
@@ -201,6 +229,45 @@ lines_index_of_key() {
     if [ "$k" = "$key" ]; then printf '%d' "$i"; return 0; fi
   done
   printf '%d' "-1"
+}
+
+# TOML forbids `a.b = x` under [s] when [s.a] exists or `a` is an inline table.
+# Sets RES_KEY/RES_SECTION to the subtable target, or RES_INLINE/RES_HEAD to
+# the inline-table line to edit in place (RES_INLINE=-1 otherwise).
+lines_resolve() {
+  RES_KEY="$1" RES_SECTION="$3" RES_INLINE=-1 RES_HEAD=""
+  if [ -n "$3" ] && [ "$2" = "=" ] && [[ "$1" == *.* ]]; then
+    local head="${1%%.*}" range idx val
+    if [ -n "$(lines_section_range "$3.$head")" ]; then RES_KEY="${1#*.}" RES_SECTION="$3.$head"; return 0; fi
+    range=$(lines_section_range "$3")
+    [ -n "$range" ] || return 0
+    idx=$(lines_index_of_key "$head" "$2" "${range% *}" "${range#* }")
+    [ "$idx" != "-1" ] || return 0
+    val=$(lines_entry_value "${LINES_BUF[idx]}" "=")
+    if [ "${val:0:1}" = "{" ]; then RES_KEY="${1#*.}" RES_INLINE=$idx RES_HEAD="$head"; fi
+  fi
+}
+
+# Load the inline table pairs of LINES_BUF[$1] into INLINE_PAIRS.
+lines_inline_pairs() {
+  local v body p parts IFS=,
+  INLINE_PAIRS=()
+  v=$(lines_entry_value "${LINES_BUF[$1]}" "=")
+  body="${v:1}"; body="${body%\}}"
+  read -r -a parts <<< "$body"
+  for p in "${parts[@]}"; do
+    p=$(lines_trim "$p")
+    [ -n "$p" ] && INLINE_PAIRS[${#INLINE_PAIRS[@]}]="$p"
+  done
+  return 0
+}
+
+# Rewrite LINES_BUF[$1] as `head = { INLINE_PAIRS... }`, keeping indentation.
+lines_inline_write() {
+  local line="${LINES_BUF[$1]}" indent inner="" p
+  indent="${line%%[![:space:]]*}"
+  for p in "${INLINE_PAIRS[@]}"; do inner="${inner:+$inner, }$p"; done
+  LINES_BUF[$1]="$indent$2 = {${inner:+ $inner }}"
 }
 
 lines_first_section_idx() {
@@ -213,22 +280,21 @@ lines_first_section_idx() {
 
 # Print the value of $key inside the (optional) section. Return 1 if missing.
 lines_read_key() {
-  local key="$1" sep="${2:-=}" section="${3:-}" range start end idx line val
+  local key="$1" sep="${2:-=}" section="${3:-}" range start end idx p
   lines_resolve "$key" "$sep" "$section"; key="$RES_KEY" section="$RES_SECTION"
+  if [ "$RES_INLINE" != "-1" ]; then
+    lines_inline_pairs "$RES_INLINE"
+    for p in "${INLINE_PAIRS[@]}"; do
+      if [ "$(lines_entry_key "$p" "$sep")" = "$key" ]; then lines_entry_value "$p" "$sep"; return; fi
+    done
+    return 1
+  fi
   range=$(lines_section_range "$section")
   [ -n "$range" ] || return 1
   start="${range% *}"; end="${range#* }"
   idx=$(lines_index_of_key "$key" "$sep" "$start" "$end")
   [ "$idx" != "-1" ] || return 1
-  line="${LINES_BUF[idx]}"
-  if [ "$sep" = ":" ]; then
-    [[ "$line" =~ ^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*:[[:space:]]*(.*)$ ]] || return 1
-  else
-    [[ "$line" =~ ^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*=[[:space:]]*(.*)$ ]] || return 1
-  fi
-  val="${BASH_REMATCH[1]}"
-  val="${val%"${val##*[![:space:]]}"}"
-  printf '%s' "$val"
+  lines_entry_value "${LINES_BUF[idx]}" "$sep"
 }
 
 # Insert items from $@ at index $1, shifting the tail right.
@@ -257,6 +323,16 @@ lines_set_key() {
   lines_resolve "$key" "$sep" "$section"
   if [ "$RES_KEY" != "$key" ]; then value_line="$RES_KEY${value_line:${#key}}"; fi
   key="$RES_KEY" section="$RES_SECTION"
+  if [ "$RES_INLINE" != "-1" ]; then
+    local i found=0
+    lines_inline_pairs "$RES_INLINE"
+    for ((i=0; i<${#INLINE_PAIRS[@]}; i++)); do
+      if [ "$(lines_entry_key "${INLINE_PAIRS[i]}" "$sep")" = "$key" ]; then INLINE_PAIRS[i]="$value_line"; found=1; fi
+    done
+    [ "$found" = 1 ] || INLINE_PAIRS[${#INLINE_PAIRS[@]}]="$value_line"
+    lines_inline_write "$RES_INLINE" "$RES_HEAD"
+    return 0
+  fi
   range=$(lines_section_range "$section")
   if [ -z "$range" ]; then
     if [ "$n" -gt 0 ] && [ -n "${LINES_BUF[n-1]}" ]; then
@@ -289,6 +365,17 @@ lines_set_key() {
 lines_remove_key() {
   local key="$1" sep="${2:-=}" section="${3:-}" range start end idx n
   lines_resolve "$key" "$sep" "$section"; key="$RES_KEY" section="$RES_SECTION"
+  if [ "$RES_INLINE" != "-1" ]; then
+    local kept=() p
+    lines_inline_pairs "$RES_INLINE"
+    for p in "${INLINE_PAIRS[@]}"; do
+      [ "$(lines_entry_key "$p" "$sep")" = "$key" ] || kept[${#kept[@]}]="$p"
+    done
+    [ "${#kept[@]}" -lt "${#INLINE_PAIRS[@]}" ] || return 1
+    INLINE_PAIRS=("${kept[@]}")
+    lines_inline_write "$RES_INLINE" "$RES_HEAD"
+    return 0
+  fi
   range=$(lines_section_range "$section")
   [ -n "$range" ] || return 1
   start="${range% *}"; end="${range#* }"
