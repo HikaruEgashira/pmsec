@@ -29,7 +29,7 @@ _pmsec_home() {
 # `stat`'s flags differ between BSD (macOS) and GNU coreutils (Linux); try
 # both, fall back to empty on platforms with neither.
 _pmsec_stat() {
-  stat -f "$1" "$3" 2>/dev/null || stat -c "$2" "$3" 2>/dev/null || printf ''
+  stat -c "$2" "$3" 2>/dev/null || stat -f "$1" "$3" 2>/dev/null || printf ''
 }
 
 _pmsec_owner_of() {
