@@ -91,11 +91,11 @@ def write_atomic(path: Path, text: str, *, backup: bool = True, home: Path | Non
         bak = path.with_suffix(path.suffix + ".bak")
         if not bak.exists():
             try:
-                _atomic_replace(bak, path.read_text("utf-8"))
+                _atomic_replace(bak, path.read_text("utf-8-sig"))
             except OSError as exc:
                 if not _is_perm_err(exc) or not _reclaim(bak if bak.exists() else path, home, err):
                     raise
-                _atomic_replace(bak, path.read_text("utf-8"))
+                _atomic_replace(bak, path.read_text("utf-8-sig"))
     try:
         _atomic_replace(path, text)
     except OSError as exc:

@@ -44,14 +44,14 @@ def _parse_days(value: str | None) -> int | None:
 
 def read(ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     value = read_key(raw, KEY, section=SECTION)
     return {"path": str(p), "configured": value, "days": _parse_days(value), "extras": []}
 
 
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     text = set_key(raw, KEY, f'{KEY} = "{days} days"', section=SECTION)
     text, _ = remove_key(text, LEGACY_KEY, section=LEGACY_SECTION)
     write_atomic(p, text)
@@ -62,7 +62,7 @@ def unset(ctx: Context) -> dict:
     p = path(ctx)
     if not p.exists():
         return {"path": str(p), "removed": False}
-    before = p.read_text("utf-8")
+    before = p.read_text("utf-8-sig")
     after, removed_cooldown = remove_key(before, KEY, section=SECTION)
     after, removed_old = remove_key(after, LEGACY_KEY, section=LEGACY_SECTION)
     removed = removed_cooldown or removed_old

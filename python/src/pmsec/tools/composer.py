@@ -50,7 +50,7 @@ def _parse_days(value: str | None) -> int | None:
 
 def read(ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     configured = None
     for candidate in PRIMARY_ALIASES:
         configured = read_json_key(raw, ["config", candidate])
@@ -71,7 +71,7 @@ def read(ctx: Context) -> dict:
 
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     text = set_json_key(raw, ["config", KEY], str(days))
     for e in EXTRAS:
         text = set_json_key(text, e["path"], e["line"])
@@ -83,7 +83,7 @@ def unset(ctx: Context) -> dict:
     p = path(ctx)
     if not p.exists():
         return {"path": str(p), "removed": False}
-    before = p.read_text("utf-8")
+    before = p.read_text("utf-8-sig")
     text = before
     removed = False
     for candidate in PRIMARY_ALIASES:

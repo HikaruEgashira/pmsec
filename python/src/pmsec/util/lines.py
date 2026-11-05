@@ -6,8 +6,11 @@ import re
 _SECTION = re.compile(r"^\s*\[\[?[^\[\]]+\]\]?\s*(#.*)?$")
 _HEADER = re.compile(r"^\s*\[([^\[\]]+)\]\s*(#.*)?$")
 _KEY = r"(\"[^\"]*\"|'[^']*'|[A-Za-z0-9_.\-]+)"
-_ENTRY = {sep: re.compile(rf"^\s*{_KEY}\s*{sep}") for sep in ("=", ":")}
-_FULL = {sep: re.compile(rf"^\s*{_KEY}\s*{sep}\s*(.*?)\s*$") for sep in ("=", ":")}
+# YAML nests by indentation, so only unindented `key:` lines are top-level.
+_INDENT = {"=": r"^\s*", ":": r"^"}
+_ENTRY = {sep: re.compile(rf"{_INDENT[sep]}{_KEY}\s*{sep}") for sep in ("=", ":")}
+_FULL = {sep: re.compile(rf"{_INDENT[sep]}{_KEY}\s*{sep}\s*(.*?)\s*$") for sep in ("=", ":")}
+_MULTILINE = re.compile(r'"""|\'\'\'')
 _CLOSE = {'"': '"', "'": "'", "{": "}"}
 
 
@@ -37,6 +40,24 @@ def _line_value(line: str, sep: str) -> str | None:
         if end >= 0:
             return v[: end + 1]
     return re.sub(r"\s+#.*$", "", v)
+
+
+def _scan_view(lines: list[str]) -> list[str]:
+    """Copy of `lines` with the body of TOML multi-line strings blanked.
+
+    Text inside them is then never taken for a header or key. Indices stay aligned.
+    """
+    out: list[str] = []
+    open_: str | None = None
+    for line in lines:
+        inside = open_ is not None
+        for m in _MULTILINE.finditer(line):
+            if open_ is None:
+                open_ = m.group(0)
+            elif open_ == m.group(0):
+                open_ = None
+        out.append("" if inside else line)
+    return out
 
 
 def _range_for_section(lines: list[str], section: str | None) -> tuple[int, int] | None:
@@ -73,6 +94,16 @@ def _resolve(lines: list[str], key: str, sep: str, section: str | None) -> tuple
     TOML forbids `a.b = x` under [s] when [s.a] exists or `a` is an inline table,
     so target the subtable, or report the inline-table line to edit in place.
     """
+    # A table defined at the root through dotted keys (`s.k = v`) or an inline
+    # table (`s = { ... }`) cannot also get a [s] header, so keep editing it there.
+    if section and sep == "=" and _range_for_section(lines, section) is None:
+        _, end = _range_for_section(lines, None)
+        for i in range(end):
+            k = _line_key(lines[i], sep) or ""
+            if k.startswith(f"{section}."):
+                return f"{section}.{key}", None, -1, ""
+            if k == section and (_line_value(lines[i], sep) or "").startswith("{"):
+                return key, None, i, section
     if section and sep == "=" and "." in key:
         head, rest = key.split(".", 1)
         if _range_for_section(lines, f"{section}.{head}") is not None:
@@ -105,7 +136,7 @@ def _index_first_section(lines: list[str]) -> int:
 
 
 def read_key(text: str, key: str, *, sep: str = "=", section: str | None = None) -> str | None:
-    lines = text.splitlines()
+    lines = _scan_view(text.splitlines())
     key, section, inline, _ = _resolve(lines, key, sep, section)
     if inline >= 0:
         for p in _inline_pairs(lines[inline]):
@@ -123,7 +154,8 @@ def set_key(text: str, key: str, value_line: str, *, sep: str = "=", section: st
     trailing = text.endswith("\n") or text == ""
     lines = [] if text == "" else text.rstrip("\n").split("\n")
     orig = key
-    key, section, inline, head = _resolve(lines, key, sep, section)
+    scan = _scan_view(lines)
+    key, section, inline, head = _resolve(scan, key, sep, section)
     if key != orig:
         value_line = key + value_line[len(orig):]
     if inline >= 0:
@@ -135,21 +167,24 @@ def set_key(text: str, key: str, value_line: str, *, sep: str = "=", section: st
             pairs.append(value_line)
         lines[inline] = _inline_line(lines[inline], head, pairs)
         return "\n".join(lines) + "\n"
-    rng = _range_for_section(lines, section)
+    rng = _range_for_section(scan, section)
     if rng is None:
         if lines and lines[-1] != "":
             lines.append("")
         lines.extend([f"[{section}]", value_line])
     else:
-        idx = _index_of_key(lines, rng, key, sep)
+        idx = _index_of_key(scan, rng, key, sep)
         if idx >= 0:
             lines[idx] = value_line
         elif section:
             lines[rng[0]:rng[0]] = [value_line]
         else:
-            first_sec = _index_first_section(lines)
+            first_sec = _index_first_section(scan)
+            # Reuse the blank line that already separates the root keys from the first table.
             if first_sec < 0:
                 lines.append(value_line)
+            elif first_sec > 0 and lines[first_sec - 1] == "":
+                lines[first_sec - 1:first_sec - 1] = [value_line]
             else:
                 lines[first_sec:first_sec] = [value_line, ""]
     out = "\n".join(lines)
@@ -161,7 +196,8 @@ def set_key(text: str, key: str, value_line: str, *, sep: str = "=", section: st
 def remove_key(text: str, key: str, *, sep: str = "=", section: str | None = None) -> tuple[str, bool]:
     trailing = text.endswith("\n")
     lines = [] if text == "" else text.rstrip("\n").split("\n")
-    key, section, inline, head = _resolve(lines, key, sep, section)
+    scan = _scan_view(lines)
+    key, section, inline, head = _resolve(scan, key, sep, section)
     if inline >= 0:
         pairs = _inline_pairs(lines[inline])
         kept = [p for p in pairs if _line_key(p, sep) != key]
@@ -169,10 +205,10 @@ def remove_key(text: str, key: str, *, sep: str = "=", section: str | None = Non
             return text, False
         lines[inline] = _inline_line(lines[inline], head, kept)
         return "\n".join(lines) + ("\n" if trailing else ""), True
-    rng = _range_for_section(lines, section)
+    rng = _range_for_section(scan, section)
     if rng is None:
         return text, False
-    idx = _index_of_key(lines, rng, key, sep)
+    idx = _index_of_key(scan, rng, key, sep)
     if idx < 0:
         return text, False
     del lines[idx]

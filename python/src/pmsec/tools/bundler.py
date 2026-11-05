@@ -39,14 +39,14 @@ def _parse_days(value: str | None) -> int | None:
 
 def read(ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     value = read_key(raw, KEY, sep=SEP)
     return {"path": str(p), "configured": value, "days": _parse_days(value), "extras": []}
 
 
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     write_atomic(p, set_key(raw, KEY, f'{KEY}: "{days}"', sep=SEP))
     return {"path": str(p)}
 
@@ -55,7 +55,7 @@ def unset(ctx: Context) -> dict:
     p = path(ctx)
     if not p.exists():
         return {"path": str(p), "removed": False}
-    before = p.read_text("utf-8")
+    before = p.read_text("utf-8-sig")
     after, removed = remove_key(before, KEY, sep=SEP)
     if removed:
         write_atomic(p, after)

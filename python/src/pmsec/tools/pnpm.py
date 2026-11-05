@@ -91,7 +91,7 @@ def preflight(ctx: Context) -> dict:
 def read(ctx: Context) -> dict:
     active = _active_config(ctx)
     p = active["path"]
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     value = read_key(raw, active["key"], sep=active["sep"])
     minutes = None
     if value is not None:
@@ -113,12 +113,12 @@ def read(ctx: Context) -> dict:
 
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8") if p.exists() else ""
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
     text = apply_extras(set_key(raw, KEY, f"{KEY}={days * 24 * 60}"), EXTRAS)
     write_atomic(p, text)
 
     cp = config_path(ctx)
-    yaml_raw = cp.read_text("utf-8") if cp.exists() else ""
+    yaml_raw = cp.read_text("utf-8-sig") if cp.exists() else ""
     yaml = apply_extras(set_key(yaml_raw, YAML_KEY, f"{YAML_KEY}: {days * 24 * 60}", sep=":"), _yaml_extras())
     write_atomic(cp, yaml)
     return {"path": str(p)}
@@ -128,7 +128,7 @@ def unset(ctx: Context) -> dict:
     p = path(ctx)
     removed = False
     if p.exists():
-        before = p.read_text("utf-8")
+        before = p.read_text("utf-8-sig")
         after, removed_cooldown = remove_key(before, KEY)
         after, removed_extras = remove_extras(after, EXTRAS)
         removed = removed_cooldown or removed_extras
@@ -137,7 +137,7 @@ def unset(ctx: Context) -> dict:
 
     cp = config_path(ctx)
     if cp.exists():
-        before = cp.read_text("utf-8")
+        before = cp.read_text("utf-8-sig")
         after, removed_cooldown = remove_key(before, YAML_KEY, sep=":")
         after, removed_extras = remove_extras(after, _yaml_extras())
         if removed_cooldown or removed_extras:

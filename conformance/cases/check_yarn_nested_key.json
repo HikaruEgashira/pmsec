@@ -1,0 +1,48 @@
+{
+  "setup": {
+    ".yarnrc.yml": "packageExtensions:\n  \"foo@*\":\n    enableScripts: false\n"
+  },
+  "args": [
+    "--tool",
+    "yarn",
+    "--days",
+    "1",
+    "--check",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "yarn",
+        "key": "npmMinimalAgeGate",
+        "path": "<HOME>/.yarnrc.yml",
+        "configured": null,
+        "days": null,
+        "extras": [
+          {
+            "key": "enableHardenedMode",
+            "configured": null,
+            "expected": "true",
+            "ok": false
+          },
+          {
+            "key": "enableScripts",
+            "configured": null,
+            "expected": "false",
+            "ok": false
+          },
+          {
+            "key": "approvedGitRepositories",
+            "configured": null,
+            "expected": "[]",
+            "ok": false
+          }
+        ],
+        "warn": null
+      }
+    ],
+    "ok": false
+  }
+}
