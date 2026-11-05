@@ -272,6 +272,16 @@ function LinesSectionRange([string]$Section) {
   return ,@($start, $end)
 }
 
+# TOML forbids `a.b = x` under [s] when [s.a] exists, so target the subtable instead.
+function LinesResolve([string]$Key, [string]$Sep, [string]$Section) {
+  if (-not [string]::IsNullOrEmpty($Section) -and $Sep -eq '=' -and $Key.Contains('.')) {
+    $dot = $Key.IndexOf('.')
+    $sub = "$Section." + $Key.Substring(0, $dot)
+    if ($null -ne (LinesSectionRange $sub)) { return ,@($Key.Substring($dot + 1), $sub) }
+  }
+  return ,@($Key, $Section)
+}
+
 function LinesIndexOfKey([string]$Key, [string]$Sep, [int]$Start, [int]$End) {
   for ($i = $Start; $i -lt $End; $i++) {
     $k = LinesEntryKey $script:LinesBuf[$i] $Sep
@@ -289,6 +299,7 @@ function LinesFirstSectionIdx {
 }
 
 function LinesReadKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
+  $Key, $Section = LinesResolve $Key $Sep $Section
   $range = LinesSectionRange $Section
   if ($null -eq $range) { return $null }
   $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]
@@ -303,6 +314,9 @@ function LinesReadKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
 }
 
 function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [string]$Section = '') {
+  $orig = $Key
+  $Key, $Section = LinesResolve $Key $Sep $Section
+  if ($Key -ne $orig) { $ValueLine = $Key + $ValueLine.Substring($orig.Length) }
   $n = $script:LinesBuf.Count
   $range = LinesSectionRange $Section
   if ($null -eq $range) {
@@ -330,6 +344,7 @@ function LinesSetKey([string]$Key, [string]$ValueLine, [string]$Sep = '=', [stri
 }
 
 function LinesRemoveKey([string]$Key, [string]$Sep = '=', [string]$Section = '') {
+  $Key, $Section = LinesResolve $Key $Sep $Section
   $range = LinesSectionRange $Section
   if ($null -eq $range) { return $false }
   $idx = LinesIndexOfKey $Key $Sep $range[0] $range[1]

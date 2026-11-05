@@ -1,0 +1,26 @@
+{
+  "setup": {
+    ".config/mise/config.toml": "[settings]\nexperimental = true\n\n[settings.github]\ngithub_attestations = false\nslsa = true\n"
+  },
+  "args": [
+    "--tool",
+    "mise",
+    "--disable",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "results": [
+      {
+        "tool": "mise",
+        "path": "<HOME>/.config/mise/config.toml",
+        "removed": true,
+        "ok": true
+      }
+    ],
+    "ok": true
+  },
+  "expected_files": {
+    ".config/mise/config.toml": "[settings]\nexperimental = true\n\n[settings.github]\n"
+  }
+}

@@ -24,6 +24,16 @@ function rangeForSection(lines, section) {
   return [start, end];
 }
 
+// TOML forbids `a.b = x` under [s] when [s.a] exists, so target the subtable instead.
+function resolve(lines, key, sep, section) {
+  if (section && sep === "=" && key.includes(".")) {
+    const dot = key.indexOf(".");
+    const sub = `${section}.${key.slice(0, dot)}`;
+    if (rangeForSection(lines, sub) !== null) return [key.slice(dot + 1), sub];
+  }
+  return [key, section];
+}
+
 function indexOfKey(lines, range, key, sep) {
   for (let i = range[0]; i < range[1]; i++) if (entryKey(lines[i], sep) === key) return i;
   return -1;
@@ -36,8 +46,9 @@ function indexOfFirstSection(lines) {
 
 export function readKey(text, key, opts = {}) {
   const sep = opts.sep || "=";
-  const section = opts.section || null;
   const lines = text.split(/\r?\n/);
+  let section;
+  [key, section] = resolve(lines, key, sep, opts.section || null);
   const range = rangeForSection(lines, section);
   if (range === null) return null;
   const i = indexOfKey(lines, range, key, sep);
@@ -49,9 +60,12 @@ export function readKey(text, key, opts = {}) {
 
 export function setKey(text, key, valueLine, opts = {}) {
   const sep = opts.sep || "=";
-  const section = opts.section || null;
   const trailing = text.endsWith("\n") || text === "";
   const lines = text === "" ? [] : text.replace(/\r?\n$/, "").split(/\r?\n/);
+  const orig = key;
+  let section;
+  [key, section] = resolve(lines, key, sep, opts.section || null);
+  if (key !== orig) valueLine = key + valueLine.slice(orig.length);
   let range = rangeForSection(lines, section);
   if (range === null) {
     if (lines.length && lines[lines.length - 1] !== "") lines.push("");
@@ -73,9 +87,10 @@ export function setKey(text, key, valueLine, opts = {}) {
 
 export function removeKey(text, key, opts = {}) {
   const sep = opts.sep || "=";
-  const section = opts.section || null;
   const trailing = text.endsWith("\n");
   const lines = text === "" ? [] : text.replace(/\r?\n$/, "").split(/\r?\n/);
+  let section;
+  [key, section] = resolve(lines, key, sep, opts.section || null);
   const range = rangeForSection(lines, section);
   if (range === null) return { text, removed: false };
   const idx = indexOfKey(lines, range, key, sep);
