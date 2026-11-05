@@ -37,6 +37,15 @@ def _range_for_section(lines: list[str], section: str | None) -> tuple[int, int]
     return start, end
 
 
+def _resolve(lines: list[str], key: str, sep: str, section: str | None) -> tuple[str, str | None]:
+    # TOML forbids `a.b = x` under [s] when [s.a] exists, so target the subtable instead.
+    if section and sep == "=" and "." in key:
+        head, rest = key.split(".", 1)
+        if _range_for_section(lines, f"{section}.{head}") is not None:
+            return rest, f"{section}.{head}"
+    return key, section
+
+
 def _index_of_key(lines: list[str], rng: tuple[int, int], key: str, sep: str) -> int:
     for i in range(rng[0], rng[1]):
         if _line_key(lines[i], sep) == key:
@@ -53,6 +62,7 @@ def _index_first_section(lines: list[str]) -> int:
 
 def read_key(text: str, key: str, *, sep: str = "=", section: str | None = None) -> str | None:
     lines = text.splitlines()
+    key, section = _resolve(lines, key, sep, section)
     rng = _range_for_section(lines, section)
     if rng is None:
         return None
@@ -67,6 +77,10 @@ def read_key(text: str, key: str, *, sep: str = "=", section: str | None = None)
 def set_key(text: str, key: str, value_line: str, *, sep: str = "=", section: str | None = None) -> str:
     trailing = text.endswith("\n") or text == ""
     lines = [] if text == "" else text.rstrip("\n").split("\n")
+    orig = key
+    key, section = _resolve(lines, key, sep, section)
+    if key != orig:
+        value_line = key + value_line[len(orig):]
     rng = _range_for_section(lines, section)
     if rng is None:
         if lines and lines[-1] != "":
@@ -93,6 +107,7 @@ def set_key(text: str, key: str, value_line: str, *, sep: str = "=", section: st
 def remove_key(text: str, key: str, *, sep: str = "=", section: str | None = None) -> tuple[str, bool]:
     trailing = text.endswith("\n")
     lines = [] if text == "" else text.rstrip("\n").split("\n")
+    key, section = _resolve(lines, key, sep, section)
     rng = _range_for_section(lines, section)
     if rng is None:
         return text, False

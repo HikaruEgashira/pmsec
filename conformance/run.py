@@ -108,6 +108,10 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
         expected = case["expected_json"]
         if actual_norm != expected:
             return False, "JSON mismatch:\n  expected: " + json.dumps(expected, sort_keys=True) + "\n  actual:   " + json.dumps(actual_norm, sort_keys=True)
+        for rel, body in case.get("expected_files", {}).items():
+            got = (home / rel).read_text() if (home / rel).exists() else None
+            if got != body:
+                return False, f"file mismatch: {rel}\n  expected: {body!r}\n  actual:   {got!r}"
         return True, ""
     finally:
         shutil.rmtree(home, ignore_errors=True)

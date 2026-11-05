@@ -16,7 +16,8 @@ Case shape:
   "pre": [["pmsec", "args"]],
   "args": ["pmsec", "args"],
   "expected_exit": 0,
-  "expected_json": {}
+  "expected_json": {},
+  "expected_files": { "<rel-path>": "<exact file body after run>" }
 }
 ```
 

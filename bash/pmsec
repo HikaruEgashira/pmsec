@@ -160,6 +160,15 @@ lines_section_range() {
   printf '%d %d' "$start" "$end"
 }
 
+# TOML forbids `a.b = x` under [s] when [s.a] exists; sets RES_KEY/RES_SECTION to the subtable target.
+lines_resolve() {
+  RES_KEY="$1" RES_SECTION="$3"
+  if [ -n "$3" ] && [ "$2" = "=" ] && [[ "$1" == *.* ]]; then
+    local sub="$3.${1%%.*}"
+    if [ -n "$(lines_section_range "$sub")" ]; then RES_KEY="${1#*.}" RES_SECTION="$sub"; fi
+  fi
+}
+
 lines_index_of_key() {
   local key="$1" sep="$2" start="$3" end="$4" i k
   for ((i=start; i<end; i++)); do
@@ -180,6 +189,7 @@ lines_first_section_idx() {
 # Print the value of $key inside the (optional) section. Return 1 if missing.
 lines_read_key() {
   local key="$1" sep="${2:-=}" section="${3:-}" range start end idx line val
+  lines_resolve "$key" "$sep" "$section"; key="$RES_KEY" section="$RES_SECTION"
   range=$(lines_section_range "$section")
   [ -n "$range" ] || return 1
   start="${range% *}"; end="${range#* }"
@@ -219,6 +229,9 @@ _lines_splice_out() {
 lines_set_key() {
   local key="$1" value_line="$2" sep="${3:-=}" section="${4:-}"
   local n=${#LINES_BUF[@]} range start end idx first_sec
+  lines_resolve "$key" "$sep" "$section"
+  if [ "$RES_KEY" != "$key" ]; then value_line="$RES_KEY${value_line:${#key}}"; fi
+  key="$RES_KEY" section="$RES_SECTION"
   range=$(lines_section_range "$section")
   if [ -z "$range" ]; then
     if [ "$n" -gt 0 ] && [ -n "${LINES_BUF[n-1]}" ]; then
@@ -250,6 +263,7 @@ lines_set_key() {
 # the key left behind, matching the node implementation.
 lines_remove_key() {
   local key="$1" sep="${2:-=}" section="${3:-}" range start end idx n
+  lines_resolve "$key" "$sep" "$section"; key="$RES_KEY" section="$RES_SECTION"
   range=$(lines_section_range "$section")
   [ -n "$range" ] || return 1
   start="${range% *}"; end="${range#* }"
