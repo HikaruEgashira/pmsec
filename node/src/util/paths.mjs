@@ -99,7 +99,10 @@ export function composerConfigPath(env = process.env, home = homedir(), platform
     const base = env.APPDATA || join(home, "AppData", "Roaming");
     return join(base, "Composer", "config.json");
   }
-  const useXdg = Object.keys(env).some(k => k.startsWith("XDG_")) || existsSync("/etc/xdg");
+  // The /etc/xdg probe describes the host, so it only applies when the
+  // requested platform is the host platform (tests pass foreign platforms).
+  const useXdg = Object.keys(env).some(k => k.startsWith("XDG_"))
+    || (platform === process.platform && existsSync("/etc/xdg"));
   const dirs = [];
   if (useXdg) dirs.push(join(env.XDG_CONFIG_HOME || join(home, ".config"), "composer"));
   dirs.push(join(home, ".composer"));

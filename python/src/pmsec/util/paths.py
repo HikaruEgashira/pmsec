@@ -111,7 +111,11 @@ def composer_config_path(env: dict[str, str], home: Path, platform: str) -> Path
     if platform == "win32":
         base = Path(env["APPDATA"]) if "APPDATA" in env else home / "AppData" / "Roaming"
         return base / "Composer" / "config.json"
-    use_xdg = any(k.startswith("XDG_") for k in env) or Path("/etc/xdg").is_dir()
+    # The /etc/xdg probe describes the host, so it only applies when the
+    # requested platform is the host platform (tests pass foreign platforms).
+    use_xdg = any(k.startswith("XDG_") for k in env) or (
+        platform == current_platform() and Path("/etc/xdg").is_dir()
+    )
     dirs: list[Path] = []
     if use_xdg:
         dirs.append(Path(env.get("XDG_CONFIG_HOME") or (home / ".config")) / "composer")
