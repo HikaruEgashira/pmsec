@@ -189,7 +189,9 @@ def _doctor(args, targets, ctx: Context, out) -> int:
     # doctor.ok is intentionally narrow: parent must be writable as the
     # running uid. Everything else is informational.
     ok_flag = all(t["parentWritable"] for t in tools)
-    pmsec_home = ctx.env.get("PMSEC_HOME")
+    # This port resolves paths from HOME only; PMSEC_HOME is a bash/powershell
+    # feature (it needs the root->owner chown handback those ports implement).
+    pmsec_home = None
     report = {
         "doctor": True,
         "version": __version__,
@@ -212,7 +214,7 @@ def _doctor(args, targets, ctx: Context, out) -> int:
         suffix = f" ({username})" if username else ""
         out.write(f"  uid/euid   : {uid}/{euid}{suffix}\n")
     out.write(f"  HOME       : {ctx.home}\n")
-    out.write(f"  PMSEC_HOME : {pmsec_home or '(unset — using HOME)'}\n\n")
+    out.write("  PMSEC_HOME : (not supported by this port — using HOME)\n\n")
     for t in tools:
         flag = "ok    " if t["parentWritable"] else "BLOCK "
         owner_suffix = f" (uid={t['owner']})" if t["exists"] and t["owner"] is not None else ""
@@ -328,6 +330,11 @@ def main(
     args = _parser().parse_args(argv)
     targets = _select(args.tool)
     ctx = Context(env=env, home=home, platform=platform)
+    if env.get("PMSEC_HOME"):
+        err.write(
+            f"pmsec: PMSEC_HOME is ignored by the python port; paths resolve from HOME ({home}). "
+            "Use the bash port for root-context redirection.\n"
+        )
     if args.check:
         return _check(args, targets, ctx, out, err)
     if args.disable:

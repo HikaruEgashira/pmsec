@@ -1,0 +1,15 @@
+{
+  "setup": { ".npmrc": "min-release-age=abc\n" },
+  "args": ["--tool", "npm", "--json"],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true, "bundleDays": 1,
+    "results": [
+      {"tool": "npm", "path": "<HOME>/.npmrc", "days": 1, "requested": 1, "kept": false, "forced": false, "ok": true, "warn": null}
+    ],
+    "warnings": [], "ok": true
+  },
+  "expected_files": {
+    ".npmrc": "min-release-age=1\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
+  }
+}

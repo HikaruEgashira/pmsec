@@ -732,6 +732,13 @@ write_atomic() {
     return 1
   fi
   bak="$path.bak"
+  # `-e` follows links, so a dangling symlink planted at the backup path looks
+  # absent; `cp` would then create the file wherever the link points.
+  if [ -L "$bak" ]; then
+    printf 'pmsec: refusing to write backup through symlink %s\n' "$bak" >&2
+    return 1
+  fi
+  _pmsec_root_dir_guard "$dir" || return 1
   if [ -e "$path" ] && [ ! -e "$bak" ]; then
     if ! cp -p -- "$path" "$bak"; then
       printf 'pmsec: write_atomic backup-copy failed for %s\n' "$bak" >&2
@@ -763,6 +770,34 @@ write_atomic() {
   _pmsec_handback "$path" "$bak" "$top_created"
 }
 
+# Under root, a user-planted symlinked directory (`~/.config -> /etc`) would
+# make mkdir/cp/mv above act on the link target. Refuse when a path that is
+# lexically inside the target home resolves physically outside it. Paths that
+# are already outside the home (operator-set CARGO_HOME etc.) are the
+# operator's choice and pass through unchanged.
+_pmsec_root_dir_guard() {
+  [ "$(id -u)" = "0" ] || return 0
+  local dir="$1" home_dir home_phys dir_phys
+  home_dir=$(_pmsec_home)
+  case "$dir" in
+    "$home_dir"|"$home_dir"/*) ;;
+    *) return 0 ;;
+  esac
+  home_phys=$(cd -P -- "$home_dir" 2>/dev/null && pwd -P) || return 0
+  # The leaf may not exist yet (mkdir -p creates it below); resolve the
+  # deepest existing ancestor, since that is where mkdir would follow a link.
+  local probe="$dir"
+  while [ ! -d "$probe" ] && [ "$probe" != "/" ] && [ "$probe" != "$home_dir" ]; do
+    probe=$(dirname -- "$probe")
+  done
+  dir_phys=$(cd -P -- "$probe" 2>/dev/null && pwd -P) || return 0
+  case "$dir_phys" in
+    "$home_phys"|"$home_phys"/*) return 0 ;;
+  esac
+  printf 'pmsec: refusing to write under %s: it resolves to %s, outside %s\n' "$dir" "$dir_phys" "$home_phys" >&2
+  return 1
+}
+
 # Hand the freshly-written file (and dirs we created) back to the home owner
 # when running as root. Caller must always invoke; the function decides.
 #
@@ -778,12 +813,14 @@ _pmsec_handback() {
   local owner; owner=$(_pmsec_owner_of "$(_pmsec_home)")
   [ -n "$owner" ] || return 0
   local err
-  if ! err=$(chown "$owner" "$path" 2>&1); then
+  # `-h` never follows a link, so even a link swapped in after our own
+  # checks cannot redirect a root chown at a file outside the user's home.
+  if ! err=$(chown -h "$owner" "$path" 2>&1); then
     printf 'pmsec: warning: chown %s %s failed (%s); file may be unreadable for the user\n' \
       "$owner" "$path" "$err" >&2
   fi
   if [ -e "$bak" ]; then
-    if ! err=$(chown "$owner" "$bak" 2>&1); then
+    if ! err=$(chown -h "$owner" "$bak" 2>&1); then
       printf 'pmsec: warning: chown %s %s failed (%s)\n' "$owner" "$bak" "$err" >&2
     fi
   fi
