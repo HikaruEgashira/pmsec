@@ -1,0 +1,17 @@
+{
+  "setup": {
+    ".config/composer/config.json": "{\n  \"config\": {\n    \"minimum-release-age\": 14,\n    \"github-oauth\": {\n      \"github.com\": \"tok\"\n    }\n  }\n}\n"
+  },
+  "args": ["--tool", "composer", "--days", "3", "--json"],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true, "bundleDays": 3,
+    "results": [
+      {"tool": "composer", "path": "<HOME>/.config/composer/config.json", "days": 3, "requested": 3, "kept": false, "forced": false, "ok": true, "warn": null}
+    ],
+    "warnings": [], "ok": true
+  },
+  "expected_files": {
+    ".config/composer/config.json": "{\n  \"config\": {\n    \"github-oauth\": {\n      \"github.com\": \"tok\"\n    },\n    \"policy\": {\n      \"cooldown\": {\n        \"period\": \"3 days\"\n      }\n    },\n    \"allow-plugins\": false,\n    \"secure-http\": true,\n    \"disable-tls\": false,\n    \"audit\": {\n      \"abandoned\": \"fail\"\n    }\n  }\n}\n"
+  }
+}

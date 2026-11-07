@@ -13,7 +13,9 @@ from pmsec.util.version import build_preflight
 NAME = "uv"
 KEY = "exclude-newer"
 DOCS = "https://docs.astral.sh/uv/reference/settings/#exclude-newer"
-MIN_BIN = (0, 9, 17)
+# 0.9.17 added relative exclude-newer; the [audit] table only parses from 0.11.3
+# (verified against released binaries: 0.11.2 rejects it, 0.11.3 accepts it).
+MIN_BIN = (0, 11, 3)
 EXTRAS: list[dict] = [
     {"key": "index-strategy", "expected": '"first-index"', "line": 'index-strategy = "first-index"'},
     {"key": "malware-check", "expected": "true", "line": "malware-check = true", "section": "audit"},
@@ -21,8 +23,8 @@ EXTRAS: list[dict] = [
 
 preflight = build_preflight(
     NAME, MIN_BIN,
-    'writing exclude-newer = "N days" will break this uv until you `uv self update` '
-    "(file will fail to parse).",
+    "the written uv.toml (relative exclude-newer and the [audit] table) will not parse on this uv "
+    "and every uv command will fail until you `uv self update`.",
 )
 
 _DURATION = re.compile(r'^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$', re.IGNORECASE)

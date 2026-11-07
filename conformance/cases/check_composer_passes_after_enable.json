@@ -8,8 +8,8 @@
     "bundleDays": 7,
     "rows": [
       {
-        "tool": "composer", "key": "minimum-release-age", "path": "<HOME>/.config/composer/config.json",
-        "configured": "7", "days": 7, "warn": null,
+        "tool": "composer", "key": "policy.cooldown.period", "path": "<HOME>/.config/composer/config.json",
+        "configured": "\"7 days\"", "days": 7, "warn": null,
         "extras": [
           {"key": "allow-plugins", "configured": "false", "expected": "false", "ok": true},
           {"key": "secure-http", "configured": "true", "expected": "true", "ok": true},

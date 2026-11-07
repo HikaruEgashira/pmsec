@@ -1,15 +1,15 @@
 {
   "setup": {
-    ".config/composer/config.json": "{\n  \"config\": {\n    \"minimum_release_age\": \"2 weeks\",\n    \"allow-plugins\": false,\n    \"secure-http\": true,\n    \"disable-tls\": false,\n    \"audit\": {\n      \"abandoned\": \"fail\"\n    }\n  }\n}\n"
+    ".config/composer/config.json": "{\n  \"config\": {\n    \"minimum-release-age\": 14,\n    \"minimum_release_age\": \"2 weeks\",\n    \"allow-plugins\": false,\n    \"secure-http\": true,\n    \"disable-tls\": false,\n    \"audit\": {\n      \"abandoned\": \"fail\"\n    }\n  }\n}\n"
   },
   "args": ["--tool", "composer", "--check", "--json", "--days", "14"],
-  "expected_exit": 0,
+  "expected_exit": 1,
   "expected_json": {
     "bundleDays": 14,
     "rows": [
       {
-        "tool": "composer", "key": "minimum-release-age", "path": "<HOME>/.config/composer/config.json",
-        "configured": "\"2 weeks\"", "days": 14, "warn": null,
+        "tool": "composer", "key": "policy.cooldown.period", "path": "<HOME>/.config/composer/config.json",
+        "configured": null, "days": null, "warn": null,
         "extras": [
           {"key": "allow-plugins", "configured": "false", "expected": "false", "ok": true},
           {"key": "secure-http", "configured": "true", "expected": "true", "ok": true},
@@ -18,6 +18,6 @@
         ]
       }
     ],
-    "ok": true
+    "ok": false
   }
 }

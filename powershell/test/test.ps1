@@ -231,8 +231,8 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'aube key' '(?m)^minimumReleaseAge = 1440$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'aube' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'aube paranoid extra' '(?m)^paranoid = true$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'aube' 'config.toml'))))
     $ok = $ok -and (AssertMatch 'npm audit-level extra' '(?m)^audit-level=high$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
-    $ok = $ok -and (AssertMatch 'npm allow-git extra' '(?m)^allow-git=root$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
-    $ok = $ok -and (AssertMatch 'npm allow-remote extra' '(?m)^allow-remote=root$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'npm allow-git extra' '(?m)^allow-git=none$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
+    $ok = $ok -and (AssertMatch 'npm allow-remote extra' '(?m)^allow-remote=none$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm allow-file extra' '(?m)^allow-file=root$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm allow-directory extra' '(?m)^allow-directory=root$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
     $ok = $ok -and (AssertMatch 'npm strict-allow-scripts extra' '(?m)^strict-allow-scripts=true$' ([System.IO.File]::ReadAllText((Join-Path $h '.npmrc'))))
@@ -260,7 +260,7 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'yarn enableScripts extra' '(?m)^enableScripts: false$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'bundler key' '(?m)^BUNDLE_COOLDOWN: "1"$' ([System.IO.File]::ReadAllText((PathJoin $h '.bundle' 'config'))))
     $composer = [System.IO.File]::ReadAllText((PathJoin $h '.config' 'composer' 'config.json'))
-    $ok = $ok -and (AssertMatch 'composer cooldown' '"minimum-release-age": 1' $composer)
+    $ok = $ok -and (AssertMatch 'composer cooldown' '"period": "1 days"' $composer)
     $ok = $ok -and (AssertMatch 'composer allow-plugins' '"allow-plugins": false' $composer)
     $ok = $ok -and (AssertMatch 'composer secure-http' '"secure-http": true' $composer)
     $ok = $ok -and (AssertMatch 'composer disable-tls' '"disable-tls": false' $composer)
@@ -319,7 +319,7 @@ T 'enable upgrades values that are weaker than the request' {
   try {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=3`nregistry=https://r/`n")
     [void](InvokePmsec $h $null @('--tool','npm','--days','7'))
-    return (AssertFileEq '.npmrc' "min-release-age=7`nregistry=https://r/`naudit-level=high`nallow-git=root`nallow-remote=root`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`nignore-extension=true`n" (Join-Path $h '.npmrc'))
+    return (AssertFileEq '.npmrc' "min-release-age=7`nregistry=https://r/`naudit-level=high`nallow-git=none`nallow-remote=none`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`nignore-extension=true`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -329,7 +329,7 @@ T 'enable preserves stricter existing cooldowns' {
     [System.IO.File]::WriteAllText((Join-Path $h '.npmrc'), "min-release-age=99`nregistry=https://r/`n")
     $r = InvokePmsec $h $null @('--tool','npm')
     if ($r.Out -notmatch '(?m)^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)\s*$') { $script:LastFail = "expected fully-formatted keep line, got: $($r.Out)"; return $false }
-    return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`nallow-git=root`nallow-remote=root`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`nignore-extension=true`n" (Join-Path $h '.npmrc'))
+    return (AssertFileEq '.npmrc' "min-release-age=99`nregistry=https://r/`naudit-level=high`nallow-git=none`nallow-remote=none`nallow-file=root`nallow-directory=root`nstrict-allow-scripts=true`ndangerously-allow-all-scripts=false`nallow-scripts-pin=true`nignore-extension=true`n" (Join-Path $h '.npmrc'))
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
@@ -874,7 +874,7 @@ T 'composer writes JSON config and check/disable roundtrip' {
     if ($r.Code -ne 0) { $script:LastFail = "enable exit $($r.Code)`n$($r.Out)`n$($r.Err)"; return $false }
     $cfgPath = PathJoin $h '.config' 'composer' 'config.json'
     $cfg = [System.IO.File]::ReadAllText($cfgPath)
-    $ok = (AssertMatch 'composer cooldown' '"minimum-release-age": 7' $cfg)
+    $ok = (AssertMatch 'composer cooldown' '"period": "7 days"' $cfg)
     $ok = $ok -and (AssertMatch 'composer allow-plugins' '"allow-plugins": false' $cfg)
     $ok = $ok -and (AssertMatch 'composer secure-http' '"secure-http": true' $cfg)
     $ok = $ok -and (AssertMatch 'composer disable-tls' '"disable-tls": false' $cfg)
@@ -906,7 +906,7 @@ T 'composer preserves unrelated JSON keys and honors COMPOSER_HOME' {
     if (-not $ok) { return $false }
     [void](InvokePmsec $h @{ COMPOSER_HOME = $ch } @('--disable','--tool','composer'))
     $text = [System.IO.File]::ReadAllText($cfgPath)
-    if ($text -match 'minimum-release-age') { $script:LastFail = 'composer cooldown not removed'; return $false }
+    if ($text -match '"period"') { $script:LastFail = 'composer cooldown not removed'; return $false }
     return (AssertMatch 'preferred-install kept after disable' '"preferred-install": "dist"' $text)
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }

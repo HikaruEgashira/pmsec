@@ -94,6 +94,41 @@ fix PR on purpose.
 | F5 | Infra | CI | `pull_request` on a self-hosted runner in a public repo. | Open: #182. |
 | F6 | Low | powershell | `.bak` path was not checked for a reparse point; `Test-Path` on a dangling link is version-dependent and `Copy-Item` would write through a live one. | Patched locally (same guarantee as F2 for Windows). |
 
+## Domain review: does what pmsec writes actually take effect? (2026-11-07)
+
+The first pass above covered only how pmsec writes files. This pass checked
+every key against the tool's current documentation and, where cheap, against
+released binaries. Findings:
+
+| ID | Severity | Ports | Issue | Status |
+|---|---|---|---|---|
+| F7 | High | all | Composer: pmsec wrote `config.minimum-release-age`. That key does not exist in any Composer release; Composer stores unknown config keys and ignores them, so `--check` passed while no cooldown was enforced. The real key is `config.policy.cooldown.period` (Composer 2.11.0, string `"N days"` or integer seconds). | Fixed in #185: writes the policy key, removes the dead one, adds a 2.11.0 preflight; conformance cases `check_composer_legacy_key_is_not_a_cooldown`, `enable_composer_replaces_legacy_key`, `check_composer_seconds_and_hours`. |
+| F8 | High | all | uv: the preflight floor was 0.9.17 (relative `exclude-newer`), but the `[audit]` table pmsec also writes is rejected by uv 0.9.17 through 0.11.2 with a TOML parse error, which breaks every uv command on that machine. Verified against released binaries (0.11.2 fails, 0.11.3 accepts). | Fixed in #185: floor raised to 0.11.3, warning text says the whole file will not parse. |
+| F9 | Medium | all | bun: pmsec always wrote `$HOME/.bunfig.toml`, but bun reads `$XDG_CONFIG_HOME/.bunfig.toml` *instead* when that variable is set. On such hosts (most Linux desktops, GitHub Actions) the written settings were inert and `--check` passed. | Fixed in #185. |
+| F10 | Medium | all | npm: pmsec wrote `allow-git=root` and `allow-remote=root`. npm 12 defaults both to `none`, so the "hardening" loosened the default on the current major. | Fixed in #185: writes `none`; `root` now fails `--check`. |
+| F11 | Low | all | Composer global config path: pmsec used `~/Library/Application Support/composer` on macOS and `~/.config/composer` on Linux. Composer uses neither rule: `COMPOSER_HOME`, else the first existing of `$XDG_CONFIG_HOME/composer` (only when any `XDG_*` variable is set or `/etc/xdg` exists) and `~/.composer`. On a default macOS install pmsec wrote a file Composer never reads. | Fixed in #185: mirrors `Factory::getHomeDir`. |
+| F12 | Info | all | Several keys only restate current defaults (`allow-scripts-pin`, `dangerously-allow-all-scripts`, yarn `enableScripts` since 4.14, uv `index-strategy`, most mise verification flags, composer `secure-http` / `disable-tls`). They pin the default against a user-level change but add no new protection. `audit-level=high` only changes the `npm audit` exit code. | Documented in README; left in place as explicit pins. |
+
+### Structural limits (not fixable in pmsec)
+
+- **User-level config is the lowest-priority layer in every tool.** A
+  repository file, an environment variable, or a CLI flag overrides each key
+  pmsec writes. The single exception is mise `paranoid`, which mise refuses to
+  read from project config. `pmsec --check` inspects the user-level file only
+  and therefore reports OK while a cloned repo neutralises the baseline.
+  Tracked as a feature request in #185 (project-scope check).
+- **Lockfiles bypass cooldowns** in npm, yarn, bun, cargo, uv, bundler and
+  composer. pnpm re-verifies unless `trustLockfile: true`. A poisoned lockfile
+  in a cloned repo installs regardless of age.
+- **Some install paths are not gated at all**: `cargo install`, `gem install`
+  before RubyGems 4.1, `composer install`, `uv sync` with an existing lock,
+  and any version whose registry metadata lacks a publish date.
+- **Version detection gates correctness.** pnpm 11 ignores the INI `rc`
+  file; pmsec writes both files but `--check` reads the `rc` file when
+  `pnpm` is not on `PATH`, which can report OK for a file pnpm 11 ignores
+  (#187). yarn 4.10.x mis-parsed the `d` suffix in `npmMinimalAgeGate`
+  (yarnpkg/berry#6991); pmsec's floor is 4.10.0 (#186).
+
 ## Accepted risks
 
 - `.bak` keeps a copy of registry tokens that were in the file at first write.

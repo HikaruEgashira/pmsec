@@ -95,7 +95,7 @@ t_enable_writes_all() {
   npmrc=$(cat "$home/.npmrc")
   pnpmrc=$(cat "$home/.config/pnpm/rc")
   pnmyaml=$(cat "$home/.config/pnpm/config.yaml")
-  bunfig=$(cat "$home/.bunfig.toml")
+  bunfig=$(cat "$home/.config/.bunfig.toml")
   yarnrc=$(cat "$home/.yarnrc.yml")
   uvtoml=$(cat "$home/.config/uv/uv.toml")
   mise=$(cat "$home/.config/mise/config.toml")
@@ -126,8 +126,8 @@ t_enable_writes_all() {
   assert_match "aube key" '^minimumReleaseAge = 1440$' "$aube" || return
   assert_match "aube paranoid extra" '^paranoid = true$' "$aube" || return
   assert_match "npm audit-level extra" '^audit-level=high$' "$npmrc" || return
-  assert_match "npm allow-git extra" '^allow-git=root$' "$npmrc" || return
-  assert_match "npm allow-remote extra" '^allow-remote=root$' "$npmrc" || return
+  assert_match "npm allow-git extra" '^allow-git=none$' "$npmrc" || return
+  assert_match "npm allow-remote extra" '^allow-remote=none$' "$npmrc" || return
   assert_match "npm allow-file extra" '^allow-file=root$' "$npmrc" || return
   assert_match "npm allow-directory extra" '^allow-directory=root$' "$npmrc" || return
   assert_match "npm strict-allow-scripts extra" '^strict-allow-scripts=true$' "$npmrc" || return
@@ -167,7 +167,7 @@ t_enable_writes_all() {
   assert_match "mise swift.gpg_verify extra" '^swift\.gpg_verify = true$' "$mise" || return
   assert_match "mise not_found_system_fallback extra" '^not_found_system_fallback = false$' "$mise" || return
   assert_match "bundler key" '^BUNDLE_COOLDOWN: "1"$' "$bundle" || return
-  assert_match "composer cooldown" '"minimum-release-age": 1' "$composer" || return
+  assert_match "composer cooldown" '"period": "1 days"' "$composer" || return
   assert_match "composer allow-plugins" '"allow-plugins": false' "$composer" || return
   assert_match "composer secure-http" '"secure-http": true' "$composer" || return
   assert_match "composer disable-tls" '"disable-tls": false' "$composer" || return
@@ -204,7 +204,7 @@ t_disable_preserves_unrelated_keys() {
   printf 'minimumReleaseAge: 4320\nstoreDir: /tmp/pstore\n' > "$home/.config/pnpm/config.yaml"
   mkdir -p "$home/.config/uv"
   printf 'exclude-newer = "3 days"\nlink-mode = "copy"\n' > "$home/.config/uv/uv.toml"
-  printf '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
+  printf '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n' > "$home/.config/.bunfig.toml"
   printf 'npmMinimalAgeGate: "3d"\nnpmRegistryServer: "https://r/"\n' > "$home/.yarnrc.yml"
   run_pmsec "$home" -- --disable >/dev/null
   assert_file_eq "npmrc" 'registry=https://r/
@@ -217,7 +217,7 @@ t_disable_preserves_unrelated_keys() {
 ' "$home/.config/uv/uv.toml" || { rm -rf "$home"; return 1; }
   assert_file_eq "bunfig" '[install]
 registry = "https://x/"
-' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
+' "$home/.config/.bunfig.toml" || { rm -rf "$home"; return 1; }
   assert_file_eq "yarnrc" 'npmRegistryServer: "https://r/"
 ' "$home/.yarnrc.yml" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
@@ -230,8 +230,8 @@ t_enable_upgrades_weak_existing_value() {
   assert_file_eq "npmrc" 'min-release-age=7
 registry=https://r/
 audit-level=high
-allow-git=root
-allow-remote=root
+allow-git=none
+allow-remote=none
 allow-file=root
 allow-directory=root
 strict-allow-scripts=true
@@ -251,8 +251,8 @@ t_enable_preserves_stricter_existing_cooldown() {
   assert_file_eq "npmrc preserves 99" 'min-release-age=99
 registry=https://r/
 audit-level=high
-allow-git=root
-allow-remote=root
+allow-git=none
+allow-remote=none
 allow-file=root
 allow-directory=root
 strict-allow-scripts=true
@@ -283,7 +283,7 @@ t_tool_filter_restricts() {
   local home; home=$(setup_home)
   run_pmsec "$home" -- --tool npm,bun >/dev/null
   [ -f "$home/.npmrc" ] || { LAST_FAIL=".npmrc not written"; rm -rf "$home"; return 1; }
-  [ -f "$home/.bunfig.toml" ] || { LAST_FAIL=".bunfig.toml not written"; rm -rf "$home"; return 1; }
+  [ -f "$home/.config/.bunfig.toml" ] || { LAST_FAIL=".bunfig.toml not written"; rm -rf "$home"; return 1; }
   [ ! -f "$home/.config/uv/uv.toml" ] || { LAST_FAIL="uv.toml unexpectedly written"; rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
@@ -310,26 +310,28 @@ t_json_check() {
 
 t_bun_inserts_into_existing_section() {
   local home; home=$(setup_home)
-  printf '[install]\nregistry = "https://x/"\n' > "$home/.bunfig.toml"
+  mkdir -p "$home/.config"
+  printf '[install]\nregistry = "https://x/"\n' > "$home/.config/.bunfig.toml"
   run_pmsec "$home" -- --tool bun >/dev/null
   assert_file_eq "bunfig" '[install]
 ignoreScripts = true
 minimumReleaseAge = 86400
 registry = "https://x/"
-' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
+' "$home/.config/.bunfig.toml" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
 t_bun_creates_section_if_missing() {
   local home; home=$(setup_home)
-  printf 'telemetry = false\n' > "$home/.bunfig.toml"
+  mkdir -p "$home/.config"
+  printf 'telemetry = false\n' > "$home/.config/.bunfig.toml"
   run_pmsec "$home" -- --tool bun >/dev/null
   assert_file_eq "bunfig" 'telemetry = false
 
 [install]
 ignoreScripts = true
 minimumReleaseAge = 86400
-' "$home/.bunfig.toml" || { rm -rf "$home"; return 1; }
+' "$home/.config/.bunfig.toml" || { rm -rf "$home"; return 1; }
   rm -rf -- "$home"
 }
 
@@ -393,7 +395,7 @@ t_days_overrides_bundle_cooldown() {
   assert_match "pnpm cooldown 10080m" '^minimum-release-age=10080$' "$(cat "$home/.config/pnpm/rc")" || { rm -rf "$home"; return 1; }
   assert_match "pnpm yaml cooldown 10080m" '^minimumReleaseAge: 10080$' "$(cat "$home/.config/pnpm/config.yaml")" || { rm -rf "$home"; return 1; }
   assert_match "uv 7 days" 'exclude-newer = "7 days"' "$(cat "$home/.config/uv/uv.toml")" || { rm -rf "$home"; return 1; }
-  assert_match "bun 7d secs" 'minimumReleaseAge = 604800' "$(cat "$home/.bunfig.toml")" || { rm -rf "$home"; return 1; }
+  assert_match "bun 7d secs" 'minimumReleaseAge = 604800' "$(cat "$home/.config/.bunfig.toml")" || { rm -rf "$home"; return 1; }
   assert_match "aube 7d mins" 'minimumReleaseAge = 10080' "$(cat "$home/.config/aube/config.toml")" || { rm -rf "$home"; return 1; }
 
   local out rc
@@ -728,7 +730,7 @@ t_composer_roundtrip() {
   local cfg="$home/.config/composer/config.json"
   run_pmsec "$home" -- --tool composer --days 7 >/dev/null
   local text; text=$(cat "$cfg")
-  assert_match "composer cooldown" '"minimum-release-age": 7' "$text" || { rm -rf "$home"; return 1; }
+  assert_match "composer cooldown" '"period": "7 days"' "$text" || { rm -rf "$home"; return 1; }
   assert_match "composer allow-plugins" '"allow-plugins": false' "$text" || { rm -rf "$home"; return 1; }
   assert_match "composer secure-http" '"secure-http": true' "$text" || { rm -rf "$home"; return 1; }
   assert_match "composer disable-tls" '"disable-tls": false' "$text" || { rm -rf "$home"; return 1; }
@@ -757,7 +759,7 @@ t_composer_preserves_unrelated_keys() {
   text=$(cat "$ch/config.json")
   rm -rf -- "$home"
   assert_match "unrelated config kept after disable" '"preferred-install": "dist"' "$text" || return 1
-  ! printf '%s' "$text" | grep -q 'minimum-release-age' || { LAST_FAIL="composer cooldown not removed"; return 1; }
+  ! printf '%s' "$text" | grep -q '"period"' || { LAST_FAIL="composer cooldown not removed"; return 1; }
   return 0
 }
 

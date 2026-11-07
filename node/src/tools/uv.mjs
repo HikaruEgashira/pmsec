@@ -7,7 +7,9 @@ import { buildPreflight } from "../util/version.mjs";
 export const name = "uv";
 export const key = "exclude-newer";
 export const docs = "https://docs.astral.sh/uv/reference/settings/#exclude-newer";
-export const minBin = [0, 9, 17];
+// 0.9.17 added relative exclude-newer; the [audit] table only parses from 0.11.3
+// (verified against released binaries: 0.11.2 rejects it, 0.11.3 accepts it).
+export const minBin = [0, 11, 3];
 export const extras = [
   { key: "index-strategy", expected: '"first-index"', line: 'index-strategy = "first-index"' },
   { key: "malware-check", expected: "true", line: "malware-check = true", section: "audit" },
@@ -16,7 +18,7 @@ export const extras = [
 export function path(ctx) { return uvConfigPath(ctx.env, ctx.home, ctx.platform); }
 
 export const preflight = buildPreflight(name, minBin,
-  "writing exclude-newer = \"N days\" will break this uv until you `uv self update` (file will fail to parse).");
+  "the written uv.toml (relative exclude-newer and the [audit] table) will not parse on this uv and every uv command will fail until you `uv self update`.");
 
 function parseDays(value) {
   if (value === null) return null;

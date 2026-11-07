@@ -7,11 +7,18 @@ from pmsec.util.context import Context
 from pmsec.util.io import write_atomic
 from pmsec.util.jsonconf import read_json_key, remove_json_key, set_json_key
 from pmsec.util.paths import composer_config_path
+from pmsec.util.version import build_preflight
 
 NAME = "composer"
-KEY = "minimum-release-age"
+# Composer's cooldown lives under the unified policy block (Composer >= 2.11):
+#   {"config": {"policy": {"cooldown": {"period": "7 days"}}}}
+# `config.minimum-release-age` was never a Composer key; earlier pmsec
+# releases wrote it and Composer silently ignored it. It is removed on write.
+KEY = "policy.cooldown.period"
 SECTION = "config"
-DOCS = "https://getcomposer.org/doc/06-config.md#minimum-release-age"
+DOCS = "https://getcomposer.org/doc/06-config.md#policy"
+MIN_BIN = (2, 11, 0)
+COOLDOWN_PATH = ["config", "policy", "cooldown", "period"]
 EXTRAS = [
     {"key": "allow-plugins", "expected": "false", "line": "false", "path": ["config", "allow-plugins"]},
     {"key": "secure-http", "expected": "true", "line": "true", "path": ["config", "secure-http"]},
@@ -19,43 +26,39 @@ EXTRAS = [
     {"key": "abandoned", "expected": '"fail"', "line": '"fail"', "path": ["config", "audit", "abandoned"]},
 ]
 
-# Composer is newer than most tools in the bundle; accept the shorter npm
-# spelling too so a config written by hand is still recognized.
-PRIMARY_ALIASES = [KEY, "min-release-age", "minimum_release_age", "minimumReleaseAge"]
+# Keys written by pmsec < 2026.11.5 that Composer never read.
+LEGACY_KEYS = ["minimum-release-age", "min-release-age", "minimum_release_age", "minimumReleaseAge"]
+
+_UNIT_SECONDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400, "week": 604800}
 
 
 def path(ctx: Context) -> Path:
     return composer_config_path(ctx.env, ctx.home, ctx.platform)
 
 
+preflight = build_preflight(NAME, MIN_BIN,
+    "config.policy.cooldown is silently ignored. Upgrade Composer to enforce the cooldown.")
+
+
 def _parse_days(value: str | None) -> int | None:
+    """Composer: "<n> second|minute|hour|day|week[s]" or an integer number of
+    seconds (a bare numeric string counts as seconds too). Partial days floor."""
     if value is None:
         return None
     v = str(value).strip().strip('"').strip()
-    m = re.match(r"^(\d+)\s*(d|days?|w|weeks?)$", v, re.IGNORECASE)
+    m = re.match(r"^(\d+)\s*(seconds?|minutes?|hours?|days?|weeks?)$", v, re.IGNORECASE)
     if m:
-        n = int(m.group(1))
-        return n * 7 if re.match(r"^(w|weeks?)$", m.group(2), re.IGNORECASE) else n
-    if not re.match(r"^\d+$", v):
+        unit = m.group(2).lower().rstrip("s")
+        return int(m.group(1)) * _UNIT_SECONDS[unit] // 86400
+    if not re.fullmatch(r"[0-9]+", v):
         return None
-    n = int(v)
-    # Large values are seconds or minutes (the units Composer uses for its
-    # other time settings); small values are days.
-    if n >= 86400:
-        return n // 86400
-    if n >= 1440 and n % 1440 == 0:
-        return n // 1440
-    return n
+    return int(v) // 86400
 
 
 def read(ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
-    configured = None
-    for candidate in PRIMARY_ALIASES:
-        configured = read_json_key(raw, ["config", candidate])
-        if configured is not None:
-            break
+    configured = read_json_key(raw, COOLDOWN_PATH)
     extras = []
     for e in EXTRAS:
         cur = read_json_key(raw, e["path"])
@@ -69,10 +72,19 @@ def read(ctx: Context) -> dict:
     return {"path": str(p), "configured": configured, "days": _parse_days(configured), "extras": extras}
 
 
+def _drop_legacy(text: str) -> tuple[str, bool]:
+    removed = False
+    for k in LEGACY_KEYS:
+        text, r = remove_json_key(text, ["config", k])
+        removed = removed or r
+    return text, removed
+
+
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
-    text = set_json_key(raw, ["config", KEY], str(days))
+    text, _ = _drop_legacy(raw)
+    text = set_json_key(text, COOLDOWN_PATH, f'"{days} days"')
     for e in EXTRAS:
         text = set_json_key(text, e["path"], e["line"])
     write_atomic(p, text)
@@ -83,12 +95,10 @@ def unset(ctx: Context) -> dict:
     p = path(ctx)
     if not p.exists():
         return {"path": str(p), "removed": False}
-    before = p.read_text("utf-8-sig")
-    text = before
-    removed = False
-    for candidate in PRIMARY_ALIASES:
-        text, r = remove_json_key(text, ["config", candidate])
-        removed = removed or r
+    text = p.read_text("utf-8-sig")
+    text, removed = remove_json_key(text, COOLDOWN_PATH)
+    text, r = _drop_legacy(text)
+    removed = removed or r
     for e in EXTRAS:
         text, r = remove_json_key(text, e["path"])
         removed = removed or r

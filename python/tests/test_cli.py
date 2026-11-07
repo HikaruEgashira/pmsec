@@ -61,8 +61,8 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     npmrc = (tmp_path / ".npmrc").read_text()
     assert "min-release-age=1" in npmrc
     assert "audit-level=high" in npmrc
-    assert "allow-git=root" in npmrc
-    assert "allow-remote=root" in npmrc
+    assert "allow-git=none" in npmrc
+    assert "allow-remote=none" in npmrc
     assert "allow-file=root" in npmrc
     assert "allow-directory=root" in npmrc
     assert "strict-allow-scripts=true" in npmrc
@@ -95,7 +95,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert 'index-strategy = "first-index"' in uvtoml
     assert "[audit]" in uvtoml
     assert "malware-check = true" in uvtoml
-    bunfig = (tmp_path / ".bunfig.toml").read_text()
+    bunfig = (tmp_path / ".config" / ".bunfig.toml").read_text()
     assert "[install]" in bunfig
     assert "minimumReleaseAge = 86400" in bunfig
     assert "ignoreScripts = true" in bunfig
@@ -130,7 +130,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     bundle = (tmp_path / ".bundle" / "config").read_text()
     assert 'BUNDLE_COOLDOWN: "1"' in bundle
     composer = (tmp_path / ".config" / "composer" / "config.json").read_text()
-    assert '"minimum-release-age": 1' in composer
+    assert '"period": "1 days"' in composer
     assert '"allow-plugins": false' in composer
     assert '"secure-http": true' in composer
     assert '"disable-tls": false' in composer
@@ -163,7 +163,7 @@ def test_disable_preserves_other_keys(tmp_path):
     (uv_dir / "uv.toml").write_text(
         'exclude-newer = "3 days"\nlink-mode = "copy"\n'
     )
-    (tmp_path / ".bunfig.toml").write_text(
+    (tmp_path / ".config" / ".bunfig.toml").write_text(
         '[install]\nminimumReleaseAge = 259200\nregistry = "https://x/"\n'
     )
     (tmp_path / ".yarnrc.yml").write_text(
@@ -174,7 +174,7 @@ def test_disable_preserves_other_keys(tmp_path):
     assert (pnpm_dir / "rc").read_text() == "store-dir=/tmp/pstore\n"
     assert (pnpm_dir / "config.yaml").read_text() == "storeDir: /tmp/pstore\n"
     assert (uv_dir / "uv.toml").read_text() == 'link-mode = "copy"\n'
-    assert (tmp_path / ".bunfig.toml").read_text() == '[install]\nregistry = "https://x/"\n'
+    assert (tmp_path / ".config" / ".bunfig.toml").read_text() == '[install]\nregistry = "https://x/"\n'
     assert (tmp_path / ".yarnrc.yml").read_text() == 'npmRegistryServer: "https://r/"\n'
 
 
@@ -182,7 +182,7 @@ def test_enable_upgrades_weak_existing_value(tmp_path):
     (tmp_path / ".npmrc").write_text("min-release-age=3\nregistry=https://r/\n")
     run(["--tool", "npm", "--days", "7"], tmp_path)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
+        "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
     )
 
 
@@ -192,7 +192,7 @@ def test_enable_preserves_stricter_existing_cooldown(tmp_path):
     assert code == 0
     assert re.search(r"^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)", out, re.M)
     assert (tmp_path / ".npmrc").read_text() == (
-        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
+        "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
     )
 
 
@@ -214,7 +214,7 @@ def test_enable_days_upgrades_when_request_exceeds_existing(tmp_path):
 def test_tool_filter(tmp_path):
     run(["--tool", "npm,bun"], tmp_path)
     assert (tmp_path / ".npmrc").exists()
-    assert (tmp_path / ".bunfig.toml").exists()
+    assert (tmp_path / ".config" / ".bunfig.toml").exists()
     assert not (tmp_path / ".config" / "uv" / "uv.toml").exists()
 
 
@@ -235,16 +235,18 @@ def test_check_json(tmp_path):
 
 
 def test_bun_section_insert(tmp_path):
-    (tmp_path / ".bunfig.toml").write_text('[install]\nregistry = "https://x/"\n')
+    (tmp_path / ".config").mkdir(exist_ok=True)
+    (tmp_path / ".config" / ".bunfig.toml").write_text('[install]\nregistry = "https://x/"\n')
     run(["--tool", "bun"], tmp_path)
-    text = (tmp_path / ".bunfig.toml").read_text()
+    text = (tmp_path / ".config" / ".bunfig.toml").read_text()
     assert text.startswith("[install]\nignoreScripts = true\nminimumReleaseAge = 86400\nregistry =")
 
 
 def test_bun_creates_section_if_missing(tmp_path):
-    (tmp_path / ".bunfig.toml").write_text("telemetry = false\n")
+    (tmp_path / ".config").mkdir(exist_ok=True)
+    (tmp_path / ".config" / ".bunfig.toml").write_text("telemetry = false\n")
     run(["--tool", "bun"], tmp_path)
-    text = (tmp_path / ".bunfig.toml").read_text()
+    text = (tmp_path / ".config" / ".bunfig.toml").read_text()
     assert text == "telemetry = false\n\n[install]\nignoreScripts = true\nminimumReleaseAge = 86400\n"
 
 
@@ -383,7 +385,7 @@ def test_days_flag_overrides_bundle_cooldown(tmp_path):
     assert "minimum-release-age=10080" in pnpmrc
     assert "minimumReleaseAge: 10080" in (tmp_path / ".config" / "pnpm" / "config.yaml").read_text()
     assert 'exclude-newer = "7 days"' in (tmp_path / ".config" / "uv" / "uv.toml").read_text()
-    assert "minimumReleaseAge = 604800" in (tmp_path / ".bunfig.toml").read_text()
+    assert "minimumReleaseAge = 604800" in (tmp_path / ".config" / ".bunfig.toml").read_text()
     assert "minimumReleaseAge = 10080" in (tmp_path / ".config" / "aube" / "config.toml").read_text()
 
     code, out, _ = run(["--check", "--json", "--days", "7"], tmp_path)
@@ -507,7 +509,8 @@ def test_composer_roundtrip(tmp_path):
     assert code == 0
     cfg_path = tmp_path / ".config" / "composer" / "config.json"
     cfg = json.loads(cfg_path.read_text())
-    assert cfg["config"]["minimum-release-age"] == 7
+    assert cfg["config"]["policy"]["cooldown"]["period"] == "7 days"
+    assert "minimum-release-age" not in cfg["config"]
     assert cfg["config"]["allow-plugins"] is False
     assert cfg["config"]["secure-http"] is True
     assert cfg["config"]["disable-tls"] is False

@@ -1,6 +1,6 @@
 {
   "setup": {
-    ".bunfig.toml": "install = { ignoreScripts = false }\n"
+    ".config/.bunfig.toml": "install = { ignoreScripts = false }\n"
   },
   "args": [
     "--tool",
@@ -16,7 +16,7 @@
     "results": [
       {
         "tool": "bun",
-        "path": "<HOME>/.bunfig.toml",
+        "path": "<HOME>/.config/.bunfig.toml",
         "days": 1,
         "requested": 1,
         "kept": false,
@@ -29,6 +29,6 @@
     "ok": true
   },
   "expected_files": {
-    ".bunfig.toml": "install = { ignoreScripts = true, minimumReleaseAge = 86400 }\n"
+    ".config/.bunfig.toml": "install = { ignoreScripts = true, minimumReleaseAge = 86400 }\n"
   }
 }

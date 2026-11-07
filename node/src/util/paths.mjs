@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, isAbsolute } from "node:path";
+import { existsSync } from "node:fs";
 
 export function npmrcPath(env = process.env, home = homedir()) {
   return env.NPM_CONFIG_USERCONFIG || join(home, ".npmrc");
@@ -37,8 +38,12 @@ export function uvConfigPath(env = process.env, home = homedir(), platform = pro
   return join(base, "uv", "uv.toml");
 }
 
+// bun reads $XDG_CONFIG_HOME/.bunfig.toml *instead of* $HOME/.bunfig.toml
+// whenever XDG_CONFIG_HOME is set to an absolute path.
 export function bunConfigPath(env = process.env, home = homedir()) {
-  return env.BUN_CONFIG_FILE || join(home, ".bunfig.toml");
+  if (env.BUN_CONFIG_FILE) return env.BUN_CONFIG_FILE;
+  if (env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)) return join(env.XDG_CONFIG_HOME, ".bunfig.toml");
+  return join(home, ".bunfig.toml");
 }
 
 export function yarnrcPath(env = process.env, home = homedir()) {
@@ -83,13 +88,21 @@ export function aubeConfigPath(env = process.env, home = homedir(), platform = p
 // COMPOSER_HOME follows platform conventions (XDG on Unix, Application Support
 // on macOS, APPDATA on Windows), matching Composer's own resolution. An
 // explicit XDG_CONFIG_HOME wins on every non-Windows platform, including macOS.
+// Mirrors Composer's Factory::getHomeDir: COMPOSER_HOME, else %APPDATA%/Composer
+// on Windows, else (when any XDG_* variable is set or /etc/xdg exists) the
+// first existing of $XDG_CONFIG_HOME/composer and ~/.composer, defaulting to
+// the XDG one; without XDG, ~/.composer. Composer never uses Application
+// Support on macOS.
 export function composerConfigPath(env = process.env, home = homedir(), platform = process.platform) {
   if (env.COMPOSER_HOME) return join(env.COMPOSER_HOME, "config.json");
   if (platform === "win32") {
     const base = env.APPDATA || join(home, "AppData", "Roaming");
     return join(base, "Composer", "config.json");
   }
-  if (env.XDG_CONFIG_HOME) return join(env.XDG_CONFIG_HOME, "composer", "config.json");
-  if (platform === "darwin") return join(home, "Library", "Application Support", "composer", "config.json");
-  return join(home, ".config", "composer", "config.json");
+  const useXdg = Object.keys(env).some(k => k.startsWith("XDG_")) || existsSync("/etc/xdg");
+  const dirs = [];
+  if (useXdg) dirs.push(join(env.XDG_CONFIG_HOME || join(home, ".config"), "composer"));
+  dirs.push(join(home, ".composer"));
+  const dir = dirs.find(d => existsSync(d)) ?? dirs[0];
+  return join(dir, "config.json");
 }
