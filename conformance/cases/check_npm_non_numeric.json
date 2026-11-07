@@ -1,6 +1,6 @@
 {
   "setup": {
-    ".npmrc": "min-release-age=abc\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
+    ".npmrc": "min-release-age=abc\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
   },
   "args": ["--tool", "npm", "--check", "--json"],
   "expected_exit": 1,
@@ -12,8 +12,8 @@
         "configured": "abc", "days": null, "warn": null,
         "extras": [
           {"key": "audit-level", "configured": "high", "expected": "high", "ok": true},
-          {"key": "allow-git", "configured": "root", "expected": "root", "ok": true},
-          {"key": "allow-remote", "configured": "root", "expected": "root", "ok": true},
+          {"key": "allow-git", "configured": "none", "expected": "none", "ok": true},
+          {"key": "allow-remote", "configured": "none", "expected": "none", "ok": true},
           {"key": "allow-file", "configured": "root", "expected": "root", "ok": true},
           {"key": "allow-directory", "configured": "root", "expected": "root", "ok": true},
           {"key": "strict-allow-scripts", "configured": "true", "expected": "true", "ok": true},

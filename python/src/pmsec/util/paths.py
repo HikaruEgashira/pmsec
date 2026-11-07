@@ -37,8 +37,13 @@ def pnpm_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
 
 
 def bun_config_path(env: dict[str, str], home: Path) -> Path:
+    """bun reads $XDG_CONFIG_HOME/.bunfig.toml *instead of* $HOME/.bunfig.toml
+    whenever XDG_CONFIG_HOME is set to an absolute path."""
     if "BUN_CONFIG_FILE" in env:
         return Path(env["BUN_CONFIG_FILE"])
+    xdg = env.get("XDG_CONFIG_HOME")
+    if xdg and Path(xdg).is_absolute():
+        return Path(xdg) / ".bunfig.toml"
     return home / ".bunfig.toml"
 
 
@@ -96,21 +101,23 @@ def aube_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
 
 
 def composer_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
-    """Composer keeps its global config in $COMPOSER_HOME/config.json. The
-    default COMPOSER_HOME follows platform conventions (XDG on Unix,
-    Application Support on macOS, APPDATA on Windows), matching Composer's
-    own resolution. An explicit XDG_CONFIG_HOME wins on every non-Windows
-    platform, including macOS."""
+    """Mirrors Composer's Factory::getHomeDir: COMPOSER_HOME, else %APPDATA%/Composer
+    on Windows, else (when any XDG_* variable is set or /etc/xdg exists) the
+    first existing of $XDG_CONFIG_HOME/composer and ~/.composer, defaulting to
+    the XDG one; without XDG, ~/.composer. Composer never uses Application
+    Support on macOS."""
     if "COMPOSER_HOME" in env:
         return Path(env["COMPOSER_HOME"]) / "config.json"
     if platform == "win32":
         base = Path(env["APPDATA"]) if "APPDATA" in env else home / "AppData" / "Roaming"
         return base / "Composer" / "config.json"
-    if "XDG_CONFIG_HOME" in env:
-        return Path(env["XDG_CONFIG_HOME"]) / "composer" / "config.json"
-    if platform == "darwin":
-        return home / "Library" / "Application Support" / "composer" / "config.json"
-    return home / ".config" / "composer" / "config.json"
+    use_xdg = any(k.startswith("XDG_") for k in env) or Path("/etc/xdg").is_dir()
+    dirs: list[Path] = []
+    if use_xdg:
+        dirs.append(Path(env.get("XDG_CONFIG_HOME") or (home / ".config")) / "composer")
+    dirs.append(home / ".composer")
+    chosen = next((d for d in dirs if d.is_dir()), dirs[0])
+    return chosen / "config.json"
 
 
 def current_platform() -> str:

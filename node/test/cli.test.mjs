@@ -37,8 +37,8 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   const npmrc = await readFile(join(home, ".npmrc"), "utf8");
   assert.match(npmrc, /^min-release-age=1$/m);
   assert.match(npmrc, /^audit-level=high$/m);
-  assert.match(npmrc, /^allow-git=root$/m);
-  assert.match(npmrc, /^allow-remote=root$/m);
+  assert.match(npmrc, /^allow-git=none$/m);
+  assert.match(npmrc, /^allow-remote=none$/m);
   assert.match(npmrc, /^allow-file=root$/m);
   assert.match(npmrc, /^allow-directory=root$/m);
   assert.match(npmrc, /^strict-allow-scripts=true$/m);
@@ -71,7 +71,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(uvtoml, /^index-strategy = "first-index"$/m);
   assert.match(uvtoml, /^\[audit\]$/m);
   assert.match(uvtoml, /^malware-check = true$/m);
-  const bunfig = await readFile(join(home, ".bunfig.toml"), "utf8");
+  const bunfig = await readFile(join(home, ".config", ".bunfig.toml"), "utf8");
   assert.match(bunfig, /^\[install\]$/m);
   assert.match(bunfig, /^minimumReleaseAge = 86400$/m);
   assert.match(bunfig, /^ignoreScripts = true$/m);
@@ -106,7 +106,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   const bundle = await readFile(join(home, ".bundle", "config"), "utf8");
   assert.match(bundle, /^BUNDLE_COOLDOWN: "1"$/m);
   const composer = await readFile(join(home, ".config", "composer", "config.json"), "utf8");
-  assert.match(composer, /"minimum-release-age": 1/);
+  assert.match(composer, /"period": "1 days"/);
   assert.match(composer, /"allow-plugins": false/);
   assert.match(composer, /"secure-http": true/);
   assert.match(composer, /"disable-tls": false/);
@@ -137,14 +137,15 @@ test("--disable preserves unrelated keys per file", async () => {
   await writeFile(join(home, ".config", "pnpm", "config.yaml"), "minimumReleaseAge: 4320\nstoreDir: /tmp/pstore\n");
   await mkdir(join(home, ".config", "uv"), { recursive: true });
   await writeFile(join(home, ".config", "uv", "uv.toml"), 'exclude-newer = "3 days"\nlink-mode = "copy"\n');
-  await writeFile(join(home, ".bunfig.toml"), "[install]\nminimumReleaseAge = 259200\nregistry = \"https://x/\"\n");
+  await mkdir(join(home, ".config"), { recursive: true });
+  await writeFile(join(home, ".config", ".bunfig.toml"), "[install]\nminimumReleaseAge = 259200\nregistry = \"https://x/\"\n");
   await writeFile(join(home, ".yarnrc.yml"), "npmMinimalAgeGate: \"3d\"\nnpmRegistryServer: \"https://r/\"\n");
   await runCli(["--disable"], home);
   assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://r/\n");
   assert.equal(await readFile(join(home, ".config", "pnpm", "rc"), "utf8"), "store-dir=/tmp/pstore\n");
   assert.equal(await readFile(join(home, ".config", "pnpm", "config.yaml"), "utf8"), "storeDir: /tmp/pstore\n");
   assert.equal(await readFile(join(home, ".config", "uv", "uv.toml"), "utf8"), 'link-mode = "copy"\n');
-  assert.equal(await readFile(join(home, ".bunfig.toml"), "utf8"), "[install]\nregistry = \"https://x/\"\n");
+  assert.equal(await readFile(join(home, ".config", ".bunfig.toml"), "utf8"), "[install]\nregistry = \"https://x/\"\n");
   assert.equal(await readFile(join(home, ".yarnrc.yml"), "utf8"), "npmRegistryServer: \"https://r/\"\n");
 });
 
@@ -154,7 +155,7 @@ test("enable upgrades values that are weaker than the request", async () => {
   await runCli(["--tool", "npm", "--days", "7"], home);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
+    "min-release-age=7\nregistry=https://r/\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
   );
 });
 
@@ -186,7 +187,7 @@ test("enable preserves stricter existing cooldowns", async () => {
   assert.match(out, /^keep\s+npm\s+\[[^\]]+\]\s+\(kept existing 99d \S+ \d+d\)/m);
   assert.equal(
     await readFile(join(home, ".npmrc"), "utf8"),
-    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=root\nallow-remote=root\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
+    "min-release-age=99\nregistry=https://r/\naudit-level=high\nallow-git=none\nallow-remote=none\nallow-file=root\nallow-directory=root\nstrict-allow-scripts=true\ndangerously-allow-all-scripts=false\nallow-scripts-pin=true\nignore-extension=true\n"
   );
 });
 
@@ -211,7 +212,7 @@ test("--tool restricts which tools get written", async () => {
   const home = await setupHome();
   await runCli(["--tool", "npm,bun"], home);
   await readFile(join(home, ".npmrc"), "utf8");
-  await readFile(join(home, ".bunfig.toml"), "utf8");
+  await readFile(join(home, ".config", ".bunfig.toml"), "utf8");
   let threw = false;
   try { await readFile(join(home, ".config", "uv", "uv.toml"), "utf8"); } catch { threw = true; }
   assert.equal(threw, true);
@@ -238,17 +239,19 @@ test("--json emits parseable JSON for --check", async () => {
 
 test("bun enable inserts key inside existing [install] section", async () => {
   const home = await setupHome();
-  await writeFile(join(home, ".bunfig.toml"), "[install]\nregistry = \"https://x/\"\n");
+  await mkdir(join(home, ".config"), { recursive: true });
+  await writeFile(join(home, ".config", ".bunfig.toml"), "[install]\nregistry = \"https://x/\"\n");
   await runCli(["--tool", "bun"], home);
-  const text = await readFile(join(home, ".bunfig.toml"), "utf8");
+  const text = await readFile(join(home, ".config", ".bunfig.toml"), "utf8");
   assert.match(text, /^\[install\]\nignoreScripts = true\nminimumReleaseAge = 86400\nregistry = "https:\/\/x\/"$/m);
 });
 
 test("bun enable creates [install] section if missing", async () => {
   const home = await setupHome();
-  await writeFile(join(home, ".bunfig.toml"), "telemetry = false\n");
+  await mkdir(join(home, ".config"), { recursive: true });
+  await writeFile(join(home, ".config", ".bunfig.toml"), "telemetry = false\n");
   await runCli(["--tool", "bun"], home);
-  const text = await readFile(join(home, ".bunfig.toml"), "utf8");
+  const text = await readFile(join(home, ".config", ".bunfig.toml"), "utf8");
   assert.match(text, /^telemetry = false\n\n\[install\]\nignoreScripts = true\nminimumReleaseAge = 86400\n$/);
 });
 
@@ -398,7 +401,7 @@ test("--days N overrides bundle cooldown for enable and check", async () => {
   assert.match(npmrc, /^min-release-age=7$/m);
   const uvtoml = await readFile(join(home, ".config", "uv", "uv.toml"), "utf8");
   assert.match(uvtoml, /^exclude-newer = "7 days"$/m);
-  const bunfig = await readFile(join(home, ".bunfig.toml"), "utf8");
+  const bunfig = await readFile(join(home, ".config", ".bunfig.toml"), "utf8");
   assert.match(bunfig, /^minimumReleaseAge = 604800$/m);
   // pnpm uses minutes: 7 * 1440 = 10080, in its own rc file.
   const pnpmrc = await readFile(join(home, ".config", "pnpm", "rc"), "utf8");
@@ -530,7 +533,8 @@ test("composer enable writes JSON config and check/disable roundtrip", async () 
   const home = await setupHome();
   await runCli(["--tool", "composer", "--days", "7"], home);
   const cfg = JSON.parse(await readFile(join(home, ".config", "composer", "config.json"), "utf8"));
-  assert.equal(cfg.config["minimum-release-age"], 7);
+  assert.equal(cfg.config.policy.cooldown.period, "7 days");
+  assert.equal("minimum-release-age" in cfg.config, false);
   assert.equal(cfg.config["allow-plugins"], false);
   assert.equal(cfg.config["secure-http"], true);
   assert.equal(cfg.config["disable-tls"], false);

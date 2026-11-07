@@ -99,8 +99,14 @@ function Get-UvPath {
   }
   return (PathJoin (Get-PmsecHome) '.config' 'uv' 'uv.toml')
 }
+# bun reads $XDG_CONFIG_HOME/.bunfig.toml *instead of* $HOME/.bunfig.toml
+# whenever XDG_CONFIG_HOME is set to an absolute path (host scope only; the
+# variable is not propagated into WSL scopes).
 function Get-BunPath {
-  if ((Get-PmsecPlatform) -eq 'win32' -and $env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    if ($env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
+    if ($env:XDG_CONFIG_HOME -and [System.IO.Path]::IsPathRooted($env:XDG_CONFIG_HOME)) { return (PathJoin $env:XDG_CONFIG_HOME '.bunfig.toml') }
+  }
   return (PathJoin (Get-PmsecHome) '.bunfig.toml')
 }
 function Get-YarnPath {
@@ -145,8 +151,13 @@ function Get-ComposerPath {
     return (PathJoin $base 'Composer' 'config.json')
   }
   if ($env:COMPOSER_HOME) { return (PathJoin $env:COMPOSER_HOME 'config.json') }
-  # WSL scopes use the Linux default; the Windows env override does not apply.
-  return (PathJoin (Get-PmsecHome) '.config' 'composer' 'config.json')
+  # WSL scopes: Composer's Factory::getHomeDir picks the first existing of
+  # $XDG_CONFIG_HOME/composer and ~/.composer when the distro uses XDG
+  # (/etc/xdg exists on every mainstream distro), defaulting to the XDG one.
+  $home_ = Get-PmsecHome
+  $dirs = @((PathJoin $home_ '.config' 'composer'), (PathJoin $home_ '.composer'))
+  foreach ($d in $dirs) { if (Test-Path -LiteralPath $d -PathType Container) { return (PathJoin $d 'config.json') } }
+  return (PathJoin $dirs[0] 'config.json')
 }
 
 # ---------- scope discovery ----------
@@ -828,7 +839,7 @@ function ToolKey([string]$Tool) {
     'uv'    { 'exclude-newer' }
     'bundler' { 'BUNDLE_COOLDOWN' }
     'aube' { 'minimumReleaseAge' }
-    'composer' { 'minimum-release-age' }
+    'composer' { 'policy.cooldown.period' }
   }
 }
 function ToolSection([string]$Tool) {
@@ -853,8 +864,8 @@ function ToolExtras([string]$Tool) {
     'npm' {
       return ,@(
         @{ Key = 'audit-level'; Expected = 'high'; Line = 'audit-level=high'; Sep = '='; Section = '' },
-        @{ Key = 'allow-git'; Expected = 'root'; Line = 'allow-git=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
-        @{ Key = 'allow-remote'; Expected = 'root'; Line = 'allow-remote=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
+        @{ Key = 'allow-git'; Expected = 'none'; Line = 'allow-git=none'; Sep = '='; Section = '' },
+        @{ Key = 'allow-remote'; Expected = 'none'; Line = 'allow-remote=none'; Sep = '='; Section = '' },
         @{ Key = 'allow-file'; Expected = 'root'; Line = 'allow-file=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'allow-directory'; Expected = 'root'; Line = 'allow-directory=root'; Sep = '='; Section = ''; SafeValues = @('none', 'root') },
         @{ Key = 'strict-allow-scripts'; Expected = 'true'; Line = 'strict-allow-scripts=true'; Sep = '='; Section = '' },
@@ -982,34 +993,32 @@ function ParseDaysUv([string]$Value) {
   return $null
 }
 
-$script:ComposerPrimaryAliases = @('minimum-release-age','min-release-age','minimum_release_age','minimumReleaseAge')
+# Composer's cooldown lives under the unified policy block (Composer >= 2.11):
+#   {"config": {"policy": {"cooldown": {"period": "7 days"}}}}
+# `config.minimum-release-age` was never a Composer key; earlier pmsec
+# releases wrote it and Composer silently ignored it. It is removed on write.
+$script:ComposerLegacyKeys = @('minimum-release-age','min-release-age','minimum_release_age','minimumReleaseAge')
+$script:ComposerCooldownParent = @('config','policy','cooldown')
 
+# Composer: "<n> second|minute|hour|day|week[s]" or an integer number of
+# seconds (a bare numeric string counts as seconds too). Partial days floor.
 function ParseDaysComposer([string]$Value) {
   $v = $Value.Trim('"').Trim()
   if ($v -match '^(\d+)\s*([A-Za-z]+)$') {
-    $n = [int]$Matches[1]
-    $u = $Matches[2].ToLower()
-    if (@('d','day','days') -contains $u) { return $n }
-    if (@('w','week','weeks') -contains $u) { return $n * 7 }
-    return $null
+    $n = [int64]$Matches[1]
+    $u = $Matches[2].ToLower().TrimEnd('s')
+    $secs = switch ($u) { 'second' { 1 } 'minute' { 60 } 'hour' { 3600 } 'day' { 86400 } 'week' { 604800 } default { $null } }
+    if ($null -eq $secs) { return $null }
+    return [int][math]::Floor(($n * $secs) / 86400.0)
   }
-  if ($v -match '^\d+$') {
-    $n = [int]$v
-    if ($n -ge 86400) { return [int][math]::Floor($n / 86400.0) }
-    if ($n -ge 1440 -and ($n % 1440) -eq 0) { return [int]($n / 1440) }
-    return $n
-  }
+  if ($v -match '^\d+$') { return [int][math]::Floor(([int64]$v) / 86400.0) }
   return $null
 }
 
 function ToolReadComposer {
   $path = ToolPath 'composer'
   LinesLoad $path
-  $val = $null
-  foreach ($alias in $script:ComposerPrimaryAliases) {
-    $cur = JsonReadKey $alias @('config')
-    if ($null -ne $cur) { $val = $cur; break }
-  }
+  $val = JsonReadKey 'period' $script:ComposerCooldownParent
   $days = if ($null -ne $val) { ParseDaysComposer $val } else { $null }
   $extras = New-Object System.Collections.Generic.List[hashtable]
   foreach ($e in (ToolExtras 'composer')) {
@@ -1019,13 +1028,22 @@ function ToolReadComposer {
       Ok = ($null -ne $cur -and $cur -eq $e.Expected); DefaultEnforced = $false
     })
   }
-  return @{ Key = 'minimum-release-age'; Path = $path; Configured = $val; Days = $days; Extras = $extras }
+  return @{ Key = 'policy.cooldown.period'; Path = $path; Configured = $val; Days = $days; Extras = $extras }
+}
+
+function ComposerDropLegacy {
+  $removed = $false
+  foreach ($k in $script:ComposerLegacyKeys) {
+    if (JsonRemoveKey $k @('config')) { $removed = $true }
+  }
+  return $removed
 }
 
 function ToolWriteComposer([int]$Days) {
   $path = ToolPath 'composer'
   LinesLoad $path
-  [void](JsonSetKey ([string]$Days) 'minimum-release-age' @('config'))
+  [void](ComposerDropLegacy)
+  [void](JsonSetKey ('"{0} days"' -f $Days) 'period' $script:ComposerCooldownParent)
   [void](JsonSetKey 'false' 'allow-plugins' @('config'))
   [void](JsonSetKey 'true' 'secure-http' @('config'))
   [void](JsonSetKey 'false' 'disable-tls' @('config'))
@@ -1038,9 +1056,8 @@ function ToolUnsetComposer {
   $path = ToolPath 'composer'
   LinesLoad $path
   $removed = $false
-  foreach ($alias in $script:ComposerPrimaryAliases) {
-    if (JsonRemoveKey $alias @('config')) { $removed = $true }
-  }
+  if (JsonRemoveKey 'period' $script:ComposerCooldownParent) { $removed = $true }
+  if (ComposerDropLegacy) { $removed = $true }
   foreach ($e in (ToolExtras 'composer')) {
     if (JsonRemoveKey $e.Key $e.Path) { $removed = $true }
   }
@@ -1181,7 +1198,9 @@ function ToolPreflight([string]$Tool) {
     'yarn' { $min = @(4,10,0);    $msg = 'npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' }
     'bun'  { $min = @(1,3,0);     $msg = 'minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' }
     'mise' { $min = @(2026,4,22); $msg = 'setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' }
-    'uv'   { $min = @(0,9,17);    $msg = 'writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' }
+    # 0.9.17 added relative exclude-newer; the [audit] table only parses from 0.11.3.
+    'uv'   { $min = @(0,11,3);    $msg = 'the written uv.toml (relative exclude-newer and the [audit] table) will not parse on this uv and every uv command will fail until you `uv self update`.' }
+    'composer' { $min = @(2,11,0); $msg = 'config.policy.cooldown is silently ignored. Upgrade Composer to enforce the cooldown.' }
     'bundler' { $min = @(4,0,13); $msg = 'BUNDLE_COOLDOWN is silently ignored. Upgrade bundler (v4.0.13+) to enforce the cooldown.' }
     'cargo' { $min = @(1,100,0); $msg = 'global-min-publish-age is silently ignored. Upgrade cargo to enforce the cooldown.' }
     default { return $null }

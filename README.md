@@ -81,8 +81,8 @@ for npm `>=11.5.1` on Node 24. The PyPI publisher also uses `ubuntu-24.04` becau
 | --- | --- | --- | --- | --- | --- |
 | npm | `~/.npmrc` | `min-release-age` | `1` | 1-day publish cooldown | npm >= 11.10.0 |
 | npm | `~/.npmrc` | `audit-level` | `high` | high+ advisories fail audit/install checks | npm >= 6.4.0 |
-| npm | `~/.npmrc` | `allow-git` | `root` (`none` accepted) | no transitive git deps | npm >= 11.15.0 |
-| npm | `~/.npmrc` | `allow-remote` | `root` (`none` accepted) | no transitive remote tarballs | npm >= 11.15.0 |
+| npm | `~/.npmrc` | `allow-git` | `none` | no git deps at all (npm 12 default; `root` would loosen it) | npm >= 11.9.0 |
+| npm | `~/.npmrc` | `allow-remote` | `none` | no remote tarball deps at all (npm 12 default; `root` would loosen it) | npm >= 12.0.0 |
 | npm | `~/.npmrc` | `allow-file` | `root` (`none` accepted) | no transitive `file:` deps | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `allow-directory` | `root` (`none` accepted) | no transitive local directories | npm >= 11.15.0 |
 | npm | `~/.npmrc` | `strict-allow-scripts` | `true` | treat install-script policy violations as hard errors | npm >= 11.15.0 |
@@ -102,9 +102,9 @@ for npm `>=11.5.1` on Node 24. The PyPI publisher also uses `ubuntu-24.04` becau
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |
 | yarn | `~/.yarnrc.yml` | `approvedGitRepositories` | `[]` | block all git-sourced dependencies | yarn >= 4.14.0 |
-| bun | `~/.bunfig.toml` | `[install].minimumReleaseAge` | `86400` | 1-day publish cooldown | bun >= 1.3.0 |
-| bun | `~/.bunfig.toml` | `[install].ignoreScripts` | `true` | disable lifecycle scripts | bun >= 1.3.0 |
-| cargo | `$CARGO_HOME/config.toml` | [`[registry].global-min-publish-age`](https://doc.rust-lang.org/nightly/cargo/reference/config.html#registryglobal-min-publish-age) | `"1 days"` (tracks `--days`) | 1-day publish cooldown; resolver ignores crate versions published within it unless already in `Cargo.lock` | cargo >= 1.100.0 |
+| bun | `~/.bunfig.toml` (`$XDG_CONFIG_HOME/.bunfig.toml` when that variable is set; bun then ignores the HOME file) | `[install].minimumReleaseAge` | `86400` | 1-day publish cooldown for newly resolved versions; versions already in `bun.lock` are not re-checked | bun >= 1.3.0 |
+| bun | same file | `[install].ignoreScripts` | `true` | disable lifecycle scripts | bun >= 1.3.0 |
+| cargo | `$CARGO_HOME/config.toml` | [`[registry].global-min-publish-age`](https://doc.rust-lang.org/nightly/cargo/reference/config.html#registryglobal-min-publish-age) | `"1 days"` (tracks `--days`) | 1-day publish cooldown; resolver ignores crate versions published within it unless already in `Cargo.lock`; `cargo install` is not covered | cargo >= 1.100.0 (stable from 2026-11-12; older cargo warns and ignores it) |
 | mise | `~/.config/mise/config.toml` | `[settings].minimum_release_age` | `"1d"` | 1-day release cooldown | mise >= 2026.4.22 |
 | mise | `~/.config/mise/config.toml` | `[settings].paranoid` | `true` | always re-verify artifacts | current mise |
 | mise | `~/.config/mise/config.toml` | `[settings].gpg_verify` | `true` | require GPG when available | current mise |
@@ -123,17 +123,17 @@ for npm `>=11.5.1` on Node 24. The PyPI publisher also uses `ubuntu-24.04` becau
 | mise | `~/.config/mise/config.toml` | `[settings].node.gpg_verify` | `true` | in-process GPG verification for Node.js tarballs using pure-Rust rPGP (no external `gpg` binary required) | mise >= 2026.7.12 |
 | mise | `~/.config/mise/config.toml` | `[settings].swift.gpg_verify` | `true` | in-process GPG verification for Swift tarballs using pure-Rust rPGP (no external `gpg` binary required) | mise >= 2026.7.12 |
 | mise | `~/.config/mise/config.toml` | `[settings].not_found_system_fallback` | `false` | prevents mise shims from silently falling back to same-named system PATH binaries when the required tool version is not installed — eliminates PATH-hijacking via shim fallback | mise >= 2026.8.3 |
-| uv | `~/.config/uv/uv.toml` | `exclude-newer` | `"1 days"` | 1-day publish cooldown | uv >= 0.9.17 |
+| uv | `~/.config/uv/uv.toml` | `exclude-newer` | `"1 days"` | 1-day publish cooldown at lock time; `uv sync` against an existing `uv.lock` does not re-resolve | uv >= 0.11.3 (older uv fails to parse the written file; preflight warns) |
 | uv | `~/.config/uv/uv.toml` | `index-strategy` | `"first-index"` | avoid cross-index confusion | uv >= 0.1.0 |
 | uv | `~/.config/uv/uv.toml` | `[audit].malware-check` | `true` | query OSV API for known-malicious packages before sync, blocking install of packages with MAL advisories | uv >= 0.11.31 |
-| bundler | `~/.bundle/config` | `BUNDLE_COOLDOWN` | `"1"` | 1-day gem cooldown | bundler >= 4.0.13 |
+| bundler | `~/.bundle/config` | `BUNDLE_COOLDOWN` | `"1"` | 1-day gem cooldown for `bundle` resolution; `Gemfile.lock` versions are exempt and `gem install` is not covered before RubyGems 4.1 | bundler >= 4.0.13 |
 | aube | `~/.config/aube/config.toml` | `minimumReleaseAge` | `1440` | 1-day publish cooldown | aube >= 1.0.0 |
 | aube | `~/.config/aube/config.toml` | `paranoid` | `true` | strict-security bundle | aube >= 1.0.0 |
-| composer | `$COMPOSER_HOME/config.json` | `config.minimum-release-age` | `1` (tracks `--days`) | 1-day publish cooldown | current Composer |
-| composer | `$COMPOSER_HOME/config.json` | `config.allow-plugins` | `false` | disable Composer plugins | current Composer |
-| composer | `$COMPOSER_HOME/config.json` | `config.secure-http` | `true` | never allow plaintext HTTP downloads | current Composer |
-| composer | `$COMPOSER_HOME/config.json` | `config.disable-tls` | `false` | keep TLS enforcement enabled | current Composer |
-| composer | `$COMPOSER_HOME/config.json` | `config.audit.abandoned` | `"fail"` | fail audit on abandoned packages | current Composer |
+| composer | `$COMPOSER_HOME/config.json` (Composer's own resolution: `~/.config/composer` on XDG systems, else `~/.composer`) | [`config.policy.cooldown.period`](https://getcomposer.org/doc/06-config.md#policy) | `"1 days"` (tracks `--days`) | 1-day cooldown for `update`/`require`; `composer install` from `composer.lock` is not filtered. pmsec < 2026.11.5 wrote `config.minimum-release-age`, which Composer never read; it is removed on the next run | Composer >= 2.11.0 |
+| composer | same file | `config.allow-plugins` | `false` | disable Composer plugins (a project `allow-plugins` object overrides it) | Composer >= 2.2 |
+| composer | same file | `config.secure-http` | `true` | pin the default (never allow plaintext HTTP downloads) | current Composer |
+| composer | same file | `config.disable-tls` | `false` | pin the default (keep TLS enforcement enabled) | current Composer |
+| composer | same file | `config.audit.abandoned` | `"fail"` | fail `composer audit` on abandoned packages (legacy key; ignored when a project sets `config.policy.abandoned`) | Composer >= 2.6.3 |
 
 For pnpm, pmsec writes both files so the same bundle works on pnpm 10 and 11+.
 `--check` reads the YAML file when pnpm >= 11 and the legacy rc file otherwise.
@@ -167,5 +167,32 @@ allow-file=workspaces
 
 Review checked-in tool configs before trusting an unfamiliar repo.
 `pmsec --check` validates the user-global baseline only.
+
+## What the baseline does not cover
+
+For every tool above the user-level file is the **lowest-priority** layer.
+A cloned repository, an environment variable, or a CLI flag overrides it,
+and `pmsec --check` cannot see any of those. Concretely:
+
+- **Repository config wins**: `<project>/.npmrc`, `pnpm-workspace.yaml`,
+  `.yarnrc.yml`, `bunfig.toml`, `.cargo/config.toml`, `mise.toml` (once
+  trusted), `uv.toml` / `[tool.uv]`, `.bundle/config`, `composer.json`
+  `config`. Any of them can set the cooldown to zero or re-enable scripts.
+  mise `paranoid` is the one key here that a project file cannot override.
+- **Environment and flags win over every file**: `npm_config_*`,
+  `PNPM_CONFIG_*`, `YARN_*`, `CARGO_*`, `MISE_*`, `UV_*`, `BUNDLE_*`,
+  `COMPOSER_*`, and per-command flags such as `--min-release-age=0`,
+  `--no-time-gate`, `--no-cooldown`.
+- **Lockfiles bypass cooldowns**: npm, yarn, bun, cargo, uv, bundler and
+  composer install whatever a committed lockfile pins without re-checking its
+  age. pnpm re-verifies unless `trustLockfile: true`; mise skips `mise.lock`
+  entries. A poisoned lockfile in a cloned repo is not stopped by pmsec.
+- **Not every install path is gated**: `cargo install`, `gem install`
+  (before RubyGems 4.1), `composer install`, `uv sync` with an existing lock,
+  and versions whose registry omits a publish date.
+
+pmsec sets the safe default for the common case. It is not a policy
+enforcement point; use registry-side cooldowns or a managed config layer
+(`/etc/aube/managed.toml`, mise `config.override.toml`) for that.
 
 [MIT](LICENSE)

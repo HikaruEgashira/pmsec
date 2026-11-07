@@ -70,8 +70,13 @@ path_uv() {
   fi
   printf '%s/uv/uv.toml' "${XDG_CONFIG_HOME:-$home/.config}"
 }
+# bun reads $XDG_CONFIG_HOME/.bunfig.toml *instead of* $HOME/.bunfig.toml
+# whenever XDG_CONFIG_HOME is set to an absolute path.
 path_bun() {
   if [ -n "${BUN_CONFIG_FILE:-}" ]; then printf '%s' "$BUN_CONFIG_FILE"; return; fi
+  case "${XDG_CONFIG_HOME:-}" in
+    /*) printf '%s/.bunfig.toml' "$XDG_CONFIG_HOME"; return ;;
+  esac
   printf '%s/.bunfig.toml' "$(_pmsec_home)"
 }
 path_yarn() {
@@ -110,19 +115,26 @@ path_aube() {
 # COMPOSER_HOME follows platform conventions (XDG on Unix, Application Support
 # on macOS, APPDATA on Windows), matching Composer's own resolution. An
 # explicit XDG_CONFIG_HOME wins on every non-Windows platform, including macOS.
+# Mirrors Composer's Factory::getHomeDir: COMPOSER_HOME, else %APPDATA%/Composer
+# on Windows, else (when any XDG_* variable is set or /etc/xdg exists) the
+# first existing of $XDG_CONFIG_HOME/composer and ~/.composer, defaulting to
+# the XDG one; without XDG, ~/.composer. Composer never uses Application
+# Support on macOS.
 path_composer() {
   local home; home=$(_pmsec_home)
   if [ -n "${COMPOSER_HOME:-}" ]; then printf '%s/config.json' "$COMPOSER_HOME"; return; fi
   if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
     printf '%s/Composer/config.json' "${APPDATA:-$home/AppData/Roaming}"; return
   fi
-  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-    printf '%s/composer/config.json' "$XDG_CONFIG_HOME"; return
-  fi
-  if [ "${PMSEC_PLATFORM:-}" = "darwin" ]; then
-    printf '%s/Library/Application Support/composer/config.json' "$home"; return
-  fi
-  printf '%s/composer/config.json' "$home/.config"
+  local use_xdg=0 d
+  if env | grep -q '^XDG_' || [ -d /etc/xdg ]; then use_xdg=1; fi
+  local dirs=()
+  [ "$use_xdg" = 1 ] && dirs+=("${XDG_CONFIG_HOME:-$home/.config}/composer")
+  dirs+=("$home/.composer")
+  for d in "${dirs[@]}"; do
+    if [ -d "$d" ]; then printf '%s/config.json' "$d"; return; fi
+  done
+  printf '%s/config.json' "${dirs[0]}"
 }
 
 # ---------- line buffer ----------
@@ -913,7 +925,7 @@ tool_key() {
     uv)    printf 'exclude-newer' ;;
     bundler) printf 'BUNDLE_COOLDOWN' ;;
     aube) printf 'minimumReleaseAge' ;;
-    composer) printf 'minimum-release-age' ;;
+    composer) printf 'policy.cooldown.period' ;;
   esac
 }
 
@@ -941,8 +953,8 @@ tool_extras() {
   case "$1" in
     npm)
       printf 'audit-level|high|audit-level=high|=|\n'
-      printf 'allow-git|root|allow-git=root|=||none,root\n'
-      printf 'allow-remote|root|allow-remote=root|=||none,root\n'
+      printf 'allow-git|none|allow-git=none|=|\n'
+      printf 'allow-remote|none|allow-remote=none|=|\n'
       printf 'allow-file|root|allow-file=root|=||none,root\n'
       printf 'allow-directory|root|allow-directory=root|=||none,root\n'
       printf 'strict-allow-scripts|true|strict-allow-scripts=true|=|\n'
@@ -1082,10 +1094,16 @@ pnpm_uses_yaml() {
 
 # Composer's config is JSON; unlike the line-oriented formats above it needs
 # the JSON helpers. Keep the primary key tolerant of the shorter npm spelling.
-COMPOSER_PRIMARY_ALIASES=(minimum-release-age min-release-age minimum_release_age minimumReleaseAge)
+# Composer's cooldown lives under the unified policy block (Composer >= 2.11):
+#   {"config": {"policy": {"cooldown": {"period": "7 days"}}}}
+# `config.minimum-release-age` was never a Composer key; earlier pmsec
+# releases wrote it and Composer silently ignored it. It is removed on write.
+COMPOSER_LEGACY_KEYS=(minimum-release-age min-release-age minimum_release_age minimumReleaseAge)
 
+# Composer: "<n> second|minute|hour|day|week[s]" or an integer number of
+# seconds (a bare numeric string counts as seconds too). Partial days floor.
 parse_days_composer() {
-  local v="$1" n unit lc
+  local v="$1" n lc secs
   v="${v#\"}"; v="${v%\"}"
   v="${v#"${v%%[![:space:]]*}"}"
   v="${v%"${v##*[![:space:]]}"}"
@@ -1093,42 +1111,43 @@ parse_days_composer() {
     n="${BASH_REMATCH[1]}"
     lc=$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')
     case "$lc" in
-      d|day|days) printf '%d' "$n" ;;
-      w|week|weeks) printf '%d' "$((n*7))" ;;
+      second|seconds) secs=1 ;;
+      minute|minutes) secs=60 ;;
+      hour|hours) secs=3600 ;;
+      day|days) secs=86400 ;;
+      week|weeks) secs=604800 ;;
       *) return 1 ;;
     esac
+    printf '%d' "$((n * secs / 86400))"
     return 0
   fi
   [[ "$v" =~ ^[0-9]+$ ]] || return 1
-  n="$v"
-  # Large values are seconds or minutes (Composer's other time settings use
-  # those units); small values are days.
-  if [ "$n" -ge 86400 ]; then printf '%d' "$((n / 86400))"
-  elif [ "$n" -ge 1440 ] && [ "$((n % 1440))" -eq 0 ]; then printf '%d' "$((n / 1440))"
-  else printf '%d' "$n"; fi
+  printf '%d' "$((v / 86400))"
 }
 
 tool_read_composer() {
-  local path alias val days
+  local path val days
   path=$(tool_path composer)
   lines_load "$path"
-  val=""
-  for alias in "${COMPOSER_PRIMARY_ALIASES[@]}"; do
-    if val=$(_json_read_key "$alias" config); then break; fi
-    val=""
-  done
-  if [ -z "$val" ]; then
-    return 1
-  fi
+  val=$(_json_read_key period config policy cooldown) || return 1
   days=$(parse_days_composer "$val") || days=""
   printf '%s|%s' "$val" "$days"
+}
+
+_composer_drop_legacy() {
+  local k removed=0
+  for k in "${COMPOSER_LEGACY_KEYS[@]}"; do
+    if _json_remove_key "$k" config; then removed=1; fi
+  done
+  return $((1 - removed))
 }
 
 tool_write_composer() {
   local days="$1" path
   path=$(tool_path composer)
   lines_load "$path"
-  _json_set_key "$days" minimum-release-age config || return 1
+  _composer_drop_legacy || true
+  _json_set_key "\"$days days\"" period config policy cooldown || return 1
   _json_set_key false allow-plugins config || return 1
   _json_set_key true secure-http config || return 1
   _json_set_key false disable-tls config || return 1
@@ -1137,12 +1156,11 @@ tool_write_composer() {
 }
 
 tool_unset_composer() {
-  local path alias removed=0
+  local path removed=0
   path=$(tool_path composer)
   lines_load "$path"
-  for alias in "${COMPOSER_PRIMARY_ALIASES[@]}"; do
-    if _json_remove_key "$alias" config; then removed=1; fi
-  done
+  if _json_remove_key period config policy cooldown; then removed=1; fi
+  if _composer_drop_legacy; then removed=1; fi
   if _json_remove_key allow-plugins config; then removed=1; fi
   if _json_remove_key secure-http config; then removed=1; fi
   if _json_remove_key disable-tls config; then removed=1; fi
@@ -1362,7 +1380,9 @@ tool_preflight() {
     yarn) min='4 10 0';    msg='npmMinimalAgeGate is silently ignored. Upgrade yarn (v4.10+) to enforce the cooldown.' ;;
     bun)  min='1 3 0';     msg='minimumReleaseAge is silently ignored. Upgrade bun to enforce the cooldown.' ;;
     mise) min='2026 4 22'; msg='setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.' ;;
-    uv)   min='0 9 17';    msg='writing exclude-newer = "N days" will break this uv until you `uv self update` (file will fail to parse).' ;;
+    # 0.9.17 added relative exclude-newer; the [audit] table only parses from 0.11.3.
+    uv)   min='0 11 3';    msg='the written uv.toml (relative exclude-newer and the [audit] table) will not parse on this uv and every uv command will fail until you `uv self update`.' ;;
+    composer) min='2 11 0'; msg='config.policy.cooldown is silently ignored. Upgrade Composer to enforce the cooldown.' ;;
     bundler) min='4 0 13'; msg='BUNDLE_COOLDOWN is silently ignored. Upgrade bundler (v4.0.13+) to enforce the cooldown.' ;;
     cargo) min='1 100 0';  msg='global-min-publish-age is silently ignored. Upgrade cargo to enforce the cooldown.' ;;
   esac
