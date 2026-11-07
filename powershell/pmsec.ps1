@@ -100,12 +100,16 @@ function Get-UvPath {
   return (PathJoin (Get-PmsecHome) '.config' 'uv' 'uv.toml')
 }
 # bun reads $XDG_CONFIG_HOME/.bunfig.toml *instead of* $HOME/.bunfig.toml
-# whenever XDG_CONFIG_HOME is set to an absolute path (host scope only; the
-# variable is not propagated into WSL scopes).
+# whenever XDG_CONFIG_HOME is set to an absolute path. Windows env is not
+# propagated into WSL distros, so for a non-host scope only a POSIX-rooted
+# value (one that can name a path inside the distro) is honored.
 function Get-BunPath {
+  $xdg = $env:XDG_CONFIG_HOME
   if ((Get-PmsecPlatform) -eq 'win32') {
     if ($env:BUN_CONFIG_FILE) { return $env:BUN_CONFIG_FILE }
-    if ($env:XDG_CONFIG_HOME -and [System.IO.Path]::IsPathRooted($env:XDG_CONFIG_HOME)) { return (PathJoin $env:XDG_CONFIG_HOME '.bunfig.toml') }
+    if ($xdg -and [System.IO.Path]::IsPathRooted($xdg)) { return (PathJoin $xdg '.bunfig.toml') }
+  } elseif ($xdg -and $xdg.StartsWith('/')) {
+    return (PathJoin $xdg '.bunfig.toml')
   }
   return (PathJoin (Get-PmsecHome) '.bunfig.toml')
 }
