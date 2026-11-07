@@ -70,8 +70,8 @@ Windows host. Accepted; `--no-wsl` / `PMSEC_NO_WSL=1` opts out.
 - Release actions are pinned by commit SHA, `persist-credentials: false`,
   `permissions: {}` at the workflow level, trusted publishing (OIDC) for
   npm and PyPI. No long-lived publish tokens.
-- `pull_request` jobs run on a self-hosted runner in a public repo. A fork PR
-  executes arbitrary code on that machine. Open: #182.
+- `pull_request` jobs run on a GitHub-hosted `ubuntu-24.04-arm` runner; only
+  pushes to `main` (already-reviewed code) use the self-hosted runner. #182.
 - The Intune script downloads `pmsec.ps1` pinned to a commit SHA over HTTPS
   with no hash check. Integrity rests on GitHub's content-addressing plus
   TLS. Accepted for now; a SHA-256 check would also defend against a
@@ -81,18 +81,16 @@ Windows host. Accepted; `--no-wsl` / `PMSEC_NO_WSL=1` opts out.
 
 ## Findings from the 2026-11-07 review
 
-Status wording: "patched locally" means the fix is committed on a local
-branch and not yet merged to `main`; this document is published ahead of the
-fix PR on purpose.
+All fixes below landed on `main` via PR #184.
 
 | ID | Severity | Ports | Issue | Status |
 |---|---|---|---|---|
-| F1 | Medium | node, python | On `EACCES`, `reclaim()` ran `sudo chown` unprompted. Unrequested privilege escalation that also hangs unattended runs on the sudo password prompt. bash/powershell never did this. | Patched locally: `reclaim` removed, ports now behave the same (print chown hint, exit non-zero). |
-| F2 | High | bash | Under root with `PMSEC_HOME`: `cp -p` followed a dangling symlink planted at `.bak`; `chown` without `-h` followed links; `mkdir -p` and the rename followed a user-controlled symlinked parent (`~/.config -> /etc`). | Patched locally: refuse symlink at `.bak`, `chown -h`, physical-path guard on the deepest existing ancestor when `id -u` is 0 and the path is lexically under the home. |
-| F3 | Medium | node, python | Non-numeric `min-release-age` in `.npmrc` (e.g. `abc`): node reported `days: null` but `ok: true` and exit 0 (`--check` bypass) and `enable` would have written `NaN`; python raised `ValueError`. bash and powershell already reported null and failed. | Patched locally. New conformance cases `check_npm_non_numeric` and `enable_npm_non_numeric_replaced` pin the behavior across bash/node/python. |
-| F4 | Low | node, python | `--doctor` reported `pmsecHomeSource: "PMSEC_HOME"` when the variable was set, though these ports ignore it and write to `HOME`. An operator would believe the redirection worked. | Patched locally: doctor always reports `HOME`, and a stderr warning is printed when `PMSEC_HOME` is set. Parity tracked in #183. |
-| F5 | Infra | CI | `pull_request` on a self-hosted runner in a public repo. | Open: #182. |
-| F6 | Low | powershell | `.bak` path was not checked for a reparse point; `Test-Path` on a dangling link is version-dependent and `Copy-Item` would write through a live one. | Patched locally (same guarantee as F2 for Windows). |
+| F1 | Medium | node, python | On `EACCES`, `reclaim()` ran `sudo chown` unprompted. Unrequested privilege escalation that also hangs unattended runs on the sudo password prompt. bash/powershell never did this. | Fixed: `reclaim` removed, ports now behave the same (print chown hint, exit non-zero). |
+| F2 | High | bash | Under root with `PMSEC_HOME`: `cp -p` followed a dangling symlink planted at `.bak`; `chown` without `-h` followed links; `mkdir -p` and the rename followed a user-controlled symlinked parent (`~/.config -> /etc`). | Fixed: refuse symlink at `.bak`, `chown -h`, physical-path guard on the deepest existing ancestor when `id -u` is 0 and the path is lexically under the home. |
+| F3 | Medium | node, python | Non-numeric `min-release-age` in `.npmrc` (e.g. `abc`): node reported `days: null` but `ok: true` and exit 0 (`--check` bypass) and `enable` would have written `NaN`; python raised `ValueError`. bash and powershell already reported null and failed. | Fixed. New conformance cases `check_npm_non_numeric` and `enable_npm_non_numeric_replaced` pin the behavior across bash/node/python. |
+| F4 | Low | node, python | `--doctor` reported `pmsecHomeSource: "PMSEC_HOME"` when the variable was set, though these ports ignore it and write to `HOME`. An operator would believe the redirection worked. | Fixed: doctor always reports `HOME`, and a stderr warning is printed when `PMSEC_HOME` is set. Parity tracked in #183. |
+| F5 | Infra | CI | `pull_request` on a self-hosted runner in a public repo. | Fixed: PR events run on GitHub-hosted runners (#182). |
+| F6 | Low | powershell | `.bak` path was not checked for a reparse point; `Test-Path` on a dangling link is version-dependent and `Copy-Item` would write through a live one. | Fixed (same guarantee as F2 for Windows). |
 
 ## Accepted risks
 
