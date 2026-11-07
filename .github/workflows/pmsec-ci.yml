@@ -22,7 +22,10 @@ permissions: {}
 jobs:
   node:
     timeout-minutes: 10
-    runs-on: ${{ matrix.os }}
+    # Fork PRs must never reach the self-hosted runner (arbitrary code from
+    # untrusted contributors). PR events use a GitHub-hosted arm64 runner;
+    # pushes to main keep the self-hosted one.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-24.04-arm' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -44,7 +47,10 @@ jobs:
         run: node --test
   python:
     timeout-minutes: 10
-    runs-on: ${{ matrix.os }}
+    # Fork PRs must never reach the self-hosted runner (arbitrary code from
+    # untrusted contributors). PR events use a GitHub-hosted arm64 runner;
+    # pushes to main keep the self-hosted one.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-24.04-arm' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +73,10 @@ jobs:
         run: uv run --python "$PY_VERSION" --with pytest pytest -q
   bash:
     timeout-minutes: 10
-    runs-on: ${{ matrix.os }}
+    # Fork PRs must never reach the self-hosted runner (arbitrary code from
+    # untrusted contributors). PR events use a GitHub-hosted arm64 runner;
+    # pushes to main keep the self-hosted one.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-24.04-arm' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +97,10 @@ jobs:
         run: bash test/test.sh
   powershell:
     timeout-minutes: 15
-    runs-on: ${{ matrix.os }}
+    # Fork PRs must never reach the self-hosted runner (arbitrary code from
+    # untrusted contributors). PR events use a GitHub-hosted arm64 runner;
+    # pushes to main keep the self-hosted one.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-24.04-arm' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -143,7 +155,10 @@ jobs:
         run: python3 conformance/run.py --impl powershell
   conformance:
     timeout-minutes: 10
-    runs-on: ${{ matrix.os }}
+    # Fork PRs must never reach the self-hosted runner (arbitrary code from
+    # untrusted contributors). PR events use a GitHub-hosted arm64 runner;
+    # pushes to main keep the self-hosted one.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-24.04-arm' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:

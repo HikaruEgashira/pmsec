@@ -559,3 +559,36 @@ test("composer preserves unrelated JSON keys and accepts COMPOSER_HOME", async (
   assert.deepEqual(after.config.audit.ignore, ["vendor/pkg"]);
   assert.equal(after.repositories.packagist, false);
 });
+
+test("non-numeric npm cooldown is reported as unparseable and fails --check", async () => {
+  const home = await setupHome();
+  await writeFile(join(home, ".npmrc"), "min-release-age=abc\n");
+  const { code, out } = await runCli(["--check", "--tool", "npm", "--json"], home);
+  const report = JSON.parse(out);
+  assert.equal(report.rows[0].days, null);
+  assert.equal(report.ok, false);
+  assert.equal(code, 1);
+  // enable replaces the garbage instead of writing NaN
+  await runCli(["--tool", "npm"], home);
+  assert.match(await readFile(join(home, ".npmrc"), "utf8"), /^min-release-age=1$/m);
+});
+
+test("a symlink planted at the .bak path is refused instead of followed", async () => {
+  const { symlink } = await import("node:fs/promises");
+  const home = await setupHome();
+  await writeFile(join(home, ".npmrc"), "registry=https://original/\n");
+  await symlink("/nonexistent-target", join(home, ".npmrc.bak"));
+  const { code, err } = await runCli(["--tool", "npm"], home);
+  assert.notEqual(code, 0);
+  assert.match(err, /refusing to write backup through symlink/);
+  assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://original/\n");
+});
+
+test("--doctor never claims PMSEC_HOME support and warns when it is set", async () => {
+  const home = await setupHome();
+  const { out, err } = await runCli(["--doctor", "--json"], home, "linux", { PMSEC_HOME: "/elsewhere" });
+  const report = JSON.parse(out);
+  assert.equal(report.pmsecHome, null);
+  assert.equal(report.pmsecHomeSource, "HOME");
+  assert.match(err, /PMSEC_HOME is ignored/);
+});

@@ -2,15 +2,8 @@ from __future__ import annotations
 
 import os
 import secrets
-import shlex
 import stat
-import subprocess
-import sys
 from pathlib import Path
-
-
-def _is_perm_err(exc: BaseException) -> bool:
-    return isinstance(exc, PermissionError)
 
 
 def _is_symlink(path: Path) -> bool:
@@ -18,40 +11,6 @@ def _is_symlink(path: Path) -> bool:
         return stat.S_ISLNK(path.lstat().st_mode)
     except FileNotFoundError:
         return False
-
-
-def _under_home(path: Path, home: Path) -> bool:
-    try:
-        target = path.resolve(strict=False)
-        root = home.resolve(strict=False)
-    except OSError:
-        return False
-    try:
-        target.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
-def _reclaim(path: Path, home: Path, err) -> bool:
-    if sys.platform == "win32" or not hasattr(os, "geteuid"):
-        return False
-    if not path.exists():
-        return False
-    if _is_symlink(path):
-        err.write(f"pmsec: refusing to chown symlink {path}; remove or replace it manually.\n")
-        return False
-    if not _under_home(path, home):
-        err.write(f"pmsec: refusing to chown {path} outside HOME ({home}); fix ownership manually.\n")
-        return False
-    quoted = shlex.quote(str(path))
-    err.write(
-        f"pmsec: {path} not writable; running `sudo chown -h $(id -u):$(id -g) {quoted}`. "
-        "You may be prompted for your password.\n"
-    )
-    err.flush()
-    r = subprocess.run(["sudo", "chown", "-h", f"{os.geteuid()}:{os.getegid()}", str(path)])
-    return r.returncode == 0
 
 
 def _atomic_replace(path: Path, text: str) -> None:
@@ -82,23 +41,19 @@ def _atomic_replace(path: Path, text: str) -> None:
         raise
 
 
-def write_atomic(path: Path, text: str, *, backup: bool = True, home: Path | None = None, err=sys.stderr) -> None:
-    home = Path.home() if home is None else home
+# Permission errors propagate to the caller, which prints a chown hint. pmsec
+# never escalates privileges itself: an unwritable config under HOME is an
+# operator decision (or a symptom worth seeing), not something to sudo past.
+def write_atomic(path: Path, text: str, *, backup: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and _is_symlink(path):
         raise OSError(f"refusing to write through symlink {path}")
     if backup and path.exists():
         bak = path.with_suffix(path.suffix + ".bak")
         if not bak.exists():
-            try:
-                _atomic_replace(bak, path.read_text("utf-8-sig"))
-            except OSError as exc:
-                if not _is_perm_err(exc) or not _reclaim(bak if bak.exists() else path, home, err):
-                    raise
-                _atomic_replace(bak, path.read_text("utf-8-sig"))
-    try:
-        _atomic_replace(path, text)
-    except OSError as exc:
-        if not _is_perm_err(exc) or not _reclaim(path, home, err):
-            raise
-        _atomic_replace(path, text)
+            # A dangling symlink fails exists(); os.replace would swap the link
+            # itself, but refuse so a planted link is visible, not silently clobbered.
+            if _is_symlink(bak):
+                raise OSError(f"refusing to write backup through symlink {bak}")
+            _atomic_replace(bak, path.read_text("utf-8-sig"))
+    _atomic_replace(path, text)

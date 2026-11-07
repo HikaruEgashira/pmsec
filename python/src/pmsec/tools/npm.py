@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from pmsec.util.context import Context
@@ -39,7 +40,8 @@ def read(ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
     value = read_key(raw, KEY)
-    days = None if value is None else int(value)
+    # npm stores whole days; anything else is unparseable (None) so --check fails.
+    days = int(value) if value is not None and re.fullmatch(r"[0-9]+", value) else None
     return {"path": str(p), "configured": value, "days": days, "extras": read_extras(raw, EXTRAS)}
 
 

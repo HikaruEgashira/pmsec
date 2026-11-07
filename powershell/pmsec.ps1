@@ -723,7 +723,14 @@ function WriteAtomic([string]$Path, [string]$Content) {
     }
   }
   $bak = "$Path.bak"
-  if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-Path -LiteralPath $bak)) {
+  # Same for the backup path: Test-Path's answer for a dangling link varies by
+  # PowerShell version, and Copy-Item would write through a live one, so look
+  # at the entry itself before trusting the "no backup yet" branch.
+  $bakItem = Get-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+  if ($bakItem -and ($bakItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+    throw "refusing to write backup through symlink/reparse point $bak"
+  }
+  if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not $bakItem) {
     try {
       Copy-Item -LiteralPath $Path -Destination $bak
     } catch {

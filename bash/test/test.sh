@@ -676,6 +676,23 @@ t_write_atomic_step_label_on_symlink() {
 
 T "write_atomic refuses to follow a symlink with a labeled error" t_write_atomic_step_label_on_symlink
 
+# A dangling symlink planted at the .bak path passes `! -e`; cp would then
+# create the backup (possibly holding registry tokens) at the link target.
+t_write_atomic_refuses_symlink_bak() {
+  local home; home=$(setup_home)
+  printf 'registry=https://original/\n' > "$home/.npmrc"
+  ln -s /nonexistent-target "$home/.npmrc.bak"
+  local err code
+  err=$(run_pmsec "$home" -- --tool npm 2>&1 >/dev/null); code=$?
+  local content; content=$(cat "$home/.npmrc")
+  rm -rf -- "$home"
+  assert_match "bak symlink refusal" 'refusing to write backup through symlink' "$err" || return
+  [ "$code" -ne 0 ] || { printf 'expected non-zero exit\n'; return 1; }
+  assert_match "config untouched" '^registry=https://original/$' "$content"
+}
+
+T "write_atomic refuses a symlink planted at the .bak path" t_write_atomic_refuses_symlink_bak
+
 # cargo writes [registry].global-min-publish-age, tracking --days, and check
 # accepts any value at least as strict. The old [install].minimum-release-age
 # key was never supported by cargo and must be removed on write.
