@@ -815,6 +815,31 @@ T 'write_atomic refuses to follow a reparse point with a labeled error' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+# A link planted at the .bak path must be refused too; Copy-Item would
+# otherwise write the (token-bearing) backup wherever the link points.
+T 'write_atomic refuses a reparse point planted at the .bak path' {
+  $h = NewHome
+  try {
+    $cfg = Join-Path $h '.npmrc'
+    [System.IO.File]::WriteAllText($cfg, "registry=https://original/`n")
+    $target = Join-Path $h 'real.target'
+    [void](New-Item -ItemType Directory -Path $target -Force)
+    try {
+      [void](New-Item -ItemType SymbolicLink -Path "$cfg.bak" -Target $target -Force)
+    } catch {
+      Write-Host "SKIP  write_atomic .bak reparse refusal (symlink creation blocked)"
+      return $true
+    }
+    $r = InvokePmsec $h $null @('--tool','npm')
+    if ($r.Code -eq 0) { $script:LastFail = "expected non-zero exit"; return $false }
+    if ($r.Out -notmatch 'refusing to write backup through symlink' -and $r.Err -notmatch 'refusing to write backup through symlink') {
+      $script:LastFail = "expected .bak reparse-point refusal in output:`n$($r.Out)`n--err--`n$($r.Err)"
+      return $false
+    }
+    return (AssertFileEq 'config untouched' "registry=https://original/`n" $cfg)
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
 T 'cargo writes global-min-publish-age tracking --days' {
   $h = NewHome
   try {

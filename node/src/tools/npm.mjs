@@ -29,9 +29,11 @@ export async function read(ctx) {
   const p = path(ctx);
   const raw = await readSafe(p);
   const value = readKey(raw, key);
+  // npm stores whole days. Anything else is reported as unparseable (null) so
+  // `--check` fails instead of letting NaN slip past the `< days` comparison.
   return {
     path: p, configured: value,
-    days: value === null ? null : Number(value),
+    days: value !== null && /^\d+$/.test(value) ? Number(value) : null,
     extras: readExtras(raw, extras)
   };
 }

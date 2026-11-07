@@ -540,3 +540,33 @@ def test_composer_preserves_unrelated_keys_and_honors_home(tmp_path):
     assert cfg["config"]["preferred-install"] == "dist"
     assert cfg["config"]["audit"]["ignore"] == ["vendor/pkg"]
     assert cfg["repositories"]["packagist"] is False
+
+
+def test_non_numeric_npm_cooldown_fails_check_and_is_replaced(tmp_path):
+    home = tmp_path
+    (home / ".npmrc").write_text("min-release-age=abc\n")
+    code, out, _ = run(["--check", "--tool", "npm", "--json"], home)
+    report = json.loads(out)
+    assert report["rows"][0]["days"] is None
+    assert report["ok"] is False
+    assert code == 1
+    run(["--tool", "npm"], home)
+    assert re.search(r"^min-release-age=1$", (home / ".npmrc").read_text(), re.M)
+
+
+def test_symlink_at_bak_path_is_refused(tmp_path):
+    home = tmp_path
+    (home / ".npmrc").write_text("registry=https://original/\n")
+    os.symlink("/nonexistent-target", home / ".npmrc.bak")
+    code, _, err = run(["--tool", "npm"], home)
+    assert code != 0
+    assert "refusing to write backup through symlink" in err
+    assert (home / ".npmrc").read_text() == "registry=https://original/\n"
+
+
+def test_doctor_never_claims_pmsec_home_support(tmp_path):
+    code, out, err = run(["--doctor", "--json"], tmp_path, PMSEC_HOME="/elsewhere")
+    report = json.loads(out)
+    assert report["pmsecHome"] is None
+    assert report["pmsecHomeSource"] == "HOME"
+    assert "PMSEC_HOME is ignored" in err

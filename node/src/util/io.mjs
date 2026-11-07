@@ -1,45 +1,26 @@
-import { mkdir, readFile, writeFile, rename, lstat, unlink, open } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
+import { mkdir, readFile, rename, lstat, unlink, open } from "node:fs/promises";
+import { dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { homedir } from "node:os";
 
 export async function readSafe(path) {
   // Editors on Windows may prepend a BOM; it would hide the first header or key.
-  try { return (await readFile(path, "utf8")).replace(/^\uFEFF/, ""); }
+  try { return (await readFile(path, "utf8")).replace(/^﻿/, ""); }
   catch (e) { if (e.code === "ENOENT") return ""; throw e; }
 }
-
-function isPermErr(e) { return e?.code === "EACCES" || e?.code === "EPERM"; }
 
 async function isSymlink(p) {
   try { return (await lstat(p)).isSymbolicLink(); }
   catch { return false; }
 }
 
-function underHome(p, home) {
-  const r = resolve(p);
-  const h = resolve(home);
-  return r === h || r.startsWith(h + sep);
-}
-
 export function shellQuote(s) { return `'${String(s).replace(/'/g, `'\\''`)}'`; }
 
-async function reclaim(path, home, err) {
-  if (process.platform === "win32" || typeof process.getuid !== "function") return false;
-  if (!existsSync(path)) return false;
-  if (await isSymlink(path)) {
-    err.write(`pmsec: refusing to chown symlink ${path}; remove or replace it manually.\n`);
-    return false;
-  }
-  if (!underHome(path, home)) {
-    err.write(`pmsec: refusing to chown ${path} outside HOME (${home}); fix ownership manually.\n`);
-    return false;
-  }
-  err.write(`pmsec: ${path} not writable; running \`sudo chown -h $(id -u):$(id -g) ${shellQuote(path)}\`. You may be prompted for your password.\n`);
-  const r = spawnSync("sudo", ["chown", "-h", `${process.getuid()}:${process.getgid()}`, path], { stdio: "inherit" });
-  return r.status === 0;
+function symlinkError(what, p) {
+  const e = new Error(`refusing to write ${what} through symlink ${p}`);
+  e.code = "ELOOP";
+  e.path = p;
+  return e;
 }
 
 async function atomicReplace(path, text) {
@@ -59,24 +40,18 @@ async function atomicReplace(path, text) {
   }
 }
 
-export async function writeAtomic(path, text, { backup = true, home = homedir(), err = process.stderr } = {}) {
+// Permission errors propagate to the caller, which prints a chown hint. pmsec
+// never escalates privileges itself: an unwritable config under HOME is an
+// operator decision (or a symptom worth seeing), not something to sudo past.
+export async function writeAtomic(path, text, { backup = true } = {}) {
   await mkdir(dirname(path), { recursive: true });
-  if (existsSync(path) && await isSymlink(path)) {
-    const e = new Error(`refusing to write through symlink ${path}`);
-    e.code = "ELOOP";
-    throw e;
+  if (existsSync(path) && await isSymlink(path)) throw symlinkError("config", path);
+  const bak = path + ".bak";
+  if (backup && existsSync(path) && !existsSync(bak)) {
+    // A dangling symlink fails existsSync; rename() would replace the link
+    // itself, but refuse anyway so a planted link is visible, not silently clobbered.
+    if (await isSymlink(bak)) throw symlinkError("backup", bak);
+    await atomicReplace(bak, await readFile(path, "utf8"));
   }
-  if (backup && existsSync(path) && !existsSync(path + ".bak")) {
-    try { await atomicReplace(path + ".bak", await readFile(path, "utf8")); }
-    catch (e) {
-      const target = existsSync(path + ".bak") ? path + ".bak" : path;
-      if (!isPermErr(e) || !(await reclaim(target, home, err))) throw e;
-      await atomicReplace(path + ".bak", await readFile(path, "utf8"));
-    }
-  }
-  try { await atomicReplace(path, text); }
-  catch (e) {
-    if (!isPermErr(e) || !(await reclaim(path, home, err))) throw e;
-    await atomicReplace(path, text);
-  }
+  await atomicReplace(path, text);
 }
