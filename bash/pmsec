@@ -1085,9 +1085,11 @@ parse_days_uv() {
   return 1
 }
 
+# An undetected version checks config.yaml: pnpm 11+ ignores the rc file, so
+# passing on it alone could be a false OK.
 pnpm_uses_yaml() {
   local v
-  v=$(version_detect pnpm) || return 1
+  v=$(version_detect pnpm) || return 0
   set -- $v
   [ "$1" -ge 11 ]
 }
@@ -1194,7 +1196,13 @@ tool_read() {
     bun)
       if [[ "$val" =~ ^[0-9]+$ ]]; then days=$((val / 86400)); else days=""; fi
       ;;
-    yarn) days=$(parse_days_dw "$val") || days="" ;;
+    yarn)
+      # yarn 4.10.x mis-parsed the `d` suffix (yarnpkg/berry#6991); a bare
+      # number is minutes on every 4.10+, so pmsec writes minutes.
+      bval="${val#\"}"; bval="${bval%\"}"
+      if [[ "$bval" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]]; then days=$((BASH_REMATCH[1] / 1440))
+      else days=$(parse_days_dw "$val") || days=""; fi
+      ;;
     cargo) days=$(parse_days_cargo_publish_age "$val") || days=$(parse_days_dw "$val") || days="" ;;
     mise) days=$(parse_days_mise "$val") || days="" ;;
     uv) days=$(parse_days_uv "$val") || days="" ;;
@@ -1219,7 +1227,7 @@ tool_write_value_line() {
   case "$tool" in
     npm)   printf '%s=%d' "$key" "$days" ;;
     pnpm)  printf '%s=%d' "$key" "$((days * 1440))" ;;
-    yarn)  printf '%s: "%dd"' "$key" "$days" ;;
+    yarn)  printf '%s: %d' "$key" "$((days * 1440))" ;;
     bun)   printf '%s = %d' "$key" "$((days * 86400))" ;;
     cargo) printf '%s = "%d days"' "$key" "$days" ;;
     mise)  printf '%s = "%dd"' "$key" "$days" ;;
@@ -1333,7 +1341,7 @@ tool_read_extras() {
       set -- $v
       pnpm_major="$1"
     fi
-    if [ -n "$pnpm_major" ] && [ "$pnpm_major" -ge 11 ]; then
+    if [ -z "$pnpm_major" ] || [ "$pnpm_major" -ge 11 ]; then
       extras_fn=tool_extras_yaml; path=$(path_pnpm_config_yaml)
     else
       path=$(tool_path "$tool")

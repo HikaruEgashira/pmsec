@@ -1079,7 +1079,9 @@ function ToolRead([string]$Tool) {
   if ($Tool -eq 'pnpm' -and ((Get-PmsecPlatform) -eq 'win32' -or $env:PMSEC_PNPM_VERSION)) {
     $toolVersion = VersionDetect 'pnpm'
   }
-  $useYaml = ($Tool -eq 'pnpm' -and $null -ne $toolVersion -and $toolVersion.Major -ge 11)
+  # An undetected version checks config.yaml: pnpm 11+ ignores the rc file, so
+  # passing on it alone could be a false OK.
+  $useYaml = ($Tool -eq 'pnpm' -and ($null -eq $toolVersion -or $toolVersion.Major -ge 11))
   $key = if ($useYaml) { 'minimumReleaseAge' } else { ToolKey $Tool }
   $sep = if ($useYaml) { ':' } else { ToolSep $Tool }
   $section = if ($useYaml) { '' } else { ToolSection $Tool }
@@ -1092,7 +1094,12 @@ function ToolRead([string]$Tool) {
       'npm'   { if ($val -match '^\d+$') { $days = [int]$val } }
       'pnpm'  { if ($val -match '^\d+$') { $days = [int][math]::Floor([int]$val / 1440.0) } }
       'bun'   { if ($val -match '^\d+$') { $days = [int][math]::Floor([int]$val / 86400.0) } }
-      'yarn'  { $days = ParseDaysDw $val }
+      'yarn'  {
+        # yarn 4.10.x mis-parsed the `d` suffix (yarnpkg/berry#6991); a bare
+        # number is minutes on every 4.10+, so pmsec writes minutes.
+        if ($val.Trim('"').Trim() -match '^\d+$') { $days = [int][math]::Floor([int]$val.Trim('"').Trim() / 1440.0) }
+        else { $days = ParseDaysDw $val }
+      }
       'cargo' { $days = ParseDaysDw $val }
       'mise'  { $days = ParseDaysMise $val }
       'uv'    { $days = ParseDaysUv $val }
@@ -1125,7 +1132,7 @@ function ToolWriteValueLine([string]$Tool, [int]$Days) {
   switch ($Tool) {
     'npm'   { return "$key=$Days" }
     'pnpm'  { return ("$key=" + ($Days * 1440)) }
-    'yarn'  { return ('{0}: "{1}d"' -f $key, $Days) }
+    'yarn'  { return ("${key}: " + ($Days * 1440)) }
     'bun'   { return ("$key = " + ($Days * 86400)) }
     'cargo' { return ('{0} = "{1} days"' -f $key, $Days) }
     'mise'  { return ('{0} = "{1}d"' -f $key, $Days) }

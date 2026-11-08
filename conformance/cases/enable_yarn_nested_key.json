@@ -29,6 +29,6 @@
     "ok": true
   },
   "expected_files": {
-    ".yarnrc.yml": "packageExtensions:\n  \"foo@*\":\n    enableScripts: true\nnpmMinimalAgeGate: \"1d\"\nenableHardenedMode: true\nenableScripts: false\napprovedGitRepositories: []\n"
+    ".yarnrc.yml": "packageExtensions:\n  \"foo@*\":\n    enableScripts: true\nnpmMinimalAgeGate: 1440\nenableHardenedMode: true\nenableScripts: false\napprovedGitRepositories: []\n"
   }
 }

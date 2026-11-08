@@ -12,7 +12,8 @@ export const minBin = [10, 6, 0];
 // We keep writing the kebab-case rc file for pnpm 10 and mirror every setting
 // into config.yaml for pnpm 11+. `read()` switches files based on the detected
 // major version so `--check` validates the config the running pnpm actually
-// reads.
+// reads. When the version cannot be detected it checks config.yaml: the rc
+// file is ignored by pnpm 11+, so passing on it alone could be a false OK.
 const yamlKey = "minimumReleaseAge";
 // `defaultSinceMajor`: pnpm major version where the value became the default.
 // Once detected, an absent line in the active config is still effectively in
@@ -56,7 +57,7 @@ function pnpmVersion(ctx) {
 
 function activeConfig(ctx) {
   const v = pnpmVersion(ctx);
-  if (v && v.major >= 11) {
+  if (!v || v.major >= 11) {
     return { path: configPath(ctx), key: yamlKey, sep: ":", extras: yamlExtras() };
   }
   return { path: path(ctx), key, sep: "=", extras };

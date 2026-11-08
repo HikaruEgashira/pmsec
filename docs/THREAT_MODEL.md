@@ -124,10 +124,13 @@ released binaries. Findings:
   before RubyGems 4.1, `composer install`, `uv sync` with an existing lock,
   and any version whose registry metadata lacks a publish date.
 - **Version detection gates correctness.** pnpm 11 ignores the INI `rc`
-  file; pmsec writes both files but `--check` reads the `rc` file when
-  `pnpm` is not on `PATH`, which can report OK for a file pnpm 11 ignores
+  file; pmsec writes both files and `--check` reads the `rc` file only when
+  pnpm < 11 is detected. An undetected version checks `config.yaml`, so a
+  pnpm 10 host without `pnpm` on `PATH` may need `enable` re-run to write it
   (#187). yarn 4.10.x mis-parsed the `d` suffix in `npmMinimalAgeGate`
-  (yarnpkg/berry#6991); pmsec's floor is 4.10.0 (#186).
+  (yarnpkg/berry#6991); pmsec writes minutes, which every 4.10+ reads
+  correctly. `--check` still accepts a hand-written suffix value, which a
+  4.10.x yarn may misread (#186).
 
 ## Accepted risks
 
