@@ -100,7 +100,7 @@ def test_default_invocation_writes_bundle_for_every_tool(tmp_path):
     assert "minimumReleaseAge = 86400" in bunfig
     assert "ignoreScripts = true" in bunfig
     yarnrc = (tmp_path / ".yarnrc.yml").read_text()
-    assert 'npmMinimalAgeGate: "1d"' in yarnrc
+    assert "npmMinimalAgeGate: 1440" in yarnrc
     assert "enableHardenedMode: true" in yarnrc
     assert "enableScripts: false" in yarnrc
     assert "approvedGitRepositories: []" in yarnrc
@@ -290,7 +290,7 @@ def test_pnpm_check_normalizes_minutes(tmp_path):
     pnpm_dir = tmp_path / ".config" / "pnpm"
     pnpm_dir.mkdir(parents=True)
     (pnpm_dir / "rc").write_text("minimum-release-age=20160\n")
-    _, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path)
+    _, out, _ = run(["--check", "--json", "--tool", "pnpm"], tmp_path, PMSEC_PNPM_VERSION="10.26.0")
     data = json.loads(out)
     assert data["rows"][0]["days"] == 14
 

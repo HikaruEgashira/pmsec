@@ -76,7 +76,7 @@ test("default invocation writes the bundle (cooldown + extras) for every tool", 
   assert.match(bunfig, /^minimumReleaseAge = 86400$/m);
   assert.match(bunfig, /^ignoreScripts = true$/m);
   const yarnrc = await readFile(join(home, ".yarnrc.yml"), "utf8");
-  assert.match(yarnrc, /^npmMinimalAgeGate: "1d"$/m);
+  assert.match(yarnrc, /^npmMinimalAgeGate: 1440$/m);
   assert.match(yarnrc, /^enableHardenedMode: true$/m);
   assert.match(yarnrc, /^enableScripts: false$/m);
   assert.match(yarnrc, /^approvedGitRepositories: \[\]$/m);
@@ -304,7 +304,7 @@ test("pnpm check normalizes minutes to days", async () => {
   const home = await setupHome();
   await mkdir(join(home, ".config", "pnpm"), { recursive: true });
   await writeFile(join(home, ".config", "pnpm", "rc"), "minimum-release-age=20160\n");
-  const { out } = await runCli(["--check", "--json", "--tool", "pnpm"], home);
+  const { out } = await runCli(["--check", "--json", "--tool", "pnpm"], home, "linux", { PMSEC_PNPM_VERSION: "10.26.0" });
   const data = JSON.parse(out);
   assert.equal(data.rows[0].days, 14);
 });

@@ -98,7 +98,7 @@ for npm `>=11.5.1` on Node 24. The PyPI publisher also uses `ubuntu-24.04` becau
 | pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `dangerously-allow-all-builds` / `dangerouslyAllowAllBuilds` | `false` | close the all-builds escape hatch so that `strict-dep-builds=true` cannot be silently bypassed at the user level | pnpm >= 10.9.0 |
 | pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `trust-lockfile` / `trustLockfile` | `false` | re-run release-age and trust-policy gates on every install even against a committed lockfile, closing the lockfile-poisoning bypass | pnpm >= 11.3.0 |
 | pnpm | `~/.config/pnpm/rc` (pnpm < 11); `~/.config/pnpm/config.yaml` (pnpm >= 11) | `minimum-release-age-ignore-missing-time` / `minimumReleaseAgeIgnoreMissingTime` | `false` | block packages whose registry metadata omits a publish timestamp, preventing attackers from bypassing the age gate by stripping the `time` field | pnpm >= 10.6.0 |
-| yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `"1d"` | 1-day publish cooldown | yarn >= 4.10.0 |
+| yarn | `~/.yarnrc.yml` | `npmMinimalAgeGate` | `1440` (minutes) | 1-day publish cooldown | yarn >= 4.10.0 |
 | yarn | `~/.yarnrc.yml` | `enableHardenedMode` | `true` | re-check lockfile resolutions | yarn >= 4.0.0 |
 | yarn | `~/.yarnrc.yml` | `enableScripts` | `false` | disable third-party lifecycle scripts | yarn >= 4.0.0; default >= 4.14.0 |
 | yarn | `~/.yarnrc.yml` | `approvedGitRepositories` | `[]` | block all git-sourced dependencies | yarn >= 4.14.0 |
@@ -136,7 +136,11 @@ for npm `>=11.5.1` on Node 24. The PyPI publisher also uses `ubuntu-24.04` becau
 | composer | same file | `config.audit.abandoned` | `"fail"` | fail `composer audit` on abandoned packages (legacy key; ignored when a project sets `config.policy.abandoned`) | Composer >= 2.6.3 |
 
 For pnpm, pmsec writes both files so the same bundle works on pnpm 10 and 11+.
-`--check` reads the YAML file when pnpm >= 11 and the legacy rc file otherwise.
+`--check` reads the legacy rc file when pnpm < 11 is detected and the YAML file
+otherwise, including when the pnpm version cannot be detected.
+
+For yarn, pmsec writes `npmMinimalAgeGate` in minutes: yarn 4.10.x mis-parsed
+the `d` suffix (yarnpkg/berry#6991), while a bare number is minutes on 4.10+.
 
 ## Overrides
 

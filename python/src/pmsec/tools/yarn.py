@@ -21,6 +21,9 @@ EXTRAS = [
     {"key": "approvedGitRepositories", "expected": "[]", "line": "approvedGitRepositories: []", "sep": SEP},
 ]
 
+# yarn 4.10.x mis-parsed the `d` suffix (yarnpkg/berry#6991); a bare number is
+# minutes on every 4.10+, so write minutes and read bare numbers as minutes.
+_MINUTES = re.compile(r'^"?\s*(\d+)\s*"?$')
 _DURATION = re.compile(r'^"?\s*(\d+)\s*(d|days?|w|weeks?)\s*"?$', re.IGNORECASE)
 
 preflight = build_preflight(
@@ -36,6 +39,9 @@ def path(ctx: Context) -> Path:
 def _parse_days(value: str | None) -> int | None:
     if value is None:
         return None
+    m = _MINUTES.match(value)
+    if m:
+        return int(m.group(1)) // (60 * 24)
     m = _DURATION.match(value)
     if not m:
         return None
@@ -53,7 +59,7 @@ def read(ctx: Context) -> dict:
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
-    text = apply_extras(set_key(raw, KEY, f'{KEY}: "{days}d"', sep=SEP), EXTRAS)
+    text = apply_extras(set_key(raw, KEY, f"{KEY}: {days * 24 * 60}", sep=SEP), EXTRAS)
     write_atomic(p, text)
     return {"path": str(p)}
 

@@ -17,6 +17,8 @@ MIN_BIN = (10, 6, 0)
 # We keep writing the kebab-case rc file for pnpm 10 and mirror every setting
 # into config.yaml for pnpm 11+. read() switches files based on the detected
 # major version so --check validates the config the running pnpm actually reads.
+# When the version cannot be detected it checks config.yaml: the rc file is
+# ignored by pnpm 11+, so passing on it alone could be a false OK.
 YAML_KEY = "minimumReleaseAge"
 # `default_since_major`: pnpm major version where the value became the default.
 # When detected, an absent line in the active config is still effectively in
@@ -70,7 +72,7 @@ def _pnpm_version(ctx: Context):
 
 def _active_config(ctx: Context) -> dict:
     v = _pnpm_version(ctx)
-    if v is not None and v[0] >= 11:
+    if v is None or v[0] >= 11:
         return {"path": config_path(ctx), "key": YAML_KEY, "sep": ":", "extras": _yaml_extras()}
     return {"path": path(ctx), "key": KEY, "sep": "=", "extras": EXTRAS}
 

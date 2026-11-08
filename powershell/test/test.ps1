@@ -206,7 +206,7 @@ T 'enable writes the bundle for every tool' {
     $ok = $ok -and (AssertMatch 'bun section' '(?m)^\[install\]$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
     $ok = $ok -and (AssertMatch 'bun key' '(?m)^minimumReleaseAge = 86400$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
     $ok = $ok -and (AssertMatch 'bun ignoreScripts extra' '(?m)^ignoreScripts = true$' ([System.IO.File]::ReadAllText((Join-Path $h '.bunfig.toml'))))
-    $ok = $ok -and (AssertMatch 'yarn key' '(?m)^npmMinimalAgeGate: "1d"$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
+    $ok = $ok -and (AssertMatch 'yarn key' '(?m)^npmMinimalAgeGate: 1440$' ([System.IO.File]::ReadAllText((Join-Path $h '.yarnrc.yml'))))
     $ok = $ok -and (AssertMatch 'uv key' '(?m)^exclude-newer = "1 days"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
     $ok = $ok -and (AssertMatch 'uv index-strategy extra' '(?m)^index-strategy = "first-index"$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
     $ok = $ok -and (AssertMatch 'uv audit section' '(?m)^\[audit\]$' ([System.IO.File]::ReadAllText((PathJoin $h '.config' 'uv' 'uv.toml'))))
@@ -471,7 +471,7 @@ T 'pnpm check normalizes minutes to days' {
   try {
     [void](New-Item -ItemType Directory -Force -Path (PathJoin $h '.config' 'pnpm'))
     [System.IO.File]::WriteAllText((PathJoin $h '.config' 'pnpm' 'rc'), "minimum-release-age=20160`n")
-    $r = InvokePmsec $h $null @('--check','--json','--tool','pnpm')
+    $r = InvokePmsec $h @{ PMSEC_PNPM_VERSION = '10.26.0' } @('--check','--json','--tool','pnpm')
     $data = $r.Out | ConvertFrom-Json
     if ($data.rows[0].days -ne 14) { $script:LastFail = "expected 14, got $($data.rows[0].days)"; return $false }
     return $true

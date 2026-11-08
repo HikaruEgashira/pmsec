@@ -111,7 +111,7 @@ t_enable_writes_all() {
   assert_match "bun section" '^\[install\]$' "$bunfig" || return
   assert_match "bun key" '^minimumReleaseAge = 86400$' "$bunfig" || return
   assert_match "bun ignoreScripts extra" '^ignoreScripts = true$' "$bunfig" || return
-  assert_match "yarn key" '^npmMinimalAgeGate: "1d"$' "$yarnrc" || return
+  assert_match "yarn key" '^npmMinimalAgeGate: 1440$' "$yarnrc" || return
   assert_match "uv key" '^exclude-newer = "1 days"$' "$uvtoml" || return
   assert_match "uv index-strategy extra" '^index-strategy = "first-index"$' "$uvtoml" || return
   assert_match "uv audit section" '^\[audit\]$' "$uvtoml" || return
@@ -350,7 +350,7 @@ t_pnpm_normalizes_minutes() {
   mkdir -p "$home/.config/pnpm"
   printf 'minimum-release-age=20160\n' > "$home/.config/pnpm/rc"
   local out
-  out=$(run_pmsec "$home" -- --check --json --tool pnpm)
+  out=$(run_pmsec "$home" PMSEC_PNPM_VERSION=10.26.0 -- --check --json --tool pnpm)
   rm -rf -- "$home"
   assert_match "pnpm days" '"days": 14' "$out" || return
 }
