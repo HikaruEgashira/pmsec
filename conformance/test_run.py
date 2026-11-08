@@ -35,6 +35,17 @@ class ConformanceEnvTest(unittest.TestCase):
             with self.subTest(path=row["path"]):
                 self.assertEqual(row["path"].replace("<HOME>", home.as_posix()), expected)
 
+    def test_case_env_expands_home_token(self):
+        home = Path("/tmp/pmsec-conformance-home")
+        env = run.case_env("node", {"env": {"PMSEC_HOME": "<HOME>", "HOME": "<HOME>/not-home"}}, home)
+        self.assertEqual(env["PMSEC_HOME"], str(home))
+        self.assertEqual(env["HOME"], str(home / "not-home"))
+
+    def test_impls_limits_a_case_to_the_listed_ports(self):
+        self.assertTrue(run.applies_to("powershell", {}))
+        self.assertTrue(run.applies_to("bash", {"impls": ["bash", "node"]}))
+        self.assertFalse(run.applies_to("powershell", {"impls": ["bash", "node"]}))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,12 +94,12 @@ export async function write(days, ctx) {
   const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key}=${days * 24 * 60}`);
   text = applyExtras(text, extras);
-  await writeAtomic(p, text);
+  await writeAtomic(p, text, { home: ctx.home });
 
   const cp = configPath(ctx);
   let yaml = setKey(await readSafe(cp), yamlKey, `${yamlKey}: ${days * 24 * 60}`, { sep: ":" });
   yaml = applyExtras(yaml, yamlExtras());
-  await writeAtomic(cp, yaml);
+  await writeAtomic(cp, yaml, { home: ctx.home });
   return { path: p };
 }
 
@@ -109,7 +109,7 @@ export async function unset(ctx) {
   const cooldown = removeKey(before, key);
   const ex = removeExtras(cooldown.text, extras);
   let removed = cooldown.removed || ex.removed;
-  if (removed) await writeAtomic(p, ex.text);
+  if (removed) await writeAtomic(p, ex.text, { home: ctx.home });
 
   const cp = configPath(ctx);
   const yamlBefore = await readSafe(cp);
@@ -117,7 +117,7 @@ export async function unset(ctx) {
   const yamlEx = removeExtras(yamlCooldown.text, yamlExtras());
   if (yamlCooldown.removed || yamlEx.removed) {
     removed = true;
-    await writeAtomic(cp, yamlEx.text);
+    await writeAtomic(cp, yamlEx.text, { home: ctx.home });
   }
   return { path: p, removed };
 }

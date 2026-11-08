@@ -54,7 +54,7 @@ def write(days: int, ctx: Context) -> dict:
     raw = p.read_text("utf-8-sig") if p.exists() else ""
     text = set_key(raw, KEY, f'{KEY} = "{days} days"', section=SECTION)
     text, _ = remove_key(text, LEGACY_KEY, section=LEGACY_SECTION)
-    write_atomic(p, text)
+    write_atomic(p, text, home=ctx.home)
     return {"path": str(p)}
 
 
@@ -67,5 +67,5 @@ def unset(ctx: Context) -> dict:
     after, removed_old = remove_key(after, LEGACY_KEY, section=LEGACY_SECTION)
     removed = removed_cooldown or removed_old
     if removed:
-        write_atomic(p, after)
+        write_atomic(p, after, home=ctx.home)
     return {"path": str(p), "removed": removed}
