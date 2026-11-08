@@ -87,7 +87,7 @@ def write(days: int, ctx: Context) -> dict:
     text = set_json_key(text, COOLDOWN_PATH, f'"{days} days"')
     for e in EXTRAS:
         text = set_json_key(text, e["path"], e["line"])
-    write_atomic(p, text)
+    write_atomic(p, text, home=ctx.home)
     return {"path": str(p)}
 
 
@@ -103,5 +103,5 @@ def unset(ctx: Context) -> dict:
         text, r = remove_json_key(text, e["path"])
         removed = removed or r
     if removed:
-        write_atomic(p, text)
+        write_atomic(p, text, home=ctx.home)
     return {"path": str(p), "removed": removed}

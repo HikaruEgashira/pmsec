@@ -34,8 +34,8 @@ not security problems. Covered by `conformance/`.
 
 ### B. Root or orchestrator writing into another user's home
 
-This is the real boundary. `PMSEC_HOME` (bash, powershell) or an Intune
-platform script makes a privileged process write into a directory controlled
+This is the real boundary. `PMSEC_HOME` (all four ports) or an Intune platform
+script makes a privileged process write into a directory controlled
 by a less-privileged user. That user can plant symlinks, junctions, and
 pre-existing files at any path pmsec will touch, before or between runs.
 
@@ -44,11 +44,10 @@ Required guarantees:
 1. Never follow a user-controlled symlink on write. Checked at the config path
    and at the `.bak` path. All four ports refuse both.
 2. Never let a symlinked parent directory redirect `mkdir -p` or the final
-   rename outside the home. bash resolves the deepest existing ancestor
-   physically and refuses if it leaves the physical home. node/python do not
-   honor `PMSEC_HOME`, so this path does not exist for them (see F4).
-3. Hand ownership back without following links (`chown -h`). bash only;
-   powershell relies on Windows ACL inheritance.
+   rename outside the home. bash, node, and python resolve the deepest
+   existing ancestor physically and refuse if it leaves the physical home.
+3. Hand ownership back without following links (`chown -h` in bash,
+   `lchown` in node/python); powershell relies on Windows ACL inheritance.
 4. Never escalate privileges on its own. pmsec prints a chown hint on
    `EACCES` and exits non-zero. It does not run `sudo` (see F1).
 
@@ -90,7 +89,7 @@ fix PR on purpose.
 | F1 | Medium | node, python | On `EACCES`, `reclaim()` ran `sudo chown` unprompted. Unrequested privilege escalation that also hangs unattended runs on the sudo password prompt. bash/powershell never did this. | Patched locally: `reclaim` removed, ports now behave the same (print chown hint, exit non-zero). |
 | F2 | High | bash | Under root with `PMSEC_HOME`: `cp -p` followed a dangling symlink planted at `.bak`; `chown` without `-h` followed links; `mkdir -p` and the rename followed a user-controlled symlinked parent (`~/.config -> /etc`). | Patched locally: refuse symlink at `.bak`, `chown -h`, physical-path guard on the deepest existing ancestor when `id -u` is 0 and the path is lexically under the home. |
 | F3 | Medium | node, python | Non-numeric `min-release-age` in `.npmrc` (e.g. `abc`): node reported `days: null` but `ok: true` and exit 0 (`--check` bypass) and `enable` would have written `NaN`; python raised `ValueError`. bash and powershell already reported null and failed. | Patched locally. New conformance cases `check_npm_non_numeric` and `enable_npm_non_numeric_replaced` pin the behavior across bash/node/python. |
-| F4 | Low | node, python | `--doctor` reported `pmsecHomeSource: "PMSEC_HOME"` when the variable was set, though these ports ignore it and write to `HOME`. An operator would believe the redirection worked. | Patched locally: doctor always reports `HOME`, and a stderr warning is printed when `PMSEC_HOME` is set. Parity tracked in #183. |
+| F4 | Low | node, python | `--doctor` reported `pmsecHomeSource: "PMSEC_HOME"` when the variable was set, though these ports ignore it and write to `HOME`. An operator would believe the redirection worked. | Fixed: node and python now honor `PMSEC_HOME` with the bash guards (physical-path guard and `lchown` handback under root), and doctor reports the real source. Covered by the `enable_npm_pmsec_home` conformance case. |
 | F5 | Infra | CI | `pull_request` on a self-hosted runner in a public repo. | Open: #182. |
 | F6 | Low | powershell | `.bak` path was not checked for a reparse point; `Test-Path` on a dangling link is version-dependent and `Copy-Item` would write through a live one. | Patched locally (same guarantee as F2 for Windows). |
 

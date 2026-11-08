@@ -42,7 +42,7 @@ export async function write(days, ctx) {
   const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key}: "${days}d"`, { sep: SEP });
   text = applyExtras(text, extras);
-  await writeAtomic(p, text);
+  await writeAtomic(p, text, { home: ctx.home });
   return { path: p };
 }
 
@@ -52,6 +52,6 @@ export async function unset(ctx) {
   const cooldown = removeKey(before, key, { sep: SEP });
   const ex = removeExtras(cooldown.text, extras);
   const removed = cooldown.removed || ex.removed;
-  if (removed) await writeAtomic(p, ex.text);
+  if (removed) await writeAtomic(p, ex.text, { home: ctx.home });
   return { path: p, removed };
 }

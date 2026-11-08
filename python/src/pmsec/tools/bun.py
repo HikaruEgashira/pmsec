@@ -45,7 +45,7 @@ def read(ctx: Context) -> dict:
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
-    write_atomic(p, apply_extras(set_key(raw, KEY, f"{KEY} = {days * 86400}", section=SECTION), EXTRAS))
+    write_atomic(p, apply_extras(set_key(raw, KEY, f"{KEY} = {days * 86400}", section=SECTION), EXTRAS), home=ctx.home)
     return {"path": str(p)}
 
 
@@ -58,5 +58,5 @@ def unset(ctx: Context) -> dict:
     after, removed_extras = remove_extras(after, EXTRAS)
     removed = removed_cooldown or removed_extras
     if removed:
-        write_atomic(p, after)
+        write_atomic(p, after, home=ctx.home)
     return {"path": str(p), "removed": removed}

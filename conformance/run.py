@@ -82,12 +82,23 @@ def normalize(obj, home: Path):
     return obj
 
 
+def case_env(impl: str, case: dict, home: Path) -> dict[str, str]:
+    """Runner defaults plus the case's `env`, with `<HOME>` expanded to the
+    case temp dir so cases can point PMSEC_HOME (or HOME) at it."""
+    env = env_for(impl, home)
+    env.update({k: v.replace("<HOME>", str(home)) for k, v in case.get("env", {}).items()})
+    return env
+
+
+def applies_to(impl: str, case: dict) -> bool:
+    return impl in case.get("impls", [impl])
+
+
 def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
     case = json.loads(case_path.read_text())
     home = Path(tempfile.mkdtemp(prefix="pmsec-conf-"))
     try:
-        env = env_for(impl, home)
-        env.update(case.get("env", {}))
+        env = case_env(impl, case, home)
         for rel, body in case.get("setup", {}).items():
             target = home / rel
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +146,7 @@ def main() -> int:
         if not cases:
             print(f"no case named {args.case}", file=sys.stderr)
             return 2
+    cases = [c for c in cases if applies_to(args.impl, json.loads(c.read_text()))]
     failed = 0
     for case in cases:
         ok, msg = run_case(args.impl, case)

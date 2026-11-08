@@ -74,7 +74,7 @@ export async function write(days, ctx) {
   text = dropLegacy(text).text;
   text = setJsonKey(text, COOLDOWN_PATH, `"${days} days"`);
   for (const e of extras) text = setJsonKey(text, e.path, e.line);
-  await writeAtomic(p, text);
+  await writeAtomic(p, text, { home: ctx.home });
   return { path: p };
 }
 
@@ -91,6 +91,6 @@ export async function unset(ctx) {
     text = r.text;
     if (r.removed) removed = true;
   }
-  if (removed) await writeAtomic(p, text);
+  if (removed) await writeAtomic(p, text, { home: ctx.home });
   return { path: p, removed };
 }

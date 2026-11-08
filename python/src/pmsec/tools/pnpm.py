@@ -115,12 +115,12 @@ def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
     text = apply_extras(set_key(raw, KEY, f"{KEY}={days * 24 * 60}"), EXTRAS)
-    write_atomic(p, text)
+    write_atomic(p, text, home=ctx.home)
 
     cp = config_path(ctx)
     yaml_raw = cp.read_text("utf-8-sig") if cp.exists() else ""
     yaml = apply_extras(set_key(yaml_raw, YAML_KEY, f"{YAML_KEY}: {days * 24 * 60}", sep=":"), _yaml_extras())
-    write_atomic(cp, yaml)
+    write_atomic(cp, yaml, home=ctx.home)
     return {"path": str(p)}
 
 
@@ -133,7 +133,7 @@ def unset(ctx: Context) -> dict:
         after, removed_extras = remove_extras(after, EXTRAS)
         removed = removed_cooldown or removed_extras
         if removed:
-            write_atomic(p, after)
+            write_atomic(p, after, home=ctx.home)
 
     cp = config_path(ctx)
     if cp.exists():
@@ -142,5 +142,5 @@ def unset(ctx: Context) -> dict:
         after, removed_extras = remove_extras(after, _yaml_extras())
         if removed_cooldown or removed_extras:
             removed = True
-            write_atomic(cp, after)
+            write_atomic(cp, after, home=ctx.home)
     return {"path": str(p), "removed": removed}
