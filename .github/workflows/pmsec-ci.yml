@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-2vcpu-ubuntu-2404-arm]
+        os: [hikae-2vcpu-ubuntu-2404]
         node: [22, 24]
     defaults:
       run:
@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-2vcpu-ubuntu-2404-arm]
+        os: [hikae-2vcpu-ubuntu-2404]
         python: ['3.10', '3.11', '3.12', '3.13']
     defaults:
       run:
@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [hikae-2vcpu-ubuntu-2404-arm]
+        os: [hikae-2vcpu-ubuntu-2404]
     defaults:
       run:
         working-directory: bash
@@ -105,7 +105,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: hikae-2vcpu-ubuntu-2404-arm, shell: pwsh }
+          - { os: hikae-2vcpu-ubuntu-2404, shell: pwsh }
     defaults:
       run:
         working-directory: powershell
@@ -115,8 +115,8 @@ jobs:
         timeout-minutes: 5
         with:
           persist-credentials: false
-      - name: Install PowerShell (hikae-2vcpu-ubuntu-2404-arm)
-        if: matrix.os == 'hikae-2vcpu-ubuntu-2404-arm'
+      - name: Install PowerShell (hikae-2vcpu-ubuntu-2404)
+        if: matrix.os == 'hikae-2vcpu-ubuntu-2404'
         timeout-minutes: 10
         shell: bash
         working-directory: .
@@ -163,9 +163,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: hikae-2vcpu-ubuntu-2404-arm, impl: bash }
-          - { os: hikae-2vcpu-ubuntu-2404-arm, impl: node }
-          - { os: hikae-2vcpu-ubuntu-2404-arm, impl: python }
+          - { os: hikae-2vcpu-ubuntu-2404, impl: bash }
+          - { os: hikae-2vcpu-ubuntu-2404, impl: node }
+          - { os: hikae-2vcpu-ubuntu-2404, impl: python }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
