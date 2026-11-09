@@ -116,12 +116,12 @@ def read(ctx: Context) -> dict:
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
-    text = apply_extras(set_key(raw, KEY, f"{KEY}={days * 24 * 60}"), EXTRAS)
+    text = apply_extras(set_key(raw, KEY, f"{KEY}={days * 24 * 60}"), EXTRAS, ctx)
     write_atomic(p, text)
 
     cp = config_path(ctx)
     yaml_raw = cp.read_text("utf-8-sig") if cp.exists() else ""
-    yaml = apply_extras(set_key(yaml_raw, YAML_KEY, f"{YAML_KEY}: {days * 24 * 60}", sep=":"), _yaml_extras())
+    yaml = apply_extras(set_key(yaml_raw, YAML_KEY, f"{YAML_KEY}: {days * 24 * 60}", sep=":"), _yaml_extras(), ctx)
     write_atomic(cp, yaml)
     return {"path": str(p)}
 

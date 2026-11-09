@@ -34,7 +34,7 @@ Options:
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
   --days N              Override cooldown days (default 1)
-  --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
+  --force               Overwrite stricter existing cooldowns and hardening values (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help
@@ -242,7 +242,7 @@ async function runEnable(targets, json, days, force, ctx, out, err) {
         effective = Math.max(currentDays, days);
         kept = currentDays >= days && currentDays > 0;
       }
-      const r = await t.write(effective, ctx);
+      const r = await t.write(effective, { ...ctx, force });
       return { tool: t.name, path: r.path, days: effective, requested: days, kept, forced: force, ok: true, warn };
     } catch (e) {
       return { tool: t.name, path: e?.path ?? null, days, requested: days, kept: false, forced: force, ok: false, error: explainFsError(e, t.name), warn };

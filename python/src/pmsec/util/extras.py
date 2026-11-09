@@ -17,9 +17,14 @@ def read_extras(raw: str, extras: list[dict]) -> list[dict]:
     return rows
 
 
-def apply_extras(text: str, extras: list[dict]) -> str:
+def apply_extras(text: str, extras: list[dict], ctx=None) -> str:
+    # Keep an existing safe value (e.g. a stricter one) unless ctx.force is set.
+    force = bool(getattr(ctx, "force", False))
     out = text
     for e in extras:
+        cur = read_key(out, e["key"], sep=e.get("sep", "="), section=e.get("section"))
+        if not force and cur is not None and cur in e.get("safeValues", [e["expected"]]):
+            continue
         out = set_key(out, e["key"], e["line"], sep=e.get("sep", "="), section=e.get("section"))
     return out
 

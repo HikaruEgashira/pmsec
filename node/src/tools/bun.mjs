@@ -33,7 +33,7 @@ export async function read(ctx) {
 export async function write(days, ctx) {
   const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key} = ${days * 86400}`, { section });
-  text = applyExtras(text, extras);
+  text = applyExtras(text, extras, ctx);
   await writeAtomic(p, text);
   return { path: p };
 }

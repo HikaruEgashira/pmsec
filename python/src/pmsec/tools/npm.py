@@ -48,7 +48,7 @@ def read(ctx: Context) -> dict:
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
     raw = p.read_text("utf-8-sig") if p.exists() else ""
-    text = apply_extras(set_key(raw, KEY, f"{KEY}={days}"), EXTRAS)
+    text = apply_extras(set_key(raw, KEY, f"{KEY}={days}"), EXTRAS, ctx)
     write_atomic(p, text)
     return {"path": str(p)}
 

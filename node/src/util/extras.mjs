@@ -13,9 +13,12 @@ export function readExtras(raw, extras) {
   });
 }
 
-export function applyExtras(text, extras) {
+// Keep an existing safe value (e.g. a stricter one) unless `ctx.force` is set.
+export function applyExtras(text, extras, ctx = {}) {
   let out = text;
   for (const e of extras) {
+    const cur = readKey(out, e.key, { sep: e.sep, section: e.section });
+    if (!ctx.force && cur !== null && (e.safeValues ?? [e.expected]).includes(cur)) continue;
     out = setKey(out, e.key, e.line, { sep: e.sep, section: e.section });
   }
   return out;
