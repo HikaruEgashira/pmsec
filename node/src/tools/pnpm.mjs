@@ -94,12 +94,12 @@ export async function read(ctx) {
 export async function write(days, ctx) {
   const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key}=${days * 24 * 60}`);
-  text = applyExtras(text, extras);
+  text = applyExtras(text, extras, ctx);
   await writeAtomic(p, text);
 
   const cp = configPath(ctx);
   let yaml = setKey(await readSafe(cp), yamlKey, `${yamlKey}: ${days * 24 * 60}`, { sep: ":" });
-  yaml = applyExtras(yaml, yamlExtras());
+  yaml = applyExtras(yaml, yamlExtras(), ctx);
   await writeAtomic(cp, yaml);
   return { path: p };
 }

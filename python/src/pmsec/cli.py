@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
@@ -57,7 +58,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)")
     p.add_argument("--json", action="store_true", help="emit JSON output")
     p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
-    p.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns (otherwise enable is monotonic)")
+    p.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns and hardening values (otherwise enable is monotonic)")
     return p
 
 
@@ -260,7 +261,7 @@ def _enable(args, targets, ctx: Context, out, err):
                 current_days = current.get("days") or 0
                 effective = max(current_days, requested)
                 kept = current_days >= requested and current_days > 0
-            r = t.write(effective, ctx)
+            r = t.write(effective, dataclasses.replace(ctx, force=force))
             results.append({"tool": t.NAME, "path": r["path"], "days": effective, "requested": requested, "kept": kept, "forced": force, "ok": True, "warn": warn})
         except OSError as exc:
             msg = _explain_fs_error(exc, t.NAME)

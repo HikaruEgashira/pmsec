@@ -1244,8 +1244,13 @@ _tool_write_one() {
   [ "$yaml" = "1" ] && extras_fn=tool_extras_yaml
   lines_load "$path"
   lines_set_key "$key" "$line" "$sep" "$section"
+  local cur
   while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
+    # Keep an existing safe value (e.g. a stricter one) unless --force.
+    if [ "${OPT_FORCE:-0}" != "1" ] && cur=$(lines_read_key "$ek" "$es" "$esec"); then
+      case ",${esafe:-$ev}," in *",$cur,"*) continue ;; esac
+    fi
     lines_set_key "$ek" "$el" "$es" "$esec"
   done < <("$extras_fn" "$tool")
   if [ "$tool" = "cargo" ] && [ "$yaml" = "0" ]; then
@@ -1445,7 +1450,7 @@ Options:
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
   --days N              Override cooldown days (default 1)
-  --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
+  --force               Overwrite stricter existing cooldowns and hardening values (otherwise enable is monotonic)
   --json                Emit JSON output
   -V, --version         Show version
   -h, --help            Show this help

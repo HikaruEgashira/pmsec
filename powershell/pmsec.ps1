@@ -1148,6 +1148,12 @@ function ToolWriteFile([string]$Path, [string]$Key, [string]$Line, [string]$Sep,
   LinesSetKey $Key $Line $Sep $Section
   $extraDefs = if ($YamlExtras) { ToolExtrasYaml $Tool } else { ToolExtras $Tool }
   foreach ($e in $extraDefs) {
+    # Keep an existing safe value (e.g. a stricter one) unless --force.
+    if (-not $script:Force) {
+      $cur = LinesReadKey $e.Key $e.Sep $e.Section
+      $safeValues = if ($e.ContainsKey('SafeValues')) { $e.SafeValues } else { @($e.Expected) }
+      if ($null -ne $cur -and $safeValues -contains $cur) { continue }
+    }
     LinesSetKey $e.Key $e.Line $e.Sep $e.Section
   }
   if ($Tool -eq 'cargo' -and -not $YamlExtras) {
@@ -1279,7 +1285,7 @@ Options:
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
   --days N              Override cooldown days (default 1)
-  --force               Overwrite stricter existing cooldowns (otherwise enable is monotonic)
+  --force               Overwrite stricter existing cooldowns and hardening values (otherwise enable is monotonic)
   --no-wsl              Skip the WSL pass; only configure the Windows host
   --json                Emit JSON output
   -V, --version         Show version
@@ -1489,6 +1495,7 @@ function CmdEnable($Targets, [bool]$Json, [int]$Days, [bool]$Force, [array]$Scop
   $results = New-Object System.Collections.Generic.List[hashtable]
   $failures = New-Object System.Collections.Generic.List[string]
   $warnCount = 0
+  $script:Force = [bool]$Force
   foreach ($scope in $Scopes) {
     $script:Scope = $scope
     foreach ($t in $Targets) {

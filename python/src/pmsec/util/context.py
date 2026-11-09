@@ -9,3 +9,4 @@ class Context:
     env: dict[str, str]
     home: Path
     platform: str
+    force: bool = False

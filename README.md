@@ -44,6 +44,10 @@ The downloaded pmsec payload is pinned to a commit SHA for reproducible rollout.
 verify, `--disable` to remove, and `--doctor --json` to inspect paths and
 writability.
 
+Enable is monotonic: a stricter existing cooldown or hardening value (any value in the
+key's safe set, e.g. npm `allow-file=none`) is kept; only missing or weaker values are
+written. `--force` overwrites both with the bundle defaults.
+
 Options: `--tool npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer`, `--days N`,
 `--force`, `--json`.
 
