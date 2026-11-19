@@ -567,9 +567,70 @@ def test_symlink_at_bak_path_is_refused(tmp_path):
     assert (home / ".npmrc").read_text() == "registry=https://original/\n"
 
 
-def test_doctor_never_claims_pmsec_home_support(tmp_path):
-    code, out, err = run(["--doctor", "--json"], tmp_path, PMSEC_HOME="/elsewhere")
+def test_pmsec_home_redirects_writes_and_doctor(tmp_path):
+    real, fake = tmp_path / "real", tmp_path / "fake"
+    real.mkdir()
+    fake.mkdir()
+    code, _, err = run(["--tool", "npm"], real, PMSEC_HOME=str(fake))
+    assert code == 0
+    assert "ignored" not in err
+    assert (fake / ".npmrc").exists()
+    assert not (real / ".npmrc").exists()
+    code, out, _ = run(["--doctor", "--json"], real, PMSEC_HOME=str(fake))
     report = json.loads(out)
-    assert report["pmsecHome"] is None
-    assert report["pmsecHomeSource"] == "HOME"
-    assert "PMSEC_HOME is ignored" in err
+    assert report["pmsecHome"] == str(fake)
+    assert report["pmsecHomeSource"] == "PMSEC_HOME"
+    assert report["home"] == str(fake)
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid"), reason="POSIX only")
+def test_root_guard_refuses_symlinked_parent_outside_home(tmp_path, monkeypatch):
+    from pmsec.util import io as pio
+
+    home, outside = tmp_path / "home", tmp_path / "outside"
+    home.mkdir()
+    outside.mkdir()
+    os.symlink(outside, home / ".config")
+    monkeypatch.setattr(pio, "_euid", lambda: 0)
+    with pytest.raises(OSError, match="refusing to write under"):
+        pio.write_atomic(home / ".config" / "x" / "c.toml", "a=1\n", home=home)
+    assert list(outside.iterdir()) == []
+    # Without root the guard is inert.
+    monkeypatch.setattr(pio, "_euid", lambda: 1000)
+    pio.write_atomic(home / ".config" / "x" / "c.toml", "a=1\n", home=home)
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid"), reason="POSIX only")
+def test_root_handback_chowns_without_following_links(tmp_path, monkeypatch):
+    from pmsec.util import io as pio
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".cfg").mkdir()
+    (home / ".cfg" / "f").write_text("old\n")
+    calls = []
+    monkeypatch.setattr(pio, "_euid", lambda: 0)
+    monkeypatch.setattr(pio.os, "chown", lambda p, u, g, *, follow_symlinks=True: calls.append((Path(p), u, g, follow_symlinks)))
+    pio.write_atomic(home / ".cfg" / "f", "new\n", home=home)
+    pio.write_atomic(home / "new" / "deep" / "g", "x\n", home=home)
+    st = home.stat()
+    paths = {c[0] for c in calls}
+    assert home / ".cfg" / "f" in paths
+    assert home / ".cfg" / "f.bak" in paths
+    assert {home / "new", home / "new" / "deep", home / "new" / "deep" / "g"} <= paths
+    assert home / ".cfg" not in paths
+    assert all(c[1:] == (st.st_uid, st.st_gid, False) for c in calls)
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid"), reason="POSIX only")
+def test_root_handback_chown_failure_warns(tmp_path, monkeypatch, capsys):
+    from pmsec.util import io as pio
+
+    def boom(*a, **k):
+        raise PermissionError("nope")
+
+    monkeypatch.setattr(pio, "_euid", lambda: 0)
+    monkeypatch.setattr(pio.os, "chown", boom)
+    pio.write_atomic(tmp_path / "f", "x\n", home=tmp_path)
+    assert (tmp_path / "f").read_text() == "x\n"
+    assert "warning: chown" in capsys.readouterr().err
