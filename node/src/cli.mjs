@@ -168,7 +168,7 @@ function probePath(p, uid) {
   return { path: p, parent, exists, writable, parentExists, parentWritable, owner };
 }
 
-function runDoctor(targets, json, ctx, out) {
+function runDoctor(targets, json, ctx, out, userHome) {
   const isPosix = ctx.platform !== "win32" && typeof process.getuid === "function";
   const uid = isPosix ? process.getuid() : null;
   const euid = isPosix && typeof process.geteuid === "function" ? process.geteuid() : uid;
@@ -187,11 +187,9 @@ function runDoctor(targets, json, ctx, out) {
     version: VERSION,
     platform: ctx.platform,
     uid, euid, username,
-    home: ctx.home,
-    // This port resolves paths from HOME only; PMSEC_HOME is a bash/powershell
-    // feature (it needs the root->owner chown handback those ports implement).
-    pmsecHome: null,
-    pmsecHomeSource: "HOME",
+    home: userHome,
+    pmsecHome: ctx.env.PMSEC_HOME || null,
+    pmsecHomeSource: ctx.env.PMSEC_HOME ? "PMSEC_HOME" : "HOME",
     tools,
     ok: okFlag,
   };
@@ -202,8 +200,8 @@ function runDoctor(targets, json, ctx, out) {
   out.write(`pmsec ${VERSION}  doctor\n`);
   out.write(`  platform   : ${ctx.platform}\n`);
   if (isPosix) out.write(`  uid/euid   : ${uid}/${euid}${username ? ` (${username})` : ""}\n`);
-  out.write(`  HOME       : ${ctx.home}\n`);
-  out.write(`  PMSEC_HOME : (not supported by this port — using HOME)\n\n`);
+  out.write(`  HOME       : ${userHome}\n`);
+  out.write(ctx.env.PMSEC_HOME ? `  PMSEC_HOME : ${ctx.env.PMSEC_HOME}\n\n` : `  PMSEC_HOME : (unset — using HOME)\n\n`);
   for (const t of tools) {
     const flag = t.parentWritable ? "ok    " : "BLOCK ";
     const ownerSuffix = t.exists && t.owner !== null ? ` (uid=${t.owner})` : "";
@@ -300,14 +298,13 @@ export async function run(argv, {
   let targets;
   try { targets = selectTools(opts.only); }
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
-  const ctx = { env, home, platform };
-  if (env.PMSEC_HOME) {
-    err.write(`pmsec: PMSEC_HOME is ignored by the node port; paths resolve from HOME (${home}). Use the bash port for root-context redirection.\n`);
-  }
+  // PMSEC_HOME wins over HOME so a root-run orchestrator can target the
+  // logged-in user's home; writes under it get the root guard and handback.
+  const ctx = { env, home: env.PMSEC_HOME || home, platform };
   try {
     if (opts.mode === "check") return await runCheck(targets, opts, ctx, out, err);
     if (opts.mode === "disable") return await runDisable(targets, opts.json, ctx, out, err);
-    if (opts.mode === "doctor") return runDoctor(targets, opts.json, ctx, out);
+    if (opts.mode === "doctor") return runDoctor(targets, opts.json, ctx, out, home);
     return await runEnable(targets, opts.json, opts.days, opts.force, ctx, out, err);
   } catch (e) {
     err.write(`pmsec: ${e.message}\n`);

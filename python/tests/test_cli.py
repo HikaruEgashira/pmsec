@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pmsec.cli import main  # noqa: E402
+from pmsec.util.io import handback, root_dir_guard  # noqa: E402
 
 
 def env_for(home: Path, **overrides: str) -> dict[str, str]:
@@ -567,9 +568,43 @@ def test_symlink_at_bak_path_is_refused(tmp_path):
     assert (home / ".npmrc").read_text() == "registry=https://original/\n"
 
 
-def test_doctor_never_claims_pmsec_home_support(tmp_path):
-    code, out, err = run(["--doctor", "--json"], tmp_path, PMSEC_HOME="/elsewhere")
+def test_pmsec_home_redirects_writes_and_doctor_reports_it(tmp_path):
+    real, target = tmp_path / "real", tmp_path / "target"
+    real.mkdir()
+    target.mkdir()
+    code, _, err = run(["--tool", "npm"], real, PMSEC_HOME=str(target))
+    assert code == 0
+    assert err == ""
+    assert re.search(r"^min-release-age=1$", (target / ".npmrc").read_text(), re.M)
+    assert not (real / ".npmrc").exists()
+    code, out, _ = run(["--doctor", "--json", "--tool", "npm"], real, PMSEC_HOME=str(target))
     report = json.loads(out)
-    assert report["pmsecHome"] is None
-    assert report["pmsecHomeSource"] == "HOME"
-    assert "PMSEC_HOME is ignored" in err
+    assert report["home"] == str(real)
+    assert report["pmsecHome"] == str(target)
+    assert report["pmsecHomeSource"] == "PMSEC_HOME"
+    assert report["tools"][0]["path"] == str(target / ".npmrc")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_root_guard_refuses_dir_resolving_outside_home(tmp_path):
+    home, outside = tmp_path / "home", tmp_path / "outside"
+    home.mkdir()
+    outside.mkdir()
+    os.symlink(outside, home / ".config")
+    with pytest.raises(OSError, match="refusing to write under .* outside"):
+        root_dir_guard(home / ".config" / "pnpm", home)
+    # Inside the home, and operator-chosen paths outside it, pass.
+    root_dir_guard(home / ".cargo", home)
+    root_dir_guard(outside / "cargo", home)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership semantics")
+def test_handback_reowns_file_bak_and_created_dirs(tmp_path):
+    d = tmp_path / ".config" / "pnpm"
+    d.mkdir(parents=True)
+    (d / "rc").write_text("x\n")
+    (d / "rc.bak").write_text("x\n")
+    err = io.StringIO()
+    handback(d / "rc", d / "rc.bak", tmp_path / ".config", tmp_path, err)
+    assert err.getvalue() == ""
+    assert (d / "rc").stat().st_uid == tmp_path.stat().st_uid

@@ -23,8 +23,9 @@ Case shape:
 ```
 
 Optional `env` entries override the runner defaults for both `pre` and the
-asserted invocation. `<HOME>` in `expected_json` is replaced with the case
-temp dir.
+asserted invocation; `<HOME>` in their values expands to the case temp dir.
+`<HOME>` in `expected_json` is replaced with the case temp dir. Optional
+`impls` (e.g. `["bash", "node", "python"]`) limits a case to those ports.
 
 ## Run
 

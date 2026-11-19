@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { existsSync, statSync } from "node:fs";
 import { Writable } from "node:stream";
 import { run } from "../src/cli.mjs";
+import { rootDirGuard, handback } from "../src/util/io.mjs";
 
 function sink() {
   const chunks = [];
@@ -588,11 +590,39 @@ test("a symlink planted at the .bak path is refused instead of followed", async 
   assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://original/\n");
 });
 
-test("--doctor never claims PMSEC_HOME support and warns when it is set", async () => {
-  const home = await setupHome();
-  const { out, err } = await runCli(["--doctor", "--json"], home, "linux", { PMSEC_HOME: "/elsewhere" });
+test("PMSEC_HOME redirects writes off HOME and doctor reports it", async () => {
+  const real = await setupHome(), target = await setupHome();
+  const { code, err } = await runCli(["--tool", "npm"], real, "linux", { PMSEC_HOME: target });
+  assert.equal(code, 0);
+  assert.equal(err, "");
+  assert.match(await readFile(join(target, ".npmrc"), "utf8"), /^min-release-age=1$/m);
+  assert.equal(existsSync(join(real, ".npmrc")), false);
+  const { out } = await runCli(["--doctor", "--json", "--tool", "npm"], real, "linux", { PMSEC_HOME: target });
   const report = JSON.parse(out);
-  assert.equal(report.pmsecHome, null);
-  assert.equal(report.pmsecHomeSource, "HOME");
-  assert.match(err, /PMSEC_HOME is ignored/);
+  assert.equal(report.home, real);
+  assert.equal(report.pmsecHome, target);
+  assert.equal(report.pmsecHomeSource, "PMSEC_HOME");
+  assert.equal(report.tools[0].path, join(target, ".npmrc"));
+});
+
+test("root guard refuses a dir under the home that resolves outside it", { skip: process.platform === "win32" }, async () => {
+  const { symlink } = await import("node:fs/promises");
+  const home = await setupHome(), outside = await setupHome();
+  await symlink(outside, join(home, ".config"));
+  await assert.rejects(rootDirGuard(join(home, ".config", "pnpm"), home), /refusing to write under .* outside/);
+  // Inside the home, and operator-chosen paths outside it, pass.
+  await rootDirGuard(join(home, ".cargo"), home);
+  await rootDirGuard(join(outside, "cargo"), home);
+});
+
+test("handback re-owns the file, .bak and created dirs without warnings", { skip: process.platform === "win32" }, async () => {
+  const home = await setupHome();
+  const dir = join(home, ".config", "pnpm");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "rc"), "x\n");
+  await writeFile(join(dir, "rc.bak"), "x\n");
+  const err = sink();
+  await handback(join(dir, "rc"), join(dir, "rc.bak"), join(home, ".config"), home, err);
+  assert.equal(err.text(), "");
+  assert.equal(statSync(join(dir, "rc")).uid, statSync(home).uid);
 });
