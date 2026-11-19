@@ -74,6 +74,22 @@ export function miseConfigPath(env = process.env, home = homedir(), platform = p
   return join(base, "mise", "config.toml");
 }
 
+// Layer paths for the config.pmsec.toml mode. mise loads every config.*.toml in
+// its config dir, so pmsec can own a dedicated file next to the user's base
+// config. `localMiserc` is the miserc.toml bootstrap file in the same dir.
+export function miseLayerPaths(env = process.env, home = homedir(), platform = process.platform) {
+  let miseDir;
+  if (env.MISE_CONFIG_DIR) miseDir = env.MISE_CONFIG_DIR;
+  else if (platform === "win32") miseDir = join(env.LOCALAPPDATA || join(home, "AppData", "Local"), "mise");
+  else miseDir = join(env.XDG_CONFIG_HOME || join(home, ".config"), "mise");
+  return {
+    miseDir,
+    baseConfig: join(miseDir, "config.toml"),
+    pmsecConfig: join(miseDir, "config.pmsec.toml"),
+    localMiserc: join(miseDir, "miserc.toml"),
+  };
+}
+
 export function aubeConfigPath(env = process.env, home = homedir(), platform = process.platform) {
   if (env.AUBE_CONFIG_FILE) return env.AUBE_CONFIG_FILE;
   if (platform === "win32") {

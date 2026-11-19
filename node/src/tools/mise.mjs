@@ -2,12 +2,13 @@ import { miseConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
 import { readExtras, applyExtras, removeExtras } from "../util/extras.mjs";
-import { buildPreflight } from "../util/version.mjs";
+import { buildPreflight, gte } from "../util/version.mjs";
 export const name = "mise";
 export const key = "minimum_release_age";
 export const section = "settings";
 export const docs = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age";
 export const minBin = [2026, 4, 22];
+export const newModeMinBin = [2026, 11, 0];
 export const extras = [
   { key: "paranoid", expected: "true", line: "paranoid = true", section },
   { key: "gpg_verify", expected: "true", line: "gpg_verify = true", section },
@@ -29,6 +30,12 @@ export const extras = [
 ];
 
 export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platform); }
+
+// The config.pmsec.toml layer needs mise >= 2026.11.0, and an explicit
+// MISE_GLOBAL_CONFIG_FILE opts out of the config-dir layout entirely.
+export function supportsNewMode(version, env = process.env) {
+  return gte(version, newModeMinBin) === true && !env.MISE_GLOBAL_CONFIG_FILE;
+}
 
 export const preflight = buildPreflight(name, minBin,
   "setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.");

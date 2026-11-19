@@ -129,6 +129,25 @@ function Get-MisePath {
   }
   return (PathJoin (Get-PmsecHome) '.config' 'mise' 'config.toml')
 }
+# Layer paths for the config.pmsec.toml mode. mise loads every config.*.toml in
+# its config dir, so pmsec can own a dedicated file next to the base config.
+function Get-MiseLayerPaths {
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    if ($env:MISE_CONFIG_DIR) { $dir = $env:MISE_CONFIG_DIR }
+    else {
+      $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
+      $dir = PathJoin $base 'mise'
+    }
+  } else {
+    $dir = PathJoin (Get-PmsecHome) '.config' 'mise'
+  }
+  return [pscustomobject]@{
+    MiseDir     = $dir
+    BaseConfig  = (PathJoin $dir 'config.toml')
+    PmsecConfig = (PathJoin $dir 'config.pmsec.toml')
+    LocalMiserc = (PathJoin $dir 'miserc.toml')
+  }
+}
 # Bundler's global config. BUNDLE_USER_CONFIG points at the file directly;
 # BUNDLE_USER_HOME points at the home dir (config = <home>/config). Both
 # default to ~/.bundle, matching bundler's own resolution order.
@@ -814,6 +833,14 @@ function VersionGte($V, [int[]]$Target) {
   if ($V.Major -ne $Target[0]) { return $V.Major -gt $Target[0] }
   if ($V.Minor -ne $Target[1]) { return $V.Minor -gt $Target[1] }
   return $V.Patch -ge $Target[2]
+}
+
+# config.pmsec.toml layer needs mise >= 2026.11.0 and MISE_GLOBAL_CONFIG_FILE
+# unset (only honored for the Windows host, matching Get-MisePath).
+function Test-MiseNewMode($V) {
+  if (-not $V) { return $false }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:MISE_GLOBAL_CONFIG_FILE) { return $false }
+  return [bool](VersionGte $V @(2026, 11, 0))
 }
 
 # ---------- per-tool metadata ----------

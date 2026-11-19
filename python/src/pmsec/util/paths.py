@@ -80,6 +80,24 @@ def mise_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     return base / "mise" / "config.toml"
 
 
+# Layer paths for the config.pmsec.toml mode. mise loads every config.*.toml in
+# its config dir, so pmsec can own a dedicated file next to the user's base
+# config. `local_miserc` is the miserc.toml bootstrap file in the same dir.
+def mise_layer_paths(env: dict[str, str], home: Path, platform: str) -> dict[str, Path]:
+    if env.get("MISE_CONFIG_DIR"):
+        mise_dir = Path(env["MISE_CONFIG_DIR"])
+    elif platform == "win32":
+        mise_dir = (Path(env["LOCALAPPDATA"]) if env.get("LOCALAPPDATA") else home / "AppData" / "Local") / "mise"
+    else:
+        mise_dir = (Path(env["XDG_CONFIG_HOME"]) if env.get("XDG_CONFIG_HOME") else home / ".config") / "mise"
+    return {
+        "mise_dir": mise_dir,
+        "base_config": mise_dir / "config.toml",
+        "pmsec_config": mise_dir / "config.pmsec.toml",
+        "local_miserc": mise_dir / "miserc.toml",
+    }
+
+
 def uv_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     if "UV_CONFIG_FILE" in env:
         return Path(env["UV_CONFIG_FILE"])

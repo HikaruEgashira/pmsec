@@ -911,6 +911,67 @@ T 'composer preserves unrelated JSON keys and honors COMPOSER_HOME' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+# ---------- mise layer helpers (unit) ----------
+
+# Load only the helpers under test from pmsec.ps1 via its AST so the CLI body
+# doesn't run. $script:Scope here drives Get-PmsecPlatform / Get-PmsecHome.
+$script:Scope = $null
+$miseHelperNames = @('Get-PmsecPlatform','Get-PmsecHome','Get-MiseLayerPaths','VersionGte','Test-MiseNewMode')
+$pmsecAst = [System.Management.Automation.Language.Parser]::ParseFile($Pmsec, [ref]$null, [ref]$null)
+foreach ($fn in $pmsecAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+  if ($miseHelperNames -contains $fn.Name) { . ([scriptblock]::Create($fn.Extent.Text)) }
+}
+
+function WithMiseEnv([hashtable]$Vars, [scriptblock]$Body) {
+  $keys = @('MISE_CONFIG_DIR','MISE_GLOBAL_CONFIG_FILE','LOCALAPPDATA')
+  $saved = @{}
+  foreach ($k in $keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process'); [Environment]::SetEnvironmentVariable($k, $null, 'Process') }
+  try {
+    foreach ($k in $Vars.Keys) { [Environment]::SetEnvironmentVariable($k, $Vars[$k], 'Process') }
+    return (& $Body)
+  } finally {
+    foreach ($k in $keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k], 'Process') }
+  }
+}
+
+T 'mise layer paths (posix / WSL scope)' {
+  $script:Scope = @{ Label = 'wsl'; Home = '/home/u'; Platform = 'linux' }
+  try {
+    $p = WithMiseEnv @{ LOCALAPPDATA = 'C:\ignored' } { Get-MiseLayerPaths }
+    $dir = PathJoin '/home/u' '.config' 'mise'
+    if ($p.MiseDir -ne $dir) { $script:LastFail = "MiseDir: $($p.MiseDir)"; return $false }
+    if ($p.BaseConfig -ne (PathJoin $dir 'config.toml')) { $script:LastFail = "BaseConfig: $($p.BaseConfig)"; return $false }
+    if ($p.PmsecConfig -ne (PathJoin $dir 'config.pmsec.toml')) { $script:LastFail = "PmsecConfig: $($p.PmsecConfig)"; return $false }
+    if ($p.LocalMiserc -ne (PathJoin $dir 'miserc.toml')) { $script:LastFail = "LocalMiserc: $($p.LocalMiserc)"; return $false }
+    return $true
+  } finally { $script:Scope = $null }
+}
+
+T 'mise layer paths (win32)' {
+  $script:Scope = @{ Label = 'windows'; Home = 'C:\Users\u'; Platform = 'win32' }
+  try {
+    $base = PathJoin 'C:\Users\u' 'AppData' 'Local'
+    $p = WithMiseEnv @{ LOCALAPPDATA = $base } { Get-MiseLayerPaths }
+    if ($p.PmsecConfig -ne (PathJoin $base 'mise' 'config.pmsec.toml')) { $script:LastFail = "PmsecConfig: $($p.PmsecConfig)"; return $false }
+    if ($p.LocalMiserc -ne (PathJoin $base 'mise' 'miserc.toml')) { $script:LastFail = "LocalMiserc: $($p.LocalMiserc)"; return $false }
+    $p = WithMiseEnv @{ MISE_CONFIG_DIR = 'D:\m' } { Get-MiseLayerPaths }
+    if ($p.BaseConfig -ne (PathJoin 'D:\m' 'config.toml')) { $script:LastFail = "MISE_CONFIG_DIR: $($p.BaseConfig)"; return $false }
+    return $true
+  } finally { $script:Scope = $null }
+}
+
+T 'mise new mode version gate' {
+  $mk = { param($a, $b, $c) @{ Major = $a; Minor = $b; Patch = $c; Raw = "$a.$b.$c" } }
+  $ok = WithMiseEnv @{} {
+    (Test-MiseNewMode (& $mk 2026 11 0)) -and (Test-MiseNewMode (& $mk 2027 1 0)) -and
+    -not (Test-MiseNewMode (& $mk 2026 10 9)) -and -not (Test-MiseNewMode $null)
+  }
+  if (-not $ok) { $script:LastFail = 'version gate mismatch'; return $false }
+  $blocked = WithMiseEnv @{ MISE_GLOBAL_CONFIG_FILE = 'C:\x\config.toml' } { Test-MiseNewMode (& $mk 2026 11 0) }
+  if ($blocked) { $script:LastFail = 'MISE_GLOBAL_CONFIG_FILE should disable new mode'; return $false }
+  return $true
+}
+
 # ---------- summary ----------
 
 Write-Host ""

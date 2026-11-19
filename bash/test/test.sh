@@ -765,5 +765,49 @@ t_composer_preserves_unrelated_keys() {
 
 T "composer preserves unrelated JSON keys" t_composer_preserves_unrelated_keys
 
+# Unit-test mise layer helpers by sourcing pmsec with main disabled.
+mise_helper() {
+  env -i PATH="$PATH" PMSEC_SOURCE_ONLY=1 "$@" bash -c '. "$0"; '"$MISE_HELPER_CMD" "$PMSEC"
+}
+
+t_mise_layer_paths_posix() {
+  local out
+  out=$(MISE_HELPER_CMD='mise_layer_path dir; echo; mise_layer_path base; echo; mise_layer_path pmsec; echo; mise_layer_path miserc' \
+    mise_helper HOME=/home/user XDG_CONFIG_HOME=/xdg)
+  assert_eq "posix layer paths" "/xdg/mise
+/xdg/mise/config.toml
+/xdg/mise/config.pmsec.toml
+/xdg/mise/miserc.toml" "$out" || return 1
+  out=$(MISE_HELPER_CMD='mise_layer_path pmsec' mise_helper HOME=/home/user)
+  assert_eq "posix default" "/home/user/.config/mise/config.pmsec.toml" "$out" || return 1
+  out=$(MISE_HELPER_CMD='mise_layer_path pmsec' mise_helper HOME=/home/user MISE_CONFIG_DIR=/m)
+  assert_eq "MISE_CONFIG_DIR" "/m/config.pmsec.toml" "$out"
+}
+
+t_mise_layer_paths_win32() {
+  local out
+  out=$(MISE_HELPER_CMD='mise_layer_path dir; echo; mise_layer_path pmsec; echo; mise_layer_path miserc' \
+    mise_helper HOME=/c/Users/u PMSEC_PLATFORM=win32 LOCALAPPDATA=/c/Users/u/AppData/Local XDG_CONFIG_HOME=/xdg)
+  assert_eq "win32 layer paths" "/c/Users/u/AppData/Local/mise
+/c/Users/u/AppData/Local/mise/config.pmsec.toml
+/c/Users/u/AppData/Local/mise/miserc.toml" "$out" || return 1
+  out=$(MISE_HELPER_CMD='mise_layer_path base' mise_helper HOME=/c/Users/u PMSEC_PLATFORM=win32)
+  assert_eq "win32 default" "/c/Users/u/AppData/Local/mise/config.toml" "$out"
+}
+
+t_mise_new_mode_gate() {
+  local out
+  out=$(MISE_HELPER_CMD='for v in "2026 11 0" "2027 1 0" "2026 10 9"; do mise_supports_new_mode $v && echo y || echo n; done' mise_helper)
+  assert_eq "version gate" "y
+y
+n" "$out" || return 1
+  out=$(MISE_HELPER_CMD='mise_supports_new_mode 2026 11 0 && echo y || echo n' mise_helper MISE_GLOBAL_CONFIG_FILE=/x/config.toml)
+  assert_eq "MISE_GLOBAL_CONFIG_FILE disables" "n" "$out"
+}
+
+T "mise layer paths (posix)" t_mise_layer_paths_posix
+T "mise layer paths (win32)" t_mise_layer_paths_win32
+T "mise new mode version gate" t_mise_new_mode_gate
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

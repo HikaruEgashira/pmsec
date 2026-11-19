@@ -8,13 +8,14 @@ from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
 from pmsec.util.paths import mise_config_path
-from pmsec.util.version import build_preflight
+from pmsec.util.version import build_preflight, gte
 
 NAME = "mise"
 KEY = "minimum_release_age"
 SECTION = "settings"
 DOCS = "https://mise.jdx.dev/configuration/settings.html#minimum_release_age"
 MIN_BIN = (2026, 4, 22)
+NEW_MODE_MIN_BIN = (2026, 11, 0)
 EXTRAS = [
     {"key": "paranoid", "expected": "true", "line": "paranoid = true", "section": SECTION},
     {"key": "gpg_verify", "expected": "true", "line": "gpg_verify = true", "section": SECTION},
@@ -34,6 +35,12 @@ EXTRAS = [
     {"key": "swift.gpg_verify", "expected": "true", "line": "swift.gpg_verify = true", "section": SECTION},
     {"key": "not_found_system_fallback", "expected": "false", "line": "not_found_system_fallback = false", "section": SECTION},
 ]
+
+# The config.pmsec.toml layer needs mise >= 2026.11.0, and an explicit
+# MISE_GLOBAL_CONFIG_FILE opts out of the config-dir layout entirely.
+def supports_new_mode(version: tuple[int, int, int, str] | None, env: dict[str, str]) -> bool:
+    return gte(version, NEW_MODE_MIN_BIN) is True and not env.get("MISE_GLOBAL_CONFIG_FILE")
+
 
 preflight = build_preflight(
     NAME, MIN_BIN,

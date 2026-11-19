@@ -103,6 +103,22 @@ path_mise() {
   fi
   printf '%s/mise/config.toml' "${XDG_CONFIG_HOME:-$home/.config}"
 }
+# Layer paths for the config.pmsec.toml mode: mise_layer_path KIND where KIND is
+# dir | base | pmsec | miserc. mise loads every config.*.toml in its config dir.
+mise_layer_path() {
+  local home dir; home=$(_pmsec_home)
+  if [ -n "${MISE_CONFIG_DIR:-}" ]; then dir=$MISE_CONFIG_DIR
+  elif [ "${PMSEC_PLATFORM:-}" = "win32" ]; then dir="${LOCALAPPDATA:-$home/AppData/Local}/mise"
+  else dir="${XDG_CONFIG_HOME:-$home/.config}/mise"
+  fi
+  case "$1" in
+    dir)    printf '%s' "$dir" ;;
+    base)   printf '%s/config.toml' "$dir" ;;
+    pmsec)  printf '%s/config.pmsec.toml' "$dir" ;;
+    miserc) printf '%s/miserc.toml' "$dir" ;;
+    *) return 1 ;;
+  esac
+}
 path_aube() {
   local home; home=$(_pmsec_home)
   if [ -n "${AUBE_CONFIG_FILE:-}" ]; then printf '%s' "$AUBE_CONFIG_FILE"; return; fi
@@ -894,6 +910,12 @@ version_gte() {
   if [ "$1" -ne "$4" ]; then [ "$1" -gt "$4" ]; return; fi
   if [ "$2" -ne "$5" ]; then [ "$2" -gt "$5" ]; return; fi
   [ "$3" -ge "$6" ]
+}
+
+# mise_supports_new_mode VA VB VC — config.pmsec.toml layer needs mise >= 2026.11.0
+# and MISE_GLOBAL_CONFIG_FILE unset.
+mise_supports_new_mode() {
+  [ -z "${MISE_GLOBAL_CONFIG_FILE:-}" ] && version_gte "$1" "$2" "$3" 2026 11 0
 }
 
 # ---------- per-tool: metadata ----------
@@ -1953,4 +1975,5 @@ main() {
   esac
 }
 
-main "$@"
+# PMSEC_SOURCE_ONLY=1 lets tests source this file to unit-test helpers.
+if [ "${PMSEC_SOURCE_ONLY:-}" != "1" ]; then main "$@"; fi
