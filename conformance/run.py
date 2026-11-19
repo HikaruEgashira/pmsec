@@ -82,6 +82,11 @@ def normalize(obj, home: Path):
     return obj
 
 
+def expand_args(args: list[str], home: Path) -> list[str]:
+    """Substitute the case temp dir for <HOME> so args can name setup paths."""
+    return [a.replace("<HOME>", str(home)) for a in args]
+
+
 def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
     case = json.loads(case_path.read_text())
     home = Path(tempfile.mkdtemp(prefix="pmsec-conf-"))
@@ -94,9 +99,9 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
             # Bytes, not text mode: newline translation would hide CRLF handling.
             target.write_bytes(body.encode("utf-8"))
         for step in case.get("pre", []):
-            subprocess.run(build_cmd(impl, step), env=env, cwd=REPO, check=False, capture_output=True)
+            subprocess.run(build_cmd(impl, expand_args(step, home)), env=env, cwd=REPO, check=False, capture_output=True)
         proc = subprocess.run(
-            build_cmd(impl, case["args"]),
+            build_cmd(impl, expand_args(case["args"], home)),
             env=env, cwd=REPO, capture_output=True, text=True,
         )
         if proc.returncode != case.get("expected_exit", 0):

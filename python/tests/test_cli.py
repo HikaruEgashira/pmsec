@@ -412,6 +412,22 @@ def test_check_disable_mutually_exclusive(tmp_path):
     assert exc.value.code == 2
 
 
+@pytest.mark.parametrize("argv", [["--project", "."], ["--disable", "--project", "."], ["--check", "--project", ""]])
+def test_project_requires_check(tmp_path, argv):
+    with pytest.raises(SystemExit) as exc:
+        run(argv, tmp_path)
+    assert exc.value.code == 2
+
+
+def test_check_project_prints_weak_rows(tmp_path):
+    (tmp_path / "proj" / ".bundle").mkdir(parents=True)
+    (tmp_path / "proj" / ".bundle" / "config").write_text('---\nBUNDLE_COOLDOWN: "0"\n')
+    code, out, err = run(["--check", "--project", str(tmp_path / "proj")], tmp_path)
+    assert code == 1
+    assert re.search(r'^WEAK    bundler BUNDLE_COOLDOWN = "0"', out, re.M)
+    assert "1 project setting(s) weaken the baseline" in err
+
+
 @pytest.mark.parametrize("flag", ["--version", "-V"])
 def test_version_flag_prints_package_version(tmp_path, capsys, flag):
     from pmsec import __version__

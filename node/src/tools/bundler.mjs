@@ -2,6 +2,7 @@ import { bundleConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readKey, setKey, removeKey } from "../util/lines.mjs";
 import { buildPreflight } from "../util/version.mjs";
+import { join } from "node:path";
 
 export const name = "bundler";
 export const key = "BUNDLE_COOLDOWN";
@@ -43,4 +44,23 @@ export async function unset(ctx) {
   const { text: after, removed } = removeKey(before, key, { sep: SEP });
   if (removed) await writeAtomic(p, after);
   return { path: p, removed };
+}
+
+// Project scope: `<project>/.bundle/config` overrides the user file. Only keys
+// that are present can weaken the baseline; absent keys inherit it.
+export async function readProject(dir, days) {
+  const p = join(dir, ".bundle", "config");
+  const raw = await readSafe(p);
+  const rows = [];
+  const cooldown = readKey(raw, key, { sep: SEP });
+  if (cooldown !== null) {
+    const d = parseDays(cooldown);
+    rows.push({ key, configured: cooldown, expected: `>= ${days} days`, ok: d !== null && d >= days });
+  }
+  const checksum = readKey(raw, "BUNDLE_DISABLE_CHECKSUM_VALIDATION", { sep: SEP });
+  if (checksum !== null) {
+    rows.push({ key: "BUNDLE_DISABLE_CHECKSUM_VALIDATION", configured: checksum, expected: "false",
+      ok: checksum.replace(/^"|"$/g, "").trim() !== "true" });
+  }
+  return rows.map(r => ({ tool: name, path: p, ...r }));
 }

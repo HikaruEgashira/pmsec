@@ -1219,6 +1219,60 @@ tool_read() {
   printf '%s|%s' "$val" "$days"
 }
 
+# ---------- per-tool: project scope ----------
+# Project files override the user file. Only keys that are present can weaken
+# the baseline; absent keys inherit it. Each row is printed as
+# key|expected|ok|configured (configured last: it may contain '|').
+
+project_read_bundler() {
+  local dir="$1" val bval ok
+  lines_load "$dir/.bundle/config"
+  if val=$(lines_read_key BUNDLE_COOLDOWN ':'); then
+    bval="${val#\"}"; bval="${bval%\"}"
+    ok=0; [[ "$bval" =~ ^[0-9]+$ ]] && [ "$bval" -ge "$OPT_DAYS" ] && ok=1
+    printf 'BUNDLE_COOLDOWN|>= %d days|%s|%s\n' "$OPT_DAYS" "$ok" "$val"
+  fi
+  if val=$(lines_read_key BUNDLE_DISABLE_CHECKSUM_VALIDATION ':'); then
+    bval="${val#\"}"; bval="${bval%\"}"; bval=$(lines_trim "$bval")
+    ok=1; [ "$bval" = "true" ] && ok=0
+    printf 'BUNDLE_DISABLE_CHECKSUM_VALIDATION|false|%s|%s\n' "$ok" "$val"
+  fi
+}
+
+# A project `allow-plugins` object is a reviewed allowlist and is not reported;
+# only `true` weakens.
+project_read_composer() {
+  local dir="$1" val days ok
+  lines_load "$dir/composer.json"
+  if val=$(_json_read_key period config policy cooldown); then
+    ok=0; days=$(parse_days_composer "$val") && [ "$days" -ge "$OPT_DAYS" ] && ok=1
+    printf 'policy.cooldown.period|>= %d days|%s|%s\n' "$OPT_DAYS" "$ok" "$val"
+  fi
+  if val=$(_json_read_key allow-plugins config) && [ "$val" != "{" ]; then
+    ok=1; [ "$val" = "true" ] && ok=0
+    printf 'allow-plugins|false|%s|%s\n' "$ok" "$val"
+  fi
+  if val=$(_json_read_key secure-http config); then
+    ok=0; [ "$val" = "true" ] && ok=1
+    printf 'secure-http|true|%s|%s\n' "$ok" "$val"
+  fi
+  if val=$(_json_read_key disable-tls config); then
+    ok=0; [ "$val" = "false" ] && ok=1
+    printf 'disable-tls|false|%s|%s\n' "$ok" "$val"
+  fi
+  if val=$(_json_read_key abandoned config audit); then
+    ok=0; [ "$val" = '"fail"' ] && ok=1
+    printf 'abandoned|"fail"|%s|%s\n' "$ok" "$val"
+  fi
+}
+
+project_path() {
+  case "$1" in
+    bundler) printf '%s/.bundle/config' "$2" ;;
+    composer) printf '%s/composer.json' "$2" ;;
+  esac
+}
+
 # ---------- per-tool: write ----------
 
 tool_write_value_line() {
@@ -1446,6 +1500,7 @@ attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
+  --project DIR         With --check: flag project configs in DIR that weaken the baseline (bundler, composer)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
@@ -1460,6 +1515,7 @@ Examples:
   pmsec --days 7
   pmsec --days 1 --force
   pmsec --check
+  pmsec --check --project .
   pmsec --disable --tool npm
 
 Environment:
@@ -1483,10 +1539,10 @@ EOF
 }
 
 # parse_args populates: MODE (enable|check|disable), OPT_JSON, OPT_ONLY (csv),
-# OPT_DAYS, OPT_FORCE, OPT_HELP, OPT_VERSION.
+# OPT_DAYS, OPT_PROJECT, OPT_FORCE, OPT_HELP, OPT_VERSION.
 parse_args() {
   MODE="enable"; MODE_SET=0
-  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
+  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_PROJECT=""; OPT_PROJECT_SET=0; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1513,6 +1569,8 @@ parse_args() {
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
       --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
       --days=*)     OPT_DAYS="${1#--days=}"; _validate_days "$OPT_DAYS" || return 2 ;;
+      --project)    shift; OPT_PROJECT="${1:-}"; OPT_PROJECT_SET=1 ;;
+      --project=*)  OPT_PROJECT="${1#--project=}"; OPT_PROJECT_SET=1 ;;
       --)           shift; while [ $# -gt 0 ]; do POS[${#POS[@]}]="$1"; shift; done; break ;;
       -*)           printf 'pmsec: unknown flag: %s\n' "$1" >&2; return 2 ;;
       *)            POS[${#POS[@]}]="$1" ;;
@@ -1521,6 +1579,10 @@ parse_args() {
   done
   if [ "${#POS[@]}" -gt 0 ]; then
     printf 'pmsec: unexpected argument: %s\n' "${POS[0]}" >&2
+    return 2
+  fi
+  if [ "$OPT_PROJECT_SET" = "1" ] && { [ -z "$OPT_PROJECT" ] || [ "$MODE" != "check" ]; }; then
+    printf 'pmsec: --project DIR requires --check\n' >&2
     return 2
   fi
   return 0
@@ -1656,6 +1718,44 @@ cmd_check() {
   [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec`\n' "$failing" "$OPT_DAYS" >&2
   [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec`\n' "$failing_extras" >&2
   { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
+  return 0
+}
+
+# Project scope: report only keys a project file sets, flagging the ones that
+# weaken the user-level baseline. Tools without a project reader are skipped.
+cmd_check_project() {
+  local dir="$OPT_PROJECT" rows_json="" first=1 weak=0 tool path k e o v
+  case "$dir" in /*) ;; *) dir="$PWD/$dir" ;; esac
+  dir="${dir%/}"; [ -n "$dir" ] || dir="/"
+  for tool in "${SELECTED[@]}"; do
+    case "$tool" in bundler|composer) ;; *) continue ;; esac
+    path=$(project_path "$tool" "$dir")
+    while IFS='|' read -r k e o v; do
+      [ -z "$k" ] && continue
+      [ "$o" = "0" ] && weak=$((weak+1))
+      if [ "$OPT_JSON" = "1" ]; then
+        [ "$first" = "1" ] || rows_json+=','$'\n'
+        first=0
+        rows_json+="    {\"tool\": $(json_str "$tool"), \"path\": $(json_str "$path"), \"key\": $(json_str "$k"), "
+        rows_json+="\"configured\": $(json_str "$v"), \"expected\": $(json_str "$e"), \"ok\": $(json_bool "$o")}"
+      else
+        local status="OK     "; [ "$o" = "0" ] && status="WEAK   "
+        printf '%s %s %s = %s  [%s]\n' "$status" "$(pad4 "$tool")" "$k" "$v" "$path"
+      fi
+    done < <("project_read_$tool" "$dir")
+  done
+  if [ "$OPT_JSON" = "1" ]; then
+    local ok="true"; [ "$weak" -gt 0 ] && ok="false"
+    if [ -z "$rows_json" ]; then
+      printf '{\n  "project": %s,\n  "bundleDays": %d,\n  "rows": [],\n  "ok": %s\n}\n' "$(json_str "$dir")" "$OPT_DAYS" "$ok"
+    else
+      printf '{\n  "project": %s,\n  "bundleDays": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$(json_str "$dir")" "$OPT_DAYS" "$rows_json" "$ok"
+    fi
+  fi
+  if [ "$weak" -gt 0 ]; then
+    printf 'pmsec: %d project setting(s) weaken the baseline in %s\n' "$weak" "$dir" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -1944,7 +2044,8 @@ main() {
   if [ "$OPT_HELP" = "1" ]; then USAGE; return 0; fi
   select_tools || return $?
   case "$MODE" in
-    check)   cmd_check ;;
+    check)
+      if [ "$OPT_PROJECT_SET" = "1" ]; then cmd_check_project; else cmd_check; fi ;;
     disable) cmd_disable ;;
     enable)  cmd_enable ;;
     doctor)

@@ -174,7 +174,12 @@ allow-file=workspaces
 ```
 
 Review checked-in tool configs before trusting an unfamiliar repo.
-`pmsec --check` validates the user-global baseline only.
+`pmsec --check` validates the user-global baseline. `pmsec --check --project DIR`
+reports keys set in a project's `.bundle/config` (`BUNDLE_COOLDOWN`,
+`BUNDLE_DISABLE_CHECKSUM_VALIDATION`) and `composer.json` `config`
+(`policy.cooldown.period`, `allow-plugins: true`, `secure-http`, `disable-tls`,
+`audit.abandoned`) and exits 1 when any of them weakens the baseline. Absent
+keys inherit the baseline and are not reported.
 
 ## What the baseline does not cover
 

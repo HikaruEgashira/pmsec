@@ -116,7 +116,8 @@ released binaries. Findings:
   pmsec writes. The single exception is mise `paranoid`, which mise refuses to
   read from project config. `pmsec --check` inspects the user-level file only
   and therefore reports OK while a cloned repo neutralises the baseline.
-  Tracked as a feature request in #185 (project-scope check).
+  `pmsec --check --project DIR` covers bundler `.bundle/config` and
+  composer `composer.json`; other tools are tracked in #185.
 - **Lockfiles bypass cooldowns** in npm, yarn, bun, cargo, uv, bundler and
   composer. pnpm re-verifies unless `trustLockfile: true`. A poisoned lockfile
   in a cloned repo installs regardless of age.

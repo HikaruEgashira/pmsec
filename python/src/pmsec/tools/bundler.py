@@ -60,3 +60,22 @@ def unset(ctx: Context) -> dict:
     if removed:
         write_atomic(p, after)
     return {"path": str(p), "removed": removed}
+
+
+def read_project(directory: Path, days: int) -> list[dict]:
+    """Project scope: `<project>/.bundle/config` overrides the user file. Only
+    keys that are present can weaken the baseline; absent keys inherit it."""
+    p = directory / ".bundle" / "config"
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
+    rows = []
+    cooldown = read_key(raw, KEY, sep=SEP)
+    if cooldown is not None:
+        d = _parse_days(cooldown)
+        rows.append({"key": KEY, "configured": cooldown, "expected": f">= {days} days", "ok": d is not None and d >= days})
+    checksum = read_key(raw, "BUNDLE_DISABLE_CHECKSUM_VALIDATION", sep=SEP)
+    if checksum is not None:
+        rows.append({
+            "key": "BUNDLE_DISABLE_CHECKSUM_VALIDATION", "configured": checksum, "expected": "false",
+            "ok": checksum.strip('"').strip() != "true",
+        })
+    return [{"tool": NAME, "path": str(p), **r} for r in rows]

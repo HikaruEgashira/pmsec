@@ -447,6 +447,25 @@ test("--check and --disable are mutually exclusive", async () => {
   assert.match(err, /mutually exclusive/);
 });
 
+test("--project requires --check", async () => {
+  const home = await setupHome();
+  for (const argv of [["--project", home], ["--disable", "--project", home], ["--check", "--project"]]) {
+    const { code, err } = await runCli(argv, home);
+    assert.equal(code, 2);
+    assert.match(err, /--project DIR requires --check/);
+  }
+});
+
+test("--check --project prints WEAK rows for weakening project keys", async () => {
+  const home = await setupHome();
+  await mkdir(join(home, "proj", ".bundle"), { recursive: true });
+  await writeFile(join(home, "proj", ".bundle", "config"), '---\nBUNDLE_COOLDOWN: "0"\n');
+  const { code, out, err } = await runCli(["--check", "--project", join(home, "proj")], home);
+  assert.equal(code, 1);
+  assert.match(out, /^WEAK    bundler BUNDLE_COOLDOWN = "0"/m);
+  assert.match(err, /1 project setting\(s\) weaken the baseline/);
+});
+
 test("--version prints package.json version and exits 0", async () => {
   const home = await setupHome();
   const pkg = JSON.parse(await readFile(join(import.meta.dirname, "..", "package.json"), "utf8"));

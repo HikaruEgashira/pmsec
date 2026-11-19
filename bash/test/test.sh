@@ -441,6 +441,28 @@ t_check_and_disable_mutually_exclusive() {
   assert_match "msg" "mutually exclusive" "$err"
 }
 
+t_project_requires_check() {
+  local home err rc; home=$(setup_home)
+  err=$(run_pmsec "$home" -- --project "$home" 2>&1 1>/dev/null); rc=$?
+  assert_eq "exit code" "2" "$rc" || { rm -rf -- "$home"; return 1; }
+  assert_match "msg" "--project DIR requires --check" "$err" || { rm -rf -- "$home"; return 1; }
+  err=$(run_pmsec "$home" -- --check --project 2>&1 1>/dev/null); rc=$?
+  rm -rf -- "$home"
+  assert_eq "exit code" "2" "$rc"
+}
+
+t_check_project_prints_weak_rows() {
+  local home out err rc; home=$(setup_home)
+  mkdir -p "$home/proj/.bundle"
+  printf -- '---\nBUNDLE_COOLDOWN: "0"\n' > "$home/proj/.bundle/config"
+  out=$(run_pmsec "$home" -- --check --project "$home/proj" 2>"$home/err"); rc=$?
+  err=$(cat "$home/err")
+  rm -rf -- "$home"
+  assert_eq "exit code" "1" "$rc" || return 1
+  assert_match "row" 'WEAK    bundler BUNDLE_COOLDOWN = "0"' "$out" || return 1
+  assert_match "msg" "1 project setting\\(s\\) weaken the baseline" "$err"
+}
+
 t_version_flag() {
   local expected
   expected=$(grep -E '^PMSEC_VERSION=' "$PMSEC" | head -1 | sed -E 's/^PMSEC_VERSION="([^"]+)".*/\1/')
@@ -532,6 +554,8 @@ T "--days N overrides bundle cooldown for enable and check" t_days_overrides_bun
 T "--days rejects non-positive integers with exit 2" t_days_rejects_invalid
 T "rejects positional argument with exit 2" t_enable_rejects_positional_arg
 T "--check and --disable are mutually exclusive" t_check_and_disable_mutually_exclusive
+T "--project requires --check" t_project_requires_check
+T "--check --project prints WEAK rows" t_check_project_prints_weak_rows
 T "--version prints PMSEC_VERSION" t_version_flag
 t_pnpm_11_default_enforced() {
   local home; home=$(setup_home)

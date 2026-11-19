@@ -105,3 +105,30 @@ def unset(ctx: Context) -> dict:
     if removed:
         write_atomic(p, text)
     return {"path": str(p), "removed": removed}
+
+
+# Project scope: `<project>/composer.json` `config` overrides the user file.
+# Only keys that are present can weaken the baseline; absent keys inherit it.
+# A project `allow-plugins` object is a reviewed allowlist and is not reported;
+# only `true` weakens.
+PROJECT_CHECKS = [
+    {"key": "allow-plugins", "path": ["config", "allow-plugins"], "expected": "false", "ok": lambda v: v != "true"},
+    {"key": "secure-http", "path": ["config", "secure-http"], "expected": "true", "ok": lambda v: v == "true"},
+    {"key": "disable-tls", "path": ["config", "disable-tls"], "expected": "false", "ok": lambda v: v == "false"},
+    {"key": "abandoned", "path": ["config", "audit", "abandoned"], "expected": '"fail"', "ok": lambda v: v == '"fail"'},
+]
+
+
+def read_project(directory: Path, days: int) -> list[dict]:
+    p = directory / "composer.json"
+    raw = p.read_text("utf-8-sig") if p.exists() else ""
+    rows = []
+    cooldown = read_json_key(raw, COOLDOWN_PATH)
+    if cooldown is not None:
+        d = _parse_days(cooldown)
+        rows.append({"key": KEY, "configured": cooldown, "expected": f">= {days} days", "ok": d is not None and d >= days})
+    for c in PROJECT_CHECKS:
+        cur = read_json_key(raw, c["path"])
+        if cur is not None and cur != "{":
+            rows.append({"key": c["key"], "configured": cur, "expected": c["expected"], "ok": c["ok"](cur)})
+    return [{"tool": NAME, "path": str(p), **r} for r in rows]

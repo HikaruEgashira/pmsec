@@ -1,0 +1,61 @@
+{
+  "setup": {
+    "proj/composer.json": "{\n  \"name\": \"acme/app\",\n  \"config\": {\n    \"allow-plugins\": true,\n    \"secure-http\": false,\n    \"disable-tls\": true,\n    \"audit\": {\n      \"abandoned\": \"ignore\"\n    },\n    \"policy\": {\n      \"cooldown\": {\n        \"period\": \"12 hours\"\n      }\n    }\n  }\n}\n"
+  },
+  "args": [
+    "--tool",
+    "composer",
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "project": "<HOME>/proj",
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "composer",
+        "path": "<HOME>/proj/composer.json",
+        "key": "policy.cooldown.period",
+        "configured": "\"12 hours\"",
+        "expected": ">= 1 days",
+        "ok": false
+      },
+      {
+        "tool": "composer",
+        "path": "<HOME>/proj/composer.json",
+        "key": "allow-plugins",
+        "configured": "true",
+        "expected": "false",
+        "ok": false
+      },
+      {
+        "tool": "composer",
+        "path": "<HOME>/proj/composer.json",
+        "key": "secure-http",
+        "configured": "false",
+        "expected": "true",
+        "ok": false
+      },
+      {
+        "tool": "composer",
+        "path": "<HOME>/proj/composer.json",
+        "key": "disable-tls",
+        "configured": "true",
+        "expected": "false",
+        "ok": false
+      },
+      {
+        "tool": "composer",
+        "path": "<HOME>/proj/composer.json",
+        "key": "abandoned",
+        "configured": "\"ignore\"",
+        "expected": "\"fail\"",
+        "ok": false
+      }
+    ],
+    "ok": false
+  }
+}

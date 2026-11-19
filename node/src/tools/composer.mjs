@@ -2,6 +2,7 @@ import { composerConfigPath } from "../util/paths.mjs";
 import { readSafe, writeAtomic } from "../util/io.mjs";
 import { readJsonKey, setJsonKey, removeJsonKey } from "../util/jsonconf.mjs";
 import { buildPreflight } from "../util/version.mjs";
+import { join } from "node:path";
 
 export const name = "composer";
 // Composer's cooldown lives under the unified policy block (Composer >= 2.11):
@@ -93,4 +94,31 @@ export async function unset(ctx) {
   }
   if (removed) await writeAtomic(p, text);
   return { path: p, removed };
+}
+
+// Project scope: `<project>/composer.json` `config` overrides the user file.
+// Only keys that are present can weaken the baseline; absent keys inherit it.
+// A project `allow-plugins` object is a reviewed allowlist and is not reported;
+// only `true` weakens.
+const PROJECT_CHECKS = [
+  { key: "allow-plugins", path: ["config", "allow-plugins"], expected: "false", ok: v => v !== "true" },
+  { key: "secure-http", path: ["config", "secure-http"], expected: "true", ok: v => v === "true" },
+  { key: "disable-tls", path: ["config", "disable-tls"], expected: "false", ok: v => v === "false" },
+  { key: "abandoned", path: ["config", "audit", "abandoned"], expected: '"fail"', ok: v => v === '"fail"' },
+];
+
+export async function readProject(dir, days) {
+  const p = join(dir, "composer.json");
+  const raw = await readSafe(p);
+  const rows = [];
+  const cooldown = readJsonKey(raw, COOLDOWN_PATH);
+  if (cooldown !== null) {
+    const d = parseDays(cooldown);
+    rows.push({ key, configured: cooldown, expected: `>= ${days} days`, ok: d !== null && d >= days });
+  }
+  for (const c of PROJECT_CHECKS) {
+    const cur = readJsonKey(raw, c.path);
+    if (cur !== null && cur !== "{") rows.push({ key: c.key, configured: cur, expected: c.expected, ok: c.ok(cur) });
+  }
+  return rows.map(r => ({ tool: name, path: p, ...r }));
 }

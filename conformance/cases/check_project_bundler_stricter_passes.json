@@ -1,0 +1,29 @@
+{
+  "setup": {
+    "proj/.bundle/config": "---\nBUNDLE_COOLDOWN: \"7\"\n"
+  },
+  "args": [
+    "--tool",
+    "bundler",
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "project": "<HOME>/proj",
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "bundler",
+        "path": "<HOME>/proj/.bundle/config",
+        "key": "BUNDLE_COOLDOWN",
+        "configured": "\"7\"",
+        "expected": ">= 1 days",
+        "ok": true
+      }
+    ],
+    "ok": true
+  }
+}

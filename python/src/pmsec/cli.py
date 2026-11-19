@@ -24,6 +24,7 @@ examples:
   uvx pmsec --days 7
   uvx pmsec --days 1 --force
   uvx pmsec --check
+  uvx pmsec --check --project .
   uvx pmsec --disable --tool npm
 """
 
@@ -56,6 +57,7 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--disable", action="store_true", help="remove the hardening bundle from selected tools")
     mode.add_argument("--doctor", action="store_true", help="diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)")
     p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)")
+    p.add_argument("--project", metavar="DIR", help="with --check: flag project configs in DIR that weaken the baseline (bundler, composer)")
     p.add_argument("--json", action="store_true", help="emit JSON output")
     p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
     p.add_argument("--force", action="store_true", help="overwrite stricter existing cooldowns and hardening values (otherwise enable is monotonic)")
@@ -129,6 +131,24 @@ def _check(args, targets, ctx: Context, out, err):
         err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.days} days — run `pmsec`\n")
     if failing_extras:
         err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value — run `pmsec`\n")
+    return 0 if ok else 1
+
+
+# Project scope: report only keys a project file sets, flagging the ones that
+# weaken the user-level baseline. Tools without a project reader are skipped.
+def _check_project(args, targets, out, err):
+    directory = Path(os.path.abspath(args.project))
+    rows = [r for t in targets if hasattr(t, "read_project") for r in t.read_project(directory, args.days)]
+    weak = [r for r in rows if not r["ok"]]
+    ok = not weak
+    if args.json:
+        out.write(json.dumps({"project": str(directory), "bundleDays": args.days, "rows": rows, "ok": ok}, indent=2) + "\n")
+    else:
+        for r in rows:
+            status = "OK     " if r["ok"] else "WEAK   "
+            out.write(f"{status} {r['tool']:<4} {r['key']} = {r['configured']}  [{r['path']}]\n")
+    if weak:
+        err.write(f"pmsec: {len(weak)} project setting(s) weaken the baseline in {directory}\n")
     return 0 if ok else 1
 
 
@@ -328,7 +348,10 @@ def main(
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
 
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.project is not None and (not args.project or not args.check):
+        parser.error("--project DIR requires --check")
     targets = _select(args.tool)
     ctx = Context(env=env, home=home, platform=platform)
     if env.get("PMSEC_HOME"):
@@ -336,6 +359,8 @@ def main(
             f"pmsec: PMSEC_HOME is ignored by the python port; paths resolve from HOME ({home}). "
             "Use the bash port for root-context redirection.\n"
         )
+    if args.project is not None:
+        return _check_project(args, targets, out, err)
     if args.check:
         return _check(args, targets, ctx, out, err)
     if args.disable:

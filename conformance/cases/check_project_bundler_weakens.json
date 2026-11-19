@@ -1,0 +1,39 @@
+{
+  "setup": {
+    "proj/.bundle/config": "---\nBUNDLE_COOLDOWN: \"0\"\nBUNDLE_DISABLE_CHECKSUM_VALIDATION: \"true\"\nBUNDLE_PATH: \"vendor/bundle\"\n"
+  },
+  "args": [
+    "--tool",
+    "bundler",
+    "--days",
+    "3",
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "project": "<HOME>/proj",
+    "bundleDays": 3,
+    "rows": [
+      {
+        "tool": "bundler",
+        "path": "<HOME>/proj/.bundle/config",
+        "key": "BUNDLE_COOLDOWN",
+        "configured": "\"0\"",
+        "expected": ">= 3 days",
+        "ok": false
+      },
+      {
+        "tool": "bundler",
+        "path": "<HOME>/proj/.bundle/config",
+        "key": "BUNDLE_DISABLE_CHECKSUM_VALIDATION",
+        "configured": "\"true\"",
+        "expected": "false",
+        "ok": false
+      }
+    ],
+    "ok": false
+  }
+}

@@ -1,6 +1,6 @@
 import { homedir, userInfo } from "node:os";
 import { readFileSync, accessSync, constants as fsConstants, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { shellQuote } from "./util/io.mjs";
 import * as npm from "./tools/npm.mjs";
 import * as pnpm from "./tools/pnpm.mjs";
@@ -30,6 +30,7 @@ attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
+  --project DIR         With --check: flag project configs in DIR that weaken the baseline (bundler, composer)
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
@@ -44,6 +45,7 @@ Examples:
   npx pmsec --days 7
   npx pmsec --days 1 --force
   npx pmsec --check
+  npx pmsec --check --project .
   npx pmsec --disable --tool npm
 `;
 
@@ -54,7 +56,7 @@ function parseDays(raw) {
 }
 
 function parse(argv) {
-  const opts = { mode: "enable", json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false };
+  const opts = { mode: "enable", json: false, only: null, days: BUNDLE_DAYS, project: null, force: false, help: false, version: false };
   let modeSet = false;
   const setMode = (m) => {
     if (modeSet && opts.mode !== m) throw new Error(`--check, --disable, and --doctor are mutually exclusive`);
@@ -75,10 +77,13 @@ function parse(argv) {
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
     else if (a === "--days") opts.days = parseDays(argv[++i]);
     else if (a.startsWith("--days=")) opts.days = parseDays(a.slice(7));
+    else if (a === "--project") opts.project = argv[++i];
+    else if (a.startsWith("--project=")) opts.project = a.slice(10);
     else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
     else positional.push(a);
   }
   if (positional.length) throw new Error(`unexpected argument: ${positional[0]}`);
+  if (opts.project !== null && (!opts.project || opts.mode !== "check")) throw new Error(`--project DIR requires --check`);
   return opts;
 }
 
@@ -133,6 +138,20 @@ async function runCheck(targets, { json, days }, ctx, out, err) {
   else out.write(renderHuman(rows, days));
   if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec\`\n`);
   if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec\`\n`);
+  return ok ? 0 : 1;
+}
+
+// Project scope: report only keys a project file sets, flagging the ones that
+// weaken the user-level baseline. Tools without a project reader are skipped.
+async function runProjectCheck(targets, { json, days, project }, out, err) {
+  const dir = resolve(project);
+  const readers = targets.filter(t => typeof t.readProject === "function");
+  const rows = (await Promise.all(readers.map(t => t.readProject(dir, days)))).flat();
+  const weak = rows.filter(r => !r.ok);
+  const ok = weak.length === 0;
+  if (json) out.write(JSON.stringify({ project: dir, bundleDays: days, rows, ok }, null, 2) + "\n");
+  else for (const r of rows) out.write(`${r.ok ? "OK     " : "WEAK   "} ${r.tool.padEnd(4)} ${r.key} = ${r.configured}  [${r.path}]\n`);
+  if (weak.length) err.write(`pmsec: ${weak.length} project setting(s) weaken the baseline in ${dir}\n`);
   return ok ? 0 : 1;
 }
 
@@ -305,6 +324,7 @@ export async function run(argv, {
     err.write(`pmsec: PMSEC_HOME is ignored by the node port; paths resolve from HOME (${home}). Use the bash port for root-context redirection.\n`);
   }
   try {
+    if (opts.project !== null) return await runProjectCheck(targets, opts, out, err);
     if (opts.mode === "check") return await runCheck(targets, opts, ctx, out, err);
     if (opts.mode === "disable") return await runDisable(targets, opts.json, ctx, out, err);
     if (opts.mode === "doctor") return runDoctor(targets, opts.json, ctx, out);
