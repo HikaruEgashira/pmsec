@@ -10,3 +10,5 @@ class Context:
     home: Path
     platform: str
     force: bool = False
+    # HOME as seen by the OS; differs from `home` when PMSEC_HOME is set.
+    os_home: Path | None = None

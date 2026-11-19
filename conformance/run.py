@@ -82,12 +82,23 @@ def normalize(obj, home: Path):
     return obj
 
 
+def expand_env(case_env: dict[str, str], home: Path) -> dict[str, str]:
+    """Expand the literal token <HOME> in case env values to the case temp dir."""
+    return {k: v.replace("<HOME>", str(home)) for k, v in case_env.items()}
+
+
+def applies_to(case: dict, impl: str) -> bool:
+    """A case without `impls` runs on every port; otherwise only on those listed."""
+    impls = case.get("impls")
+    return impls is None or impl in impls
+
+
 def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
     case = json.loads(case_path.read_text())
     home = Path(tempfile.mkdtemp(prefix="pmsec-conf-"))
     try:
         env = env_for(impl, home)
-        env.update(case.get("env", {}))
+        env.update(expand_env(case.get("env", {}), home))
         for rel, body in case.get("setup", {}).items():
             target = home / rel
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +130,9 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
             got = (home / rel).read_bytes().decode("utf-8") if (home / rel).exists() else None
             if got != body:
                 return False, f"file mismatch: {rel}\n  expected: {body!r}\n  actual:   {got!r}"
+        for rel in case.get("expected_absent", []):
+            if (home / rel).exists():
+                return False, f"file should not exist: {rel}"
         return True, ""
     finally:
         shutil.rmtree(home, ignore_errors=True)
@@ -135,6 +149,7 @@ def main() -> int:
         if not cases:
             print(f"no case named {args.case}", file=sys.stderr)
             return 2
+    cases = [c for c in cases if applies_to(json.loads(c.read_text()), args.impl)]
     failed = 0
     for case in cases:
         ok, msg = run_case(args.impl, case)

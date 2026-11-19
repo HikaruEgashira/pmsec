@@ -35,6 +35,27 @@ class ConformanceEnvTest(unittest.TestCase):
             with self.subTest(path=row["path"]):
                 self.assertEqual(row["path"].replace("<HOME>", home.as_posix()), expected)
 
+    def test_home_token_in_case_env_expands_to_the_case_home(self):
+        home = Path("/tmp/pmsec-conformance-home")
+        env = run.expand_env({"HOME": "<HOME>/not-home", "PMSEC_HOME": "<HOME>", "X": "1"}, home)
+        self.assertEqual(env, {"HOME": f"{home}/not-home", "PMSEC_HOME": str(home), "X": "1"})
+
+    def test_impls_field_limits_which_ports_run_a_case(self):
+        self.assertTrue(run.applies_to({}, "powershell"))
+        case = {"impls": ["bash", "node", "python"]}
+        for impl in ("bash", "node", "python"):
+            self.assertTrue(run.applies_to(case, impl))
+        self.assertFalse(run.applies_to(case, "powershell"))
+
+    def test_case_impls_name_known_ports(self):
+        known = {"bash", "node", "python", "powershell"}
+        for path in sorted(run.CASES_DIR.glob("*.json")):
+            impls = json.loads(path.read_text()).get("impls")
+            if impls is not None:
+                with self.subTest(case=path.stem):
+                    self.assertTrue(impls)
+                    self.assertLessEqual(set(impls), known)
+
 
 if __name__ == "__main__":
     unittest.main()

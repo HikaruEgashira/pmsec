@@ -567,9 +567,16 @@ def test_symlink_at_bak_path_is_refused(tmp_path):
     assert (home / ".npmrc").read_text() == "registry=https://original/\n"
 
 
-def test_doctor_never_claims_pmsec_home_support(tmp_path):
-    code, out, err = run(["--doctor", "--json"], tmp_path, PMSEC_HOME="/elsewhere")
+def test_pmsec_home_redirects_writes_and_doctor_reports_it(tmp_path):
+    home = tmp_path / "home"
+    target = tmp_path / "target"
+    home.mkdir()
+    target.mkdir()
+    code, out, err = run(["--doctor", "--json"], home, PMSEC_HOME=str(target))
     report = json.loads(out)
-    assert report["pmsecHome"] is None
-    assert report["pmsecHomeSource"] == "HOME"
-    assert "PMSEC_HOME is ignored" in err
+    assert report["home"] == str(home)
+    assert report["pmsecHome"] == str(target)
+    assert report["pmsecHomeSource"] == "PMSEC_HOME"
+    run(["--tool", "npm", "--json"], home, PMSEC_HOME=str(target))
+    assert "min-release-age=" in (target / ".npmrc").read_text()
+    assert not (home / ".npmrc").exists()

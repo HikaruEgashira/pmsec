@@ -190,9 +190,8 @@ def _doctor(args, targets, ctx: Context, out) -> int:
     # doctor.ok is intentionally narrow: parent must be writable as the
     # running uid. Everything else is informational.
     ok_flag = all(t["parentWritable"] for t in tools)
-    # This port resolves paths from HOME only; PMSEC_HOME is a bash/powershell
-    # feature (it needs the root->owner chown handback those ports implement).
-    pmsec_home = None
+    pmsec_home = ctx.env.get("PMSEC_HOME") or None
+    os_home = ctx.os_home or ctx.home
     report = {
         "doctor": True,
         "version": __version__,
@@ -200,7 +199,7 @@ def _doctor(args, targets, ctx: Context, out) -> int:
         "uid": uid,
         "euid": euid,
         "username": username,
-        "home": str(ctx.home),
+        "home": str(os_home),
         "pmsecHome": pmsec_home,
         "pmsecHomeSource": "PMSEC_HOME" if pmsec_home else "HOME",
         "tools": tools,
@@ -214,8 +213,8 @@ def _doctor(args, targets, ctx: Context, out) -> int:
     if is_posix:
         suffix = f" ({username})" if username else ""
         out.write(f"  uid/euid   : {uid}/{euid}{suffix}\n")
-    out.write(f"  HOME       : {ctx.home}\n")
-    out.write("  PMSEC_HOME : (not supported by this port — using HOME)\n\n")
+    out.write(f"  HOME       : {os_home}\n")
+    out.write(f"  PMSEC_HOME : {pmsec_home or '(unset — using HOME)'}\n\n")
     for t in tools:
         flag = "ok    " if t["parentWritable"] else "BLOCK "
         owner_suffix = f" (uid={t['owner']})" if t["exists"] and t["owner"] is not None else ""
@@ -330,12 +329,10 @@ def main(
 
     args = _parser().parse_args(argv)
     targets = _select(args.tool)
-    ctx = Context(env=env, home=home, platform=platform)
-    if env.get("PMSEC_HOME"):
-        err.write(
-            f"pmsec: PMSEC_HOME is ignored by the python port; paths resolve from HOME ({home}). "
-            "Use the bash port for root-context redirection.\n"
-        )
+    # PMSEC_HOME wins over HOME so a single env var redirects every path,
+    # matching the bash and powershell ports.
+    pmsec_home = env.get("PMSEC_HOME")
+    ctx = Context(env=env, home=Path(pmsec_home) if pmsec_home else home, platform=platform, os_home=home)
     if args.check:
         return _check(args, targets, ctx, out, err)
     if args.disable:

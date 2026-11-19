@@ -1,0 +1,17 @@
+{
+  "impls": ["bash", "node", "python"],
+  "env": { "HOME": "<HOME>/not-home", "PMSEC_HOME": "<HOME>" },
+  "setup": { "not-home/.keep": "" },
+  "args": ["--tool", "npm", "--days", "7", "--json"],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true,
+    "bundleDays": 7,
+    "results": [
+      {"tool": "npm", "path": "<HOME>/.npmrc", "days": 7, "requested": 7, "kept": false, "forced": false, "ok": true, "warn": null}
+    ],
+    "warnings": [],
+    "ok": true
+  },
+  "expected_absent": ["not-home/.npmrc"]
+}
