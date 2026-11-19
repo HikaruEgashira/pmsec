@@ -1,0 +1,104 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.npmrc": "min-release-age=0\nignore-scripts=false\nmin-release-age-exclude[]=left-pad\n",
+    "proj/pnpm-workspace.yaml": "packages:\n  - 'pkgs/*'\nminimumReleaseAge: 0\ndangerouslyAllowAllBuilds: true\nminimumReleaseAgeExclude:\n  - foo\n",
+    "proj/.yarnrc.yml": "npmMinimalAgeGate: \"0d\"  # off\nenableScripts: true\nnpmPreapprovedPackages:\n  - \"@acme/*\"\n",
+    "proj/bunfig.toml": "[install]\nminimumReleaseAge = 0\nminimumReleaseAgeExcludes = [\"foo\"]\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "npm",
+        "key": "min-release-age",
+        "path": "<HOME>/proj/.npmrc",
+        "configured": "0",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "npm",
+        "key": "ignore-scripts",
+        "path": "<HOME>/proj/.npmrc",
+        "configured": "false",
+        "reason": "scripts-enabled"
+      },
+      {
+        "tool": "npm",
+        "key": "min-release-age-exclude",
+        "path": "<HOME>/proj/.npmrc",
+        "configured": "left-pad",
+        "reason": "exclusion-list"
+      },
+      {
+        "tool": "pnpm",
+        "key": "minimumReleaseAge",
+        "path": "<HOME>/proj/pnpm-workspace.yaml",
+        "configured": "0",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "pnpm",
+        "key": "dangerouslyAllowAllBuilds",
+        "path": "<HOME>/proj/pnpm-workspace.yaml",
+        "configured": "true",
+        "reason": "scripts-enabled"
+      },
+      {
+        "tool": "pnpm",
+        "key": "minimumReleaseAgeExclude",
+        "path": "<HOME>/proj/pnpm-workspace.yaml",
+        "configured": "",
+        "reason": "exclusion-list"
+      },
+      {
+        "tool": "yarn",
+        "key": "npmMinimalAgeGate",
+        "path": "<HOME>/proj/.yarnrc.yml",
+        "configured": "0d",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "yarn",
+        "key": "enableScripts",
+        "path": "<HOME>/proj/.yarnrc.yml",
+        "configured": "true",
+        "reason": "scripts-enabled"
+      },
+      {
+        "tool": "yarn",
+        "key": "npmPreapprovedPackages",
+        "path": "<HOME>/proj/.yarnrc.yml",
+        "configured": "",
+        "reason": "exclusion-list"
+      },
+      {
+        "tool": "bun",
+        "key": "minimumReleaseAge",
+        "path": "<HOME>/proj/bunfig.toml",
+        "configured": "0",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "bun",
+        "key": "minimumReleaseAgeExcludes",
+        "path": "<HOME>/proj/bunfig.toml",
+        "configured": "[\"foo\"]",
+        "reason": "exclusion-list"
+      }
+    ],
+    "ok": false
+  }
+}

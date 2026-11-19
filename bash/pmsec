@@ -1446,6 +1446,7 @@ attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
+  --project [DIR]       With --check: scan DIR (default cwd) project configs for keys weakening the baseline
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
@@ -1460,6 +1461,7 @@ Examples:
   pmsec --days 7
   pmsec --days 1 --force
   pmsec --check
+  pmsec --check --project
   pmsec --disable --tool npm
 
 Environment:
@@ -1486,7 +1488,7 @@ EOF
 # OPT_DAYS, OPT_FORCE, OPT_HELP, OPT_VERSION.
 parse_args() {
   MODE="enable"; MODE_SET=0
-  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
+  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0; OPT_PROJECT=""; OPT_PROJECT_SET=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1509,6 +1511,10 @@ parse_args() {
           printf 'pmsec: --check, --disable, and --doctor are mutually exclusive\n' >&2; return 2
         fi
         MODE="doctor"; MODE_SET=1 ;;
+      --project)
+        OPT_PROJECT_SET=1; OPT_PROJECT="."
+        case "${2-}" in ''|-*) ;; *) shift; OPT_PROJECT="$1" ;; esac ;;
+      --project=*)  OPT_PROJECT_SET=1; OPT_PROJECT="${1#--project=}" ;;
       --tool)       shift; OPT_ONLY="$1" ;;
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
       --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
@@ -1521,6 +1527,10 @@ parse_args() {
   done
   if [ "${#POS[@]}" -gt 0 ]; then
     printf 'pmsec: unexpected argument: %s\n' "${POS[0]}" >&2
+    return 2
+  fi
+  if [ "$OPT_PROJECT_SET" = "1" ] && [ "$MODE" != "check" ]; then
+    printf 'pmsec: --project requires --check\n' >&2
     return 2
   fi
   return 0
@@ -1656,6 +1666,104 @@ cmd_check() {
   [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec`\n' "$failing" "$OPT_DAYS" >&2
   [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec`\n' "$failing_extras" >&2
   { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
+  return 0
+}
+
+# ---------- --check --project ----------
+# Read-only scan of project-level package-manager configs for keys that
+# weaken the user-level baseline. Rules run in table order; last key wins.
+# tool|file|fmt|key|reason|bad
+PROJECT_RULES='npm|.npmrc|ini|min-release-age|zero-cooldown|
+npm|.npmrc|ini|ignore-scripts|scripts-enabled|false
+npm|.npmrc|ini|strict-allow-scripts|scripts-enabled|false
+npm|.npmrc|ini|dangerously-allow-all-scripts|scripts-enabled|true
+npm|.npmrc|ini|min-release-age-exclude|exclusion-list|
+pnpm|pnpm-workspace.yaml|yaml|minimumReleaseAge|zero-cooldown|
+pnpm|pnpm-workspace.yaml|yaml|dangerouslyAllowAllBuilds|scripts-enabled|true
+pnpm|pnpm-workspace.yaml|yaml|minimumReleaseAgeExclude|exclusion-list|
+yarn|.yarnrc.yml|yaml|npmMinimalAgeGate|zero-cooldown|
+yarn|.yarnrc.yml|yaml|enableScripts|scripts-enabled|true
+yarn|.yarnrc.yml|yaml|npmPreapprovedPackages|exclusion-list|
+bun|bunfig.toml|toml|minimumReleaseAge|zero-cooldown|
+bun|bunfig.toml|toml|minimumReleaseAgeExcludes|exclusion-list|'
+
+# project_find_key FILE FMT KEY → prints last value, returns 1 if absent.
+# yaml: top-level only; toml: [install] only.
+project_find_key() {
+  local file="$1" fmt="$2" key="$3" line k v section="" found=0 val="" first=1
+  local re_ini='^[[:space:]]*([^=[:space:]]+)[[:space:]]*=(.*)$'
+  local re_yaml='^([A-Za-z0-9_-]+)[[:space:]]*:(.*)$'
+  local re_toml='^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=(.*)$'
+  local re_head='^[[:space:]]*\[([^]]*)\]' re_cmt='[[:space:]]+#.*$'
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$first" = "1" ]; then line="${line#$'\xef\xbb\xbf'}"; first=0; fi
+    if [ "$fmt" = "toml" ]; then
+      if [[ $line =~ $re_head ]]; then section=$(lines_trim "${BASH_REMATCH[1]}"); continue; fi
+      [ "$section" = "install" ] || continue
+    fi
+    case "$fmt" in
+      ini)  [[ $line =~ $re_ini ]] || continue ;;
+      yaml) [[ $line =~ $re_yaml ]] || continue ;;
+      toml) [[ $line =~ $re_toml ]] || continue ;;
+    esac
+    k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"
+    [ "$fmt" = "ini" ] && k="${k%\[\]}"
+    [ "$k" = "$key" ] || continue
+    v="${v%$'\r'}"
+    if [ "$fmt" != "ini" ] && [[ $v =~ $re_cmt ]]; then v="${v:0:${#v}-${#BASH_REMATCH[0]}}"; fi
+    v=$(lines_trim "$v")
+    if [ "${#v}" -ge 2 ]; then
+      case "$v" in
+        \"*\"|\'*\') v="${v:1:${#v}-2}" ;;
+      esac
+    fi
+    found=1; val="$v"
+  done < "$file"
+  [ "$found" = "1" ] || return 1
+  printf '%s' "$val"
+}
+
+cmd_check_project() {
+  local dir="$OPT_PROJECT" rows_json="" first=1 count=0
+  local tool file fmt key reason bad path val lower weak
+  while IFS='|' read -r tool file fmt key reason bad; do
+    case " ${SELECTED[*]} " in *" $tool "*) ;; *) continue ;; esac
+    if [ "$dir" = "." ]; then path="$file"; else path="${dir%/}/$file"; [ "$dir" = "/" ] && path="/$file"; fi
+    [ -f "$path" ] || continue
+    val=$(project_find_key "$path" "$fmt" "$key") || continue
+    weak=0
+    case "$reason" in
+      zero-cooldown) [[ $val =~ ^0+(\.0+)?[A-Za-z]*$ ]] && weak=1 ;;
+      scripts-enabled)
+        lower=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+        [ "$lower" = "$bad" ] && weak=1 ;;
+      *) weak=1 ;;
+    esac
+    [ "$weak" = "1" ] || continue
+    count=$((count+1))
+    if [ "$OPT_JSON" = "1" ]; then
+      [ "$first" = "1" ] || rows_json+=','$'\n'
+      first=0
+      rows_json+="    {\"tool\": $(json_str "$tool"), \"key\": $(json_str "$key"), \"path\": $(json_str "$path"), \"configured\": $(json_str "$val"), \"reason\": $(json_str "$reason")}"
+    else
+      printf 'WEAK    %s %s = %s  (%s)  [%s]\n' "$(pad4 "$tool")" "$key" "$val" "$reason" "$path"
+    fi
+  done <<< "$PROJECT_RULES"
+  if [ "$OPT_JSON" = "1" ]; then
+    local ok="true"
+    [ "$count" -gt 0 ] && ok="false"
+    if [ -z "$rows_json" ]; then
+      printf '{\n  "scope": "project",\n  "bundleDays": %d,\n  "rows": [],\n  "ok": %s\n}\n' "$OPT_DAYS" "$ok"
+    else
+      printf '{\n  "scope": "project",\n  "bundleDays": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_DAYS" "$rows_json" "$ok"
+    fi
+  elif [ "$count" -eq 0 ]; then
+    printf 'OK      project: no weakening keys  [%s]\n' "$dir"
+  fi
+  if [ "$count" -gt 0 ]; then
+    printf 'pmsec: %d project setting(s) weaken the baseline\n' "$count" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -1944,7 +2052,8 @@ main() {
   if [ "$OPT_HELP" = "1" ]; then USAGE; return 0; fi
   select_tools || return $?
   case "$MODE" in
-    check)   cmd_check ;;
+    check)
+      if [ "$OPT_PROJECT_SET" = "1" ]; then cmd_check_project; else cmd_check; fi ;;
     disable) cmd_disable ;;
     enable)  cmd_enable ;;
     doctor)

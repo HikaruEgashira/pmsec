@@ -1,0 +1,34 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.npmrc": "min-release-age=0\nmin-release-age=3\n",
+    "proj/.yarnrc.yml": "enableScripts: TRUE\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--tool",
+    "npm,yarn",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "yarn",
+        "key": "enableScripts",
+        "path": "<HOME>/proj/.yarnrc.yml",
+        "configured": "TRUE",
+        "reason": "scripts-enabled"
+      }
+    ],
+    "ok": false
+  }
+}
