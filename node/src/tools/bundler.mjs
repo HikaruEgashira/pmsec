@@ -33,7 +33,7 @@ export async function read(ctx) {
 export async function write(days, ctx) {
   const p = path(ctx);
   const text = setKey(await readSafe(p), key, `${key}: "${days}"`, { sep: SEP });
-  await writeAtomic(p, text);
+  await writeAtomic(p, text, { home: ctx.home });
   return { path: p };
 }
 
@@ -41,6 +41,6 @@ export async function unset(ctx) {
   const p = path(ctx);
   const before = await readSafe(p);
   const { text: after, removed } = removeKey(before, key, { sep: SEP });
-  if (removed) await writeAtomic(p, after);
+  if (removed) await writeAtomic(p, after, { home: ctx.home });
   return { path: p, removed };
 }

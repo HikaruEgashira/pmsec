@@ -188,10 +188,8 @@ function runDoctor(targets, json, ctx, out) {
     platform: ctx.platform,
     uid, euid, username,
     home: ctx.home,
-    // This port resolves paths from HOME only; PMSEC_HOME is a bash/powershell
-    // feature (it needs the root->owner chown handback those ports implement).
-    pmsecHome: null,
-    pmsecHomeSource: "HOME",
+    pmsecHome: ctx.pmsecHome ?? null,
+    pmsecHomeSource: ctx.pmsecHome ? "PMSEC_HOME" : "HOME",
     tools,
     ok: okFlag,
   };
@@ -203,7 +201,7 @@ function runDoctor(targets, json, ctx, out) {
   out.write(`  platform   : ${ctx.platform}\n`);
   if (isPosix) out.write(`  uid/euid   : ${uid}/${euid}${username ? ` (${username})` : ""}\n`);
   out.write(`  HOME       : ${ctx.home}\n`);
-  out.write(`  PMSEC_HOME : (not supported by this port — using HOME)\n\n`);
+  out.write(`  PMSEC_HOME : ${ctx.pmsecHome ?? "(unset — using HOME)"}\n\n`);
   for (const t of tools) {
     const flag = t.parentWritable ? "ok    " : "BLOCK ";
     const ownerSuffix = t.exists && t.owner !== null ? ` (uid=${t.owner})` : "";
@@ -300,10 +298,10 @@ export async function run(argv, {
   let targets;
   try { targets = selectTools(opts.only); }
   catch (e) { err.write(`pmsec: ${e.message}\n`); return 2; }
-  const ctx = { env, home, platform };
-  if (env.PMSEC_HOME) {
-    err.write(`pmsec: PMSEC_HOME is ignored by the node port; paths resolve from HOME (${home}). Use the bash port for root-context redirection.\n`);
-  }
+  // PMSEC_HOME redirects every path (e.g. `sudo PMSEC_HOME=/home/u pmsec`);
+  // writeAtomic then guards and hands files back to that home's owner.
+  const pmsecHome = env.PMSEC_HOME || null;
+  const ctx = { env, home: pmsecHome ?? home, platform, pmsecHome };
   try {
     if (opts.mode === "check") return await runCheck(targets, opts, ctx, out, err);
     if (opts.mode === "disable") return await runDisable(targets, opts.json, ctx, out, err);

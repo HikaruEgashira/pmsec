@@ -44,7 +44,7 @@ export async function write(days, ctx) {
   const p = path(ctx);
   let text = setKey(await readSafe(p), key, `${key} = "${days} days"`, { section });
   text = removeKey(text, legacy.key, { section: legacy.section }).text;
-  await writeAtomic(p, text);
+  await writeAtomic(p, text, { home: ctx.home });
   return { path: p };
 }
 
@@ -54,6 +54,6 @@ export async function unset(ctx) {
   const cooldown = removeKey(before, key, { section });
   const old = removeKey(cooldown.text, legacy.key, { section: legacy.section });
   const removed = cooldown.removed || old.removed;
-  if (removed) await writeAtomic(p, old.text);
+  if (removed) await writeAtomic(p, old.text, { home: ctx.home });
   return { path: p, removed };
 }

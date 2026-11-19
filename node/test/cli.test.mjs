@@ -588,11 +588,29 @@ test("a symlink planted at the .bak path is refused instead of followed", async 
   assert.equal(await readFile(join(home, ".npmrc"), "utf8"), "registry=https://original/\n");
 });
 
-test("--doctor never claims PMSEC_HOME support and warns when it is set", async () => {
+test("--doctor reports PMSEC_HOME as the path source when it is set", async () => {
   const home = await setupHome();
-  const { out, err } = await runCli(["--doctor", "--json"], home, "linux", { PMSEC_HOME: "/elsewhere" });
+  const target = await setupHome();
+  const { out, err } = await runCli(["--doctor", "--json"], home, "linux", { PMSEC_HOME: target });
   const report = JSON.parse(out);
+  assert.equal(report.pmsecHome, target);
+  assert.equal(report.pmsecHomeSource, "PMSEC_HOME");
+  assert.equal(report.home, target);
+  assert.doesNotMatch(err, /PMSEC_HOME is ignored/);
+});
+
+test("--doctor reports HOME as the path source when PMSEC_HOME is unset", async () => {
+  const home = await setupHome();
+  const report = JSON.parse((await runCli(["--doctor", "--json"], home)).out);
   assert.equal(report.pmsecHome, null);
   assert.equal(report.pmsecHomeSource, "HOME");
-  assert.match(err, /PMSEC_HOME is ignored/);
+});
+
+test("PMSEC_HOME redirects writes away from HOME", async () => {
+  const home = await setupHome();
+  const target = await setupHome();
+  const { code } = await runCli(["--tool", "npm"], home, "linux", { PMSEC_HOME: target });
+  assert.equal(code, 0);
+  assert.match(await readFile(join(target, ".npmrc"), "utf8"), /^min-release-age=1$/m);
+  await assert.rejects(readFile(join(home, ".npmrc"), "utf8"), { code: "ENOENT" });
 });
