@@ -1,0 +1,26 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.npmrc": "min-release-age=7\nignore-scripts=true\n",
+    "proj/pnpm-workspace.yaml": "minimumReleaseAge: 1440\ncatalog:\n  minimumReleaseAge: 0\n",
+    "proj/.yarnrc.yml": "npmMinimalAgeGate: 3d\nenableScripts: false\n",
+    "proj/bunfig.toml": "minimumReleaseAge = 0\n[install]\nminimumReleaseAge = 86400\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [],
+    "ok": true
+  }
+}
