@@ -12,6 +12,7 @@ import * as uv from "./tools/uv.mjs";
 import * as bundler from "./tools/bundler.mjs";
 import * as aube from "./tools/aube.mjs";
 import * as composer from "./tools/composer.mjs";
+import { scanProject } from "./project.mjs";
 
 const TOOLS = [npm, pnpm, yarn, bun, cargo, mise, uv, bundler, aube, composer];
 // Default cooldown for the hardening bundle. Override per-invocation with
@@ -30,6 +31,8 @@ attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
+  --project DIR         With --check, flag project configs in DIR (.cargo/config.toml,
+                        mise.toml, uv.toml, pyproject.toml) that weaken the cooldown
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
@@ -44,6 +47,7 @@ Examples:
   npx pmsec --days 7
   npx pmsec --days 1 --force
   npx pmsec --check
+  npx pmsec --check --project .
   npx pmsec --disable --tool npm
 `;
 
@@ -54,7 +58,7 @@ function parseDays(raw) {
 }
 
 function parse(argv) {
-  const opts = { mode: "enable", json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false };
+  const opts = { mode: "enable", json: false, only: null, days: BUNDLE_DAYS, force: false, help: false, version: false, project: null };
   let modeSet = false;
   const setMode = (m) => {
     if (modeSet && opts.mode !== m) throw new Error(`--check, --disable, and --doctor are mutually exclusive`);
@@ -73,12 +77,16 @@ function parse(argv) {
     else if (a === "--doctor") setMode("doctor");
     else if (a === "--tool") opts.only = argv[++i].split(",");
     else if (a.startsWith("--tool=")) opts.only = a.slice(7).split(",");
+    else if (a === "--project") opts.project = argv[++i];
+    else if (a.startsWith("--project=")) opts.project = a.slice(10);
     else if (a === "--days") opts.days = parseDays(argv[++i]);
     else if (a.startsWith("--days=")) opts.days = parseDays(a.slice(7));
     else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
     else positional.push(a);
   }
   if (positional.length) throw new Error(`unexpected argument: ${positional[0]}`);
+  if (opts.project === "" || opts.project === undefined) throw new Error(`--project requires a directory`);
+  if (opts.project !== null && opts.mode !== "check") throw new Error(`--project requires --check`);
   return opts;
 }
 
@@ -133,6 +141,18 @@ async function runCheck(targets, { json, days }, ctx, out, err) {
   else out.write(renderHuman(rows, days));
   if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec\`\n`);
   if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec\`\n`);
+  return ok ? 0 : 1;
+}
+
+async function runProjectCheck(targets, { json, days, project }, out, err) {
+  const findings = await scanProject(project, targets.map(t => t.name), days);
+  const ok = findings.length === 0;
+  if (json) out.write(JSON.stringify({ project, bundleDays: days, findings, ok }, null, 2) + "\n");
+  else if (ok) out.write(`OK       project ${project}: no cooldown overrides\n`);
+  else for (const f of findings) {
+    out.write(`${f.issue.toUpperCase().padEnd(8)} ${f.tool.padEnd(4)} ${f.key} = ${f.configured}  [${f.path}]\n`);
+  }
+  if (!ok) err.write(`pmsec: ${findings.length} project setting(s) weaken the ${days}-day cooldown\n`);
   return ok ? 0 : 1;
 }
 
@@ -305,6 +325,7 @@ export async function run(argv, {
     err.write(`pmsec: PMSEC_HOME is ignored by the node port; paths resolve from HOME (${home}). Use the bash port for root-context redirection.\n`);
   }
   try {
+    if (opts.project !== null) return await runProjectCheck(targets, opts, out, err);
     if (opts.mode === "check") return await runCheck(targets, opts, ctx, out, err);
     if (opts.mode === "disable") return await runDisable(targets, opts.json, ctx, out, err);
     if (opts.mode === "doctor") return runDoctor(targets, opts.json, ctx, out);

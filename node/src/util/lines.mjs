@@ -184,3 +184,8 @@ export function removeKey(text, key, opts = {}) {
   if (idx < lines.length && lines[idx] === "") lines.splice(idx, 1);
   return { text: lines.join("\n") + (trailing && lines.length ? "\n" : ""), removed: true };
 }
+
+// True when a `[name]` header opens a table, e.g. a key spelled as a subtable.
+export function hasTable(text, name) {
+  return scanView(text.split(/\r?\n/)).some(l => headerName(l) === name);
+}

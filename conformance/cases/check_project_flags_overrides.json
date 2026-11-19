@@ -1,0 +1,59 @@
+{
+  "setup": {
+    "proj/.cargo/config.toml": "[registry]\nglobal-min-publish-age = \"0 days\"\n",
+    "proj/mise.toml": "[settings]\nminimum_release_age = \"1d\" # too short\nminimum_release_age_excludes = [\"node\"]\n\n[tools]\nnode = \"22\"\n",
+    "proj/uv.toml": "exclude-newer = false\n",
+    "proj/pyproject.toml": "[project]\nname = \"demo\"\n\n[tool.uv]\nexclude-newer = \"1 week\"\n\n[tool.uv.exclude-newer-package]\nrequests = false\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--days",
+    "2",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "project": "<HOME>/proj",
+    "bundleDays": 2,
+    "findings": [
+      {
+        "tool": "cargo",
+        "path": "<HOME>/proj/.cargo/config.toml",
+        "key": "global-min-publish-age",
+        "configured": "\"0 days\"",
+        "issue": "weakened"
+      },
+      {
+        "tool": "mise",
+        "path": "<HOME>/proj/mise.toml",
+        "key": "minimum_release_age",
+        "configured": "\"1d\"",
+        "issue": "weakened"
+      },
+      {
+        "tool": "mise",
+        "path": "<HOME>/proj/mise.toml",
+        "key": "minimum_release_age_excludes",
+        "configured": "[\"node\"]",
+        "issue": "excluded"
+      },
+      {
+        "tool": "uv",
+        "path": "<HOME>/proj/uv.toml",
+        "key": "exclude-newer",
+        "configured": "false",
+        "issue": "disabled"
+      },
+      {
+        "tool": "uv",
+        "path": "<HOME>/proj/pyproject.toml",
+        "key": "exclude-newer-package",
+        "configured": "[tool.uv.exclude-newer-package]",
+        "issue": "excluded"
+      }
+    ],
+    "ok": false
+  }
+}

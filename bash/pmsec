@@ -1446,6 +1446,8 @@ attestation re-verification, ...). No knobs.
 
 Options:
   --check               Verify the bundle is in place (exit 1 if anything missing)
+  --project DIR         With --check, flag project configs in DIR (.cargo/config.toml,
+                        mise.toml, uv.toml, pyproject.toml) that weaken the cooldown
   --disable             Remove the hardening bundle from selected tools
   --doctor              Diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)
   --tool TOOL[,TOOL]    Restrict to specific tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)
@@ -1460,6 +1462,7 @@ Examples:
   pmsec --days 7
   pmsec --days 1 --force
   pmsec --check
+  pmsec --check --project .
   pmsec --disable --tool npm
 
 Environment:
@@ -1486,7 +1489,7 @@ EOF
 # OPT_DAYS, OPT_FORCE, OPT_HELP, OPT_VERSION.
 parse_args() {
   MODE="enable"; MODE_SET=0
-  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0
+  OPT_JSON=0; OPT_ONLY=""; OPT_DAYS="$BUNDLE_DAYS"; OPT_FORCE=0; OPT_HELP=0; OPT_VERSION=0; OPT_PROJECT=""; OPT_PROJECT_SET=0
   POS=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1511,6 +1514,8 @@ parse_args() {
         MODE="doctor"; MODE_SET=1 ;;
       --tool)       shift; OPT_ONLY="$1" ;;
       --tool=*)     OPT_ONLY="${1#--tool=}" ;;
+      --project)    shift; OPT_PROJECT="${1:-}"; OPT_PROJECT_SET=1 ;;
+      --project=*)  OPT_PROJECT="${1#--project=}"; OPT_PROJECT_SET=1 ;;
       --days)       shift; OPT_DAYS="$1"; _validate_days "$OPT_DAYS" || return 2 ;;
       --days=*)     OPT_DAYS="${1#--days=}"; _validate_days "$OPT_DAYS" || return 2 ;;
       --)           shift; while [ $# -gt 0 ]; do POS[${#POS[@]}]="$1"; shift; done; break ;;
@@ -1522,6 +1527,12 @@ parse_args() {
   if [ "${#POS[@]}" -gt 0 ]; then
     printf 'pmsec: unexpected argument: %s\n' "${POS[0]}" >&2
     return 2
+  fi
+  if [ "$OPT_PROJECT_SET" = "1" ] && [ -z "$OPT_PROJECT" ]; then
+    printf 'pmsec: --project requires a directory\n' >&2; return 2
+  fi
+  if [ "$OPT_PROJECT_SET" = "1" ] && [ "$MODE" != "check" ]; then
+    printf 'pmsec: --project requires --check\n' >&2; return 2
   fi
   return 0
 }
@@ -1656,6 +1667,87 @@ cmd_check() {
   [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec`\n' "$failing" "$OPT_DAYS" >&2
   [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec`\n' "$failing_extras" >&2
   { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
+  return 0
+}
+
+# True when a [name] header in LINES_BUF opens a table (a key spelled as a subtable).
+lines_has_table() {
+  local name="$1" i h
+  lines_scan
+  for ((i=0; i<${#SCAN_BUF[@]}; i++)); do
+    h=$(lines_header_name "${SCAN_BUF[i]}") || continue
+    [ "$h" = "$name" ] && return 0
+  done
+  return 1
+}
+
+# Project-level configs that can weaken the user-level cooldown, as
+# tool|file|section|cooldown-key|exclude-keys. The cooldown is flagged when
+# disabled (`= false`) or shorter than --days; any exclude key is flagged
+# because it exempts packages from the cooldown entirely.
+PROJECT_RULES=(
+  "cargo|.cargo/config.toml|registry|global-min-publish-age|"
+  "mise|mise.toml|settings|minimum_release_age|minimum_release_age_excludes"
+  "uv|uv.toml||exclude-newer|exclude-newer-package"
+  "uv|pyproject.toml|tool.uv|exclude-newer|exclude-newer-package"
+)
+
+# Emit tool|path|key|issue|configured per finding; the value goes last so a
+# `|` inside it survives `read`.
+project_scan() {
+  local rule tool file section key excludes path val days issue k table
+  for rule in "${PROJECT_RULES[@]}"; do
+    IFS='|' read -r tool file section key excludes <<< "$rule"
+    case " ${SELECTED[*]} " in *" $tool "*) ;; *) continue ;; esac
+    if [ "$OPT_PROJECT" = "." ]; then path="$file"; else path="${OPT_PROJECT%/}/$file"; fi
+    [ -s "$path" ] || continue
+    lines_load "$path"
+    if val=$(lines_read_key "$key" "=" "$section"); then
+      case "$tool" in
+        cargo) days=$(parse_days_cargo_publish_age "$val") || days=$(parse_days_dw "$val") || days="" ;;
+        mise) days=$(parse_days_mise "$val") || days="" ;;
+        uv) days=$(parse_days_uv "$val") || days="" ;;
+      esac
+      issue=""
+      if [ "$val" = "false" ]; then issue="disabled"
+      elif [ -n "$days" ] && [ "$days" -lt "$OPT_DAYS" ]; then issue="weakened"; fi
+      [ -n "$issue" ] && printf '%s|%s|%s|%s|%s\n' "$tool" "$path" "$key" "$issue" "$val"
+    fi
+    for k in $excludes; do
+      if [ -n "$section" ]; then table="$section.$k"; else table="$k"; fi
+      if val=$(lines_read_key "$k" "=" "$section"); then
+        printf '%s|%s|%s|excluded|%s\n' "$tool" "$path" "$k" "$val"
+      elif lines_has_table "$table"; then
+        printf '%s|%s|%s|excluded|[%s]\n' "$tool" "$path" "$k" "$table"
+      fi
+    done
+  done
+}
+
+cmd_check_project() {
+  local tool path key val issue n=0 items="" upper
+  while IFS='|' read -r tool path key issue val; do
+    [ -z "$tool" ] && continue
+    n=$((n+1))
+    if [ "$OPT_JSON" = "1" ]; then
+      [ "$n" -gt 1 ] && items+=','$'\n'
+      items+="    {\"tool\": $(json_str "$tool"), \"path\": $(json_str "$path"), \"key\": $(json_str "$key"), \"configured\": $(json_str "$val"), \"issue\": $(json_str "$issue")}"
+    else
+      upper=$(printf '%s' "$issue" | tr '[:lower:]' '[:upper:]')
+      printf '%-8s %s %s = %s  [%s]\n' "$upper" "$(pad4 "$tool")" "$key" "$val" "$path"
+    fi
+  done < <(project_scan)
+  if [ "$OPT_JSON" = "1" ]; then
+    local ok="true"; [ "$n" -gt 0 ] && ok="false"
+    if [ "$n" -gt 0 ]; then items=$'\n'"$items"$'\n  '; fi
+    printf '{\n  "project": %s,\n  "bundleDays": %d,\n  "findings": [%s],\n  "ok": %s\n}\n' "$(json_str "$OPT_PROJECT")" "$OPT_DAYS" "$items" "$ok"
+  elif [ "$n" -eq 0 ]; then
+    printf 'OK       project %s: no cooldown overrides\n' "$OPT_PROJECT"
+  fi
+  if [ "$n" -gt 0 ]; then
+    printf 'pmsec: %d project setting(s) weaken the %d-day cooldown\n' "$n" "$OPT_DAYS" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -1944,7 +2036,8 @@ main() {
   if [ "$OPT_HELP" = "1" ]; then USAGE; return 0; fi
   select_tools || return $?
   case "$MODE" in
-    check)   cmd_check ;;
+    check)
+      if [ "$OPT_PROJECT_SET" = "1" ]; then cmd_check_project; else cmd_check; fi ;;
     disable) cmd_disable ;;
     enable)  cmd_enable ;;
     doctor)

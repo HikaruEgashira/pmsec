@@ -16,7 +16,7 @@ const legacy = { key: "minimum-release-age", section: "install" };
 
 export function path(ctx) { return cargoConfigPath(ctx.env, ctx.home); }
 
-function parseDays(value) {
+export function parseDays(value) {
   if (value === null) return null;
   const m = value.match(/^"?\s*(\d+)\s*(d|days?|w|weeks?|months?)\s*"?$/i);
   if (!m) return null;

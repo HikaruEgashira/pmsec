@@ -218,3 +218,8 @@ def remove_key(text: str, key: str, *, sep: str = "=", section: str | None = Non
     if trailing and lines:
         out += "\n"
     return out, True
+
+
+def has_table(text: str, name: str) -> bool:
+    """True when a `[name]` header opens a table, e.g. a key spelled as a subtable."""
+    return any(_header_name(line) == name for line in _scan_view(text.splitlines()))

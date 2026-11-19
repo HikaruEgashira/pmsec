@@ -33,7 +33,7 @@ export function path(ctx) { return miseConfigPath(ctx.env, ctx.home, ctx.platfor
 export const preflight = buildPreflight(name, minBin,
   "setting was named install_before before 2026.4.22 and minimum_release_age is silently ignored on older mise. Upgrade mise (`mise self-update`) to enforce the cooldown.");
 
-function parseDays(value) {
+export function parseDays(value) {
   if (value === null) return null;
   const m = value.match(/^"?\s*(\d+)\s*(d|days?|w|weeks?|m|months?|y|years?)\s*"?$/i);
   if (!m) return null;

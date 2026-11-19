@@ -1,0 +1,36 @@
+{
+  "setup": {
+    "proj/.cargo/config.toml": "[registry]\nglobal-min-publish-age = \"0 days\"\n",
+    "proj/pyproject.toml": "[tool.uv]\nexclude-newer = false\nexclude-newer-package = { requests = false }\n"
+  },
+  "args": [
+    "--tool",
+    "uv",
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "project": "<HOME>/proj",
+    "bundleDays": 1,
+    "findings": [
+      {
+        "tool": "uv",
+        "path": "<HOME>/proj/pyproject.toml",
+        "key": "exclude-newer",
+        "configured": "false",
+        "issue": "disabled"
+      },
+      {
+        "tool": "uv",
+        "path": "<HOME>/proj/pyproject.toml",
+        "key": "exclude-newer-package",
+        "configured": "{ requests = false }",
+        "issue": "excluded"
+      }
+    ],
+    "ok": false
+  }
+}

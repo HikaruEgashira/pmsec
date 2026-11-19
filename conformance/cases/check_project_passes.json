@@ -1,0 +1,20 @@
+{
+  "setup": {
+    "proj/.cargo/config.toml": "[registry]\nglobal-min-publish-age = \"7 days\"\n",
+    "proj/mise.toml": "[settings]\nminimum_release_age = \"1w\"\n",
+    "proj/uv.toml": "exclude-newer = \"2024-01-01T00:00:00Z\"\n",
+    "proj/pyproject.toml": "[project]\nname = \"demo\"\n\n[tool.uv]\nexclude-newer = \"3 days\"\n"
+  },
+  "args": [
+    "--check",
+    "--project=<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "project": "<HOME>/proj",
+    "bundleDays": 1,
+    "findings": [],
+    "ok": true
+  }
+}

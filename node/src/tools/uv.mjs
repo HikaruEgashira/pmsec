@@ -20,7 +20,7 @@ export function path(ctx) { return uvConfigPath(ctx.env, ctx.home, ctx.platform)
 export const preflight = buildPreflight(name, minBin,
   "the written uv.toml (relative exclude-newer and the [audit] table) will not parse on this uv and every uv command will fail until you `uv self update`.");
 
-function parseDays(value) {
+export function parseDays(value) {
   if (value === null) return null;
   const m = value.match(/^"\s*(\d+)\s*(day|days|d|week|weeks|w)\s*"$/i);
   if (!m) return null;

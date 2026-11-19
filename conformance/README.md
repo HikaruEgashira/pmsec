@@ -23,8 +23,9 @@ Case shape:
 ```
 
 Optional `env` entries override the runner defaults for both `pre` and the
-asserted invocation. `<HOME>` in `expected_json` is replaced with the case
-temp dir.
+asserted invocation. `<HOME>` in `args`/`pre` is replaced with the case temp dir, and the
+temp dir is replaced with `<HOME>` in actual output before comparing it with
+`expected_json`.
 
 ## Run
 

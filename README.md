@@ -175,6 +175,10 @@ allow-file=workspaces
 
 Review checked-in tool configs before trusting an unfamiliar repo.
 `pmsec --check` validates the user-global baseline only.
+`pmsec --check --project DIR` flags project configs in `DIR` that weaken
+the cooldown: `.cargo/config.toml`, `mise.toml`, `uv.toml`, and
+`pyproject.toml` `[tool.uv]` with a cooldown below `--days`, `exclude-newer =
+false`, or an `exclude-newer-package` / `minimum_release_age_excludes` entry.
 
 ## What the baseline does not cover
 
