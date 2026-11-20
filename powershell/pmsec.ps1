@@ -161,6 +161,56 @@ function Test-MiseNewModeActive {
   if ((Get-PmsecPlatform) -ne 'win32' -and -not $env:PMSEC_MISE_VERSION) { return $false }
   return (Test-MiseNewMode (VersionDetect 'mise'))
 }
+$script:MiseMigrateWarn = 'config.pmsec.toml holds pmsec settings, but this mise (< 2026.11.0, undetected, or MISE_GLOBAL_CONFIG_FILE set) does not load it. Run `pmsec --tool mise` to migrate them back into config.toml.'
+# Return the entries of the top-level `env` of the miserc file.
+function Get-MiseEnvItems {
+  LinesLoad (Get-MiseLayerPaths).LocalMiserc
+  $items = New-Object System.Collections.Generic.List[string]
+  foreach ($line in $script:LinesBuf) {
+    if ([string]$line -match '^\s*\[') { break }
+    if ([string]$line -notmatch "^\s*env\s*=\s*(\[[^\]]*\]|""[^""]*""|'[^']*')") { continue }
+    foreach ($m in [regex]::Matches($Matches[1], "`"([^`"]*)`"|'([^']*)'")) {
+      $items.Add($m.Groups[1].Value + $m.Groups[2].Value)
+    }
+    break
+  }
+  return ,$items
+}
+function Test-MiseWired { return [bool]((Get-MiseEnvItems) -contains 'pmsec') }
+# Legacy mode with new-mode artifacts left behind (#194): mise does not load
+# them, so check fails closed and enable migrates them back.
+function Test-MiseLegacyStale {
+  if (Test-MiseNewModeActive) { return $false }
+  if (Test-MiseWired) { return $true }
+  $pm = ToolRead 'mise' (Get-MiseLayerPaths).PmsecConfig
+  if ($null -ne $pm.Configured) { return $true }
+  foreach ($e in $pm.Extras) { if ($null -ne $e.Configured) { return $true } }
+  return $false
+}
+# Drop "pmsec" from the top-level `env` of the miserc file; drop the line when empty.
+function Remove-MiseEnv {
+  $path = (Get-MiseLayerPaths).LocalMiserc
+  LinesLoad $path
+  for ($i = 0; $i -lt $script:LinesBuf.Count; $i++) {
+    $line = [string]$script:LinesBuf[$i]
+    if ($line -match '^\s*\[') { break }
+    if ($line -notmatch "^(\s*env\s*=\s*)(\[[^\]]*\]|""[^""]*""|'[^']*')(.*)$") { continue }
+    $pre = $Matches[1]; $val = $Matches[2]; $post = $Matches[3]
+    $items = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($val, "`"([^`"]*)`"|'([^']*)'")) {
+      $items.Add($m.Groups[1].Value + $m.Groups[2].Value)
+    }
+    if ($items -notcontains 'pmsec') { return }
+    $rest = @($items | Where-Object { $_ -ne 'pmsec' })
+    if ($rest.Count -gt 0) {
+      $script:LinesBuf[$i] = $pre + '[' + (($rest | ForEach-Object { JsonString $_ }) -join ', ') + ']' + $post
+    } else {
+      $script:LinesBuf.RemoveAt($i)
+    }
+    WriteAtomic $path (LinesDump)
+    return
+  }
+}
 # Add "pmsec" to the top-level `env` of the miserc file, keeping other entries.
 function Add-MiseEnv {
   $path = (Get-MiseLayerPaths).LocalMiserc
@@ -1125,12 +1175,18 @@ function ToolUnsetComposer {
 
 function ToolRead([string]$Tool, [string]$PathOverride = '') {
   if ($Tool -eq 'composer') { return (ToolReadComposer) }
-  if ($Tool -eq 'mise' -and -not $PathOverride -and (Test-MiseNewModeActive)) {
-    # Before migration the managed keys still sit in config.toml; report the
-    # strictest cooldown so enable carries it into config.pmsec.toml.
+  if ($Tool -eq 'mise' -and -not $PathOverride -and ((Test-MiseNewModeActive) -or (Test-MiseLegacyStale))) {
+    # Before migration the managed keys still sit in the other layer
+    # (config.toml in new mode, config.pmsec.toml in legacy mode); report the
+    # strictest cooldown so enable carries it over.
     $layers = Get-MiseLayerPaths
-    $cur = ToolRead 'mise' $layers.PmsecConfig
-    $old = ToolRead 'mise' $layers.BaseConfig
+    if (Test-MiseNewModeActive) {
+      $cur = ToolRead 'mise' $layers.PmsecConfig
+      $old = ToolRead 'mise' $layers.BaseConfig
+    } else {
+      $cur = ToolRead 'mise' (Get-MisePath)
+      $old = ToolRead 'mise' $layers.PmsecConfig
+    }
     $extras = New-Object System.Collections.Generic.List[hashtable]
     for ($i = 0; $i -lt $cur.Extras.Count; $i++) {
       if ($null -eq $cur.Extras[$i].Configured) { $extras.Add($old.Extras[$i]) } else { $extras.Add($cur.Extras[$i]) }
@@ -1241,6 +1297,10 @@ function ToolWrite([string]$Tool, [int]$Days) {
   if ($Tool -eq 'mise' -and (Test-MiseNewModeActive)) {
     Add-MiseEnv
     [void](ToolUnsetFile (Get-MiseLayerPaths).BaseConfig $Tool $false)
+  } elseif ($Tool -eq 'mise') {
+    # Reverse migration: drop the new-mode layer mise no longer loads.
+    [void](ToolUnsetFile (Get-MiseLayerPaths).PmsecConfig $Tool $false)
+    Remove-MiseEnv
   }
   return @{ Path = $path }
 }
@@ -1460,18 +1520,30 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
   $rows = New-Object System.Collections.Generic.List[hashtable]
   $failing = 0
   $failingExtras = 0
+  $failingLayers = 0
   foreach ($scope in $Scopes) {
     $script:Scope = $scope
     foreach ($t in $Targets) {
       $r = ToolRead $t
       $warn = ToolPreflight $t
+      # mise new mode reports the miserc selector; an unwired selector or an
+      # unmigrated legacy layer fails check.
+      $selector = $null
+      if ($t -eq 'mise') {
+        if (Test-MiseNewModeActive) {
+          $selector = @{ Path = (Get-MiseLayerPaths).LocalMiserc; Wired = (Test-MiseWired) }
+          if (-not $selector.Wired) { $failingLayers++ }
+        } elseif (Test-MiseLegacyStale) {
+          $warn = $script:MiseMigrateWarn; $failingLayers++
+        }
+      }
       if ($null -eq $r.Days -or $r.Days -lt $Days) { $failing++ }
       foreach ($e in $r.Extras) { if (-not $e.Ok) { $failingExtras++ } }
       $rows.Add(@{
         Scope = $scope.Label
         Tool = $t; Key = $r.Key; Path = $r.Path
         Configured = $r.Configured; Days = $r.Days; Warn = $warn
-        Extras = $r.Extras
+        Extras = $r.Extras; Selector = $selector
       })
     }
   }
@@ -1499,12 +1571,14 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
       }
       $extrasJson += ']'
       $scopePrefix = if ($multiScope) { """scope"": $(JsonString $r.Scope), " } else { '' }
-      $entry = "    {$scopePrefix""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson}"
+      $entry = "    {$scopePrefix""tool"": $(JsonString $r.Tool), ""key"": $(JsonString $r.Key), ""path"": $(JsonString $r.Path), ""configured"": $cfg, ""days"": $daysCol, ""warn"": $warn, ""extras"": $extrasJson"
+      if ($r.Selector) { $entry += ", ""selector"": {""path"": $(JsonString $r.Selector.Path), ""wired"": $(JsonBool $r.Selector.Wired)}" }
+      $entry += '}'
       if ($i -lt $rows.Count - 1) { $entry += ',' }
       [void]$sb.AppendLine($entry)
     }
     [void]$sb.AppendLine('  ],')
-    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failing -eq 0 -and $failingExtras -eq 0))")
+    [void]$sb.AppendLine("  ""ok"": $(JsonBool ($failing -eq 0 -and $failingExtras -eq 0 -and $failingLayers -eq 0))")
     [void]$sb.Append('}')
     StdOut $sb.ToString()
   } else {
@@ -1525,11 +1599,16 @@ function CmdCheck($Targets, [bool]$Json, [int]$Days, [array]$Scopes) {
                   else { $e.Configured }
         StdOut ('{0} {1} {2} = {3}  [{4}]' -f $exStatus, (Pad4 $r.Tool), $e.Key, $exDisp, $r.Path)
       }
+      if ($r.Selector) {
+        $selStatus = if ($r.Selector.Wired) { 'OK     ' } else { 'MISSING' }
+        StdOut ('{0} {1} env includes "pmsec" = {2}  [{3}]' -f $selStatus, (Pad4 $r.Tool), (JsonBool $r.Selector.Wired), $r.Selector.Path)
+      }
     }
   }
   if ($failing -gt 0) { StdErr ("pmsec: $failing tool(s) below $Days days " + $script:EmDash + " run ``pmsec``") }
   if ($failingExtras -gt 0) { StdErr ("pmsec: $failingExtras hardening setting(s) not at safe value " + $script:EmDash + " run ``pmsec``") }
-  if ($failing -gt 0 -or $failingExtras -gt 0) { return 1 }
+  if ($failingLayers -gt 0) { StdErr ("pmsec: $failingLayers tool(s) with config layers not wired " + $script:EmDash + " run ``pmsec``") }
+  if ($failing -gt 0 -or $failingExtras -gt 0 -or $failingLayers -gt 0) { return 1 }
   return 0
 }
 

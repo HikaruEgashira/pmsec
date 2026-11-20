@@ -41,6 +41,35 @@ export function path(ctx) {
   return newMode(ctx) ? layers(ctx).pmsecConfig : miseConfigPath(ctx.env, ctx.home, ctx.platform);
 }
 
+export const migrateWarn = "config.pmsec.toml holds pmsec settings, but this mise (< 2026.11.0, undetected, or MISE_GLOBAL_CONFIG_FILE set) does not load it. Run `pmsec --tool mise` to migrate them back into config.toml.";
+
+// Return the entries of the top-level `env` of a miserc file.
+export function miseEnvItems(text) {
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*\[/.test(line)) break;
+    const m = line.match(/^(\s*env\s*=\s*)(\[[^\]]*\]|"[^"]*"|'[^']*')(.*)$/);
+    if (m) return [...m[2].matchAll(/"([^"]*)"|'([^']*)'/g)].map(x => x[1] ?? x[2]);
+  }
+  return [];
+}
+
+// Drop "pmsec" from the top-level `env` of a miserc file; drop the line when empty.
+export function removeMiseEnv(text) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\[/.test(lines[i])) break;
+    const m = lines[i].match(/^(\s*env\s*=\s*)(\[[^\]]*\]|"[^"]*"|'[^']*')(.*)$/);
+    if (!m) continue;
+    const items = [...m[2].matchAll(/"([^"]*)"|'([^']*)'/g)].map(x => x[1] ?? x[2]);
+    if (!items.includes("pmsec")) return text;
+    const rest = items.filter(x => x !== "pmsec");
+    if (rest.length) lines[i] = `${m[1]}[${rest.map(x => JSON.stringify(x)).join(", ")}]${m[3]}`;
+    else lines.splice(i, 1);
+    return lines.join(text.includes("\r\n") ? "\r\n" : "\n");
+  }
+  return text;
+}
+
 // Add "pmsec" to the top-level `env` of a miserc file, keeping other entries.
 export function addMiseEnv(text) {
   const lines = text.split(/\r?\n/);
@@ -83,17 +112,33 @@ function stripManaged(text) {
   return { text: ex.text, removed: cooldown.removed || ex.removed };
 }
 
+function hasManaged(layer) {
+  return layer.configured !== null || layer.extras.some(e => e.configured !== null);
+}
+
+// Report the strictest cooldown across both layers so enable carries it over.
+function mergeLayers(cur, old) {
+  const useOld = old.days !== null && (cur.days === null || old.days > cur.days);
+  const merged = cur.extras.map((e, i) => (e.configured === null ? old.extras[i] : e));
+  return { configured: useOld ? old.configured : cur.configured,
+    days: useOld ? old.days : cur.days, extras: merged };
+}
+
 export async function read(ctx) {
   const p = path(ctx);
   const cur = readLayer(await readSafe(p));
-  if (!newMode(ctx)) return { path: p, ...cur };
-  // Before migration the managed keys still sit in config.toml; report the
-  // strictest cooldown so enable carries it into config.pmsec.toml.
-  const old = readLayer(await readSafe(layers(ctx).baseConfig));
-  const useOld = old.days !== null && (cur.days === null || old.days > cur.days);
-  const merged = cur.extras.map((e, i) => (e.configured === null ? old.extras[i] : e));
-  return { path: p, configured: useOld ? old.configured : cur.configured,
-    days: useOld ? old.days : cur.days, extras: merged };
+  const l = layers(ctx);
+  const wired = miseEnvItems(await readSafe(l.localMiserc)).includes("pmsec");
+  if (!newMode(ctx)) {
+    // Legacy mode: settings left in config.pmsec.toml are not loaded. Enable
+    // migrates them back; check fails closed until it does.
+    const pm = readLayer(await readSafe(l.pmsecConfig));
+    if (!wired && !hasManaged(pm)) return { path: p, ...cur };
+    return { path: p, ...mergeLayers(cur, pm), migrateWarn };
+  }
+  // Before migration the managed keys still sit in config.toml.
+  const old = readLayer(await readSafe(l.baseConfig));
+  return { path: p, ...mergeLayers(cur, old), selector: { path: l.localMiserc, wired } };
 }
 
 export async function write(days, ctx) {
@@ -108,6 +153,14 @@ export async function write(days, ctx) {
     if (nextRc !== rc) await writeAtomic(l.localMiserc, nextRc, { home: ctx.home });
     const base = stripManaged(await readSafe(l.baseConfig));
     if (base.removed) await writeAtomic(l.baseConfig, base.text, { home: ctx.home });
+  } else {
+    // Reverse migration: drop the new-mode layer mise no longer loads.
+    const l = layers(ctx);
+    const pm = stripManaged(await readSafe(l.pmsecConfig));
+    if (pm.removed) await writeAtomic(l.pmsecConfig, pm.text, { home: ctx.home });
+    const rc = await readSafe(l.localMiserc);
+    const nextRc = removeMiseEnv(rc);
+    if (nextRc !== rc) await writeAtomic(l.localMiserc, nextRc, { home: ctx.home });
   }
   return { path: p };
 }

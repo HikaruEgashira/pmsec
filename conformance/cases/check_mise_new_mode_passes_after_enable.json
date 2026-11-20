@@ -135,7 +135,11 @@
             "ok": true
           }
         ],
-        "warn": null
+        "warn": null,
+        "selector": {
+          "path": "<HOME>/.config/mise/miserc.local.toml",
+          "wired": true
+        }
       }
     ],
     "ok": true

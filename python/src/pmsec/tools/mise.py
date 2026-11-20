@@ -68,6 +68,49 @@ def path(ctx: Context) -> Path:
 _ENV_LINE = re.compile(r"""^(\s*env\s*=\s*)(\[[^\]]*\]|"[^"]*"|'[^']*')(.*)$""")
 
 
+MIGRATE_WARN = (
+    "config.pmsec.toml holds pmsec settings, but this mise (< 2026.11.0, undetected, or "
+    "MISE_GLOBAL_CONFIG_FILE set) does not load it. Run `pmsec --tool mise` to migrate them "
+    "back into config.toml."
+)
+
+
+def _env_values(raw: str) -> list[str]:
+    return [a if a or not b else b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', raw)]
+
+
+def mise_env_items(text: str) -> list[str]:
+    """Return the entries of the top-level `env` of a miserc file."""
+    for line in re.split(r"\r?\n", text):
+        if re.match(r"^\s*\[", line):
+            break
+        m = _ENV_LINE.match(line)
+        if m:
+            return _env_values(m.group(2))
+    return []
+
+
+def remove_mise_env(text: str) -> str:
+    """Drop "pmsec" from the top-level `env` of a miserc file; drop the line when empty."""
+    lines = re.split(r"\r?\n", text)
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*\[", line):
+            break
+        m = _ENV_LINE.match(line)
+        if not m:
+            continue
+        items = _env_values(m.group(2))
+        if "pmsec" not in items:
+            return text
+        rest = [x for x in items if x != "pmsec"]
+        if rest:
+            lines[i] = f"{m.group(1)}[{', '.join(json.dumps(x) for x in rest)}]{m.group(3)}"
+        else:
+            del lines[i]
+        return ("\r\n" if "\r\n" in text else "\n").join(lines)
+    return text
+
+
 def add_mise_env(text: str) -> str:
     """Add "pmsec" to the top-level `env` of a miserc file, keeping other entries."""
     lines = re.split(r"\r?\n", text)
@@ -77,7 +120,7 @@ def add_mise_env(text: str) -> str:
         m = _ENV_LINE.match(line)
         if not m:
             continue
-        items = [a if a or not b else b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', m.group(2))]
+        items = _env_values(m.group(2))
         if "pmsec" in items:
             return text
         items.append("pmsec")
@@ -118,18 +161,34 @@ def _strip_managed(text: str) -> tuple[str, bool]:
     return after, removed_cooldown or removed_extras
 
 
-def read(ctx: Context) -> dict:
-    p = path(ctx)
-    cur = _read_layer(_read_text(p))
-    if not _new_mode(ctx):
-        return {"path": str(p), **cur}
-    # Before migration the managed keys still sit in config.toml; report the
-    # strictest cooldown so enable carries it into config.pmsec.toml.
-    old = _read_layer(_read_text(_layers(ctx)["base_config"]))
+def _has_managed(layer: dict) -> bool:
+    return layer["configured"] is not None or any(e["configured"] is not None for e in layer["extras"])
+
+
+def _merge_layers(cur: dict, old: dict) -> dict:
+    # Report the strictest cooldown across both layers so enable carries it over.
     use_old = old["days"] is not None and (cur["days"] is None or old["days"] > cur["days"])
     merged = [o if e["configured"] is None else e for e, o in zip(cur["extras"], old["extras"])]
     src = old if use_old else cur
-    return {"path": str(p), "configured": src["configured"], "days": src["days"], "extras": merged}
+    return {"configured": src["configured"], "days": src["days"], "extras": merged}
+
+
+def read(ctx: Context) -> dict:
+    p = path(ctx)
+    cur = _read_layer(_read_text(p))
+    layers = _layers(ctx)
+    wired = "pmsec" in mise_env_items(_read_text(layers["local_miserc"]))
+    if not _new_mode(ctx):
+        # Legacy mode: settings left in config.pmsec.toml are not loaded. Enable
+        # migrates them back; check fails closed until it does.
+        pm = _read_layer(_read_text(layers["pmsec_config"]))
+        if not wired and not _has_managed(pm):
+            return {"path": str(p), **cur}
+        return {"path": str(p), **_merge_layers(cur, pm), "migrate_warn": MIGRATE_WARN}
+    # Before migration the managed keys still sit in config.toml.
+    old = _read_layer(_read_text(layers["base_config"]))
+    return {"path": str(p), **_merge_layers(cur, old),
+            "selector": {"path": str(layers["local_miserc"]), "wired": wired}}
 
 
 def write(days: int, ctx: Context) -> dict:
@@ -145,6 +204,16 @@ def write(days: int, ctx: Context) -> dict:
         base, removed = _strip_managed(_read_text(layers["base_config"]))
         if removed:
             write_atomic(layers["base_config"], base, home=ctx.home)
+    else:
+        # Reverse migration: drop the new-mode layer mise no longer loads.
+        layers = _layers(ctx)
+        pm, removed = _strip_managed(_read_text(layers["pmsec_config"]))
+        if removed:
+            write_atomic(layers["pmsec_config"], pm, home=ctx.home)
+        rc = _read_text(layers["local_miserc"])
+        next_rc = remove_mise_env(rc)
+        if next_rc != rc:
+            write_atomic(layers["local_miserc"], next_rc, home=ctx.home)
     return {"path": str(p)}
 
 
