@@ -1,0 +1,60 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.bundle/config": "---\nBUNDLE_PATH: \"vendor/bundle\"\nBUNDLE_COOLDOWN: \"0\"\n",
+    "proj/composer.json": "{\n  \"name\": \"acme/app\",\n  \"config\": {\n    \"allow-plugins\": true,\n    \"secure-http\": false,\n    \"disable-tls\": true,\n    \"policy\": {\n      \"cooldown\": {\n        \"period\": \"0 days\"\n      }\n    }\n  }\n}\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "bundler",
+        "key": "BUNDLE_COOLDOWN",
+        "path": "<HOME>/proj/.bundle/config",
+        "configured": "0",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "composer",
+        "key": "config.policy.cooldown.period",
+        "path": "<HOME>/proj/composer.json",
+        "configured": "0 days",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "composer",
+        "key": "config.allow-plugins",
+        "path": "<HOME>/proj/composer.json",
+        "configured": "true",
+        "reason": "scripts-enabled"
+      },
+      {
+        "tool": "composer",
+        "key": "config.secure-http",
+        "path": "<HOME>/proj/composer.json",
+        "configured": "false",
+        "reason": "insecure-transport"
+      },
+      {
+        "tool": "composer",
+        "key": "config.disable-tls",
+        "path": "<HOME>/proj/composer.json",
+        "configured": "true",
+        "reason": "insecure-transport"
+      }
+    ],
+    "ok": false
+  }
+}

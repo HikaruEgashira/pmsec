@@ -27,6 +27,8 @@ class ConformanceEnvTest(unittest.TestCase):
         composer_rows = [
             row
             for case in cases
+            # --check --project rows report the project's composer.json, not COMPOSER_HOME.
+            if case["expected_json"].get("scope") != "project"
             for row in case["expected_json"].get("rows", [])
             if row.get("tool") == "composer"
         ]
