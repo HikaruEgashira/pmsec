@@ -208,9 +208,7 @@ def _doctor(args, targets, ctx: Context, out) -> int:
     # doctor.ok is intentionally narrow: parent must be writable as the
     # running uid. Everything else is informational.
     ok_flag = all(t["parentWritable"] for t in tools)
-    # This port resolves paths from HOME only; PMSEC_HOME is a bash/powershell
-    # feature (it needs the root->owner chown handback those ports implement).
-    pmsec_home = None
+    pmsec_home = ctx.env.get("PMSEC_HOME") or None
     report = {
         "doctor": True,
         "version": __version__,
@@ -233,7 +231,10 @@ def _doctor(args, targets, ctx: Context, out) -> int:
         suffix = f" ({username})" if username else ""
         out.write(f"  uid/euid   : {uid}/{euid}{suffix}\n")
     out.write(f"  HOME       : {ctx.home}\n")
-    out.write("  PMSEC_HOME : (not supported by this port — using HOME)\n\n")
+    if pmsec_home:
+        out.write(f"  PMSEC_HOME : {pmsec_home}\n\n")
+    else:
+        out.write("  PMSEC_HOME : (unset — using HOME)\n\n")
     for t in tools:
         flag = "ok    " if t["parentWritable"] else "BLOCK "
         owner_suffix = f" (uid={t['owner']})" if t["exists"] and t["owner"] is not None else ""
@@ -341,7 +342,12 @@ def main(
     import os
 
     env = dict(os.environ) if env is None else env
-    home = Path.home() if home is None else home
+    # PMSEC_HOME wins over HOME so root-context orchestrators can target
+    # another user's profile; write_atomic hands files back to its owner.
+    if env.get("PMSEC_HOME"):
+        home = Path(env["PMSEC_HOME"])
+    elif home is None:
+        home = Path.home()
     platform = current_platform() if platform is None else platform
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
@@ -352,11 +358,6 @@ def main(
         parser.error("--project requires --check")
     targets = _select(args.tool)
     ctx = Context(env=env, home=home, platform=platform)
-    if env.get("PMSEC_HOME"):
-        err.write(
-            f"pmsec: PMSEC_HOME is ignored by the python port; paths resolve from HOME ({home}). "
-            "Use the bash port for root-context redirection.\n"
-        )
     if args.project is not None:
         return _check_project(args, targets, out, err)
     if args.check:
