@@ -74,6 +74,32 @@ export function miseConfigPath(env = process.env, home = homedir(), platform = p
   return join(base, "mise", "config.toml");
 }
 
+// mise layer files for the config.pmsec.toml mode (#194). All live in mise's
+// default config dir; MISE_GLOBAL_CONFIG_FILE is deliberately ignored here
+// because new mode is only used when it is unset (see miseSupportsNewMode).
+export function miseLayerPaths(env = process.env, home = homedir(), platform = process.platform) {
+  let base;
+  if (platform === "win32") base = env.LOCALAPPDATA || join(home, "AppData", "Local");
+  else base = env.XDG_CONFIG_HOME || join(home, ".config");
+  const miseDir = join(base, "mise");
+  return {
+    miseDir,
+    baseConfig: join(miseDir, "config.toml"),
+    pmsecConfig: join(miseDir, "config.pmsec.toml"),
+    localMiserc: join(miseDir, "miserc.local.toml"),
+  };
+}
+
+// New mode needs mise >= 2026.11.0 and no MISE_GLOBAL_CONFIG_FILE override.
+// `version` is a parsed { major, minor, patch } (or null when undetected).
+export function miseSupportsNewMode(version, env = process.env) {
+  if (!version || env.MISE_GLOBAL_CONFIG_FILE) return false;
+  const [a, b, c] = [2026, 11, 0];
+  if (version.major !== a) return version.major > a;
+  if (version.minor !== b) return version.minor > b;
+  return version.patch >= c;
+}
+
 export function aubeConfigPath(env = process.env, home = homedir(), platform = process.platform) {
   if (env.AUBE_CONFIG_FILE) return env.AUBE_CONFIG_FILE;
   if (platform === "win32") {

@@ -80,6 +80,30 @@ def mise_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     return base / "mise" / "config.toml"
 
 
+def mise_layer_paths(env: dict[str, str], home: Path, platform: str) -> dict[str, Path]:
+    """mise layer files for the config.pmsec.toml mode (#194). All live in
+    mise's default config dir; MISE_GLOBAL_CONFIG_FILE is deliberately ignored
+    because new mode is only used when it is unset."""
+    if platform == "win32":
+        base = Path(env["LOCALAPPDATA"]) if "LOCALAPPDATA" in env else home / "AppData" / "Local"
+    else:
+        base = Path(env["XDG_CONFIG_HOME"]) if "XDG_CONFIG_HOME" in env else home / ".config"
+    mise_dir = base / "mise"
+    return {
+        "mise_dir": mise_dir,
+        "base_config": mise_dir / "config.toml",
+        "pmsec_config": mise_dir / "config.pmsec.toml",
+        "local_miserc": mise_dir / "miserc.local.toml",
+    }
+
+
+def mise_supports_new_mode(version: tuple | None, env: dict[str, str]) -> bool:
+    """New mode needs mise >= 2026.11.0 and no MISE_GLOBAL_CONFIG_FILE override."""
+    if version is None or env.get("MISE_GLOBAL_CONFIG_FILE"):
+        return False
+    return tuple(version[:3]) >= (2026, 11, 0)
+
+
 def uv_config_path(env: dict[str, str], home: Path, platform: str) -> Path:
     if "UV_CONFIG_FILE" in env:
         return Path(env["UV_CONFIG_FILE"])

@@ -911,6 +911,72 @@ T 'composer preserves unrelated JSON keys and honors COMPOSER_HOME' {
   } finally { Remove-Item -Recurse -Force -LiteralPath $h }
 }
 
+# Dot-sources pmsec.ps1 with PMSEC_SOURCE_ONLY=1 inside a child scope so only
+# its helpers load, then runs $Body against the given scope. Paths are rooted
+# in a temp dir so win32 cases work on non-Windows pwsh too (no C: drive).
+function InvokeMiseHelper([hashtable]$Scope, [hashtable]$EnvVars, [scriptblock]$Body) {
+  $keys = @('PMSEC_SOURCE_ONLY','LOCALAPPDATA','XDG_CONFIG_HOME','MISE_GLOBAL_CONFIG_FILE')
+  $saved = @{}
+  foreach ($k in $keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process'); [Environment]::SetEnvironmentVariable($k, $null, 'Process') }
+  $savedScope = $script:Scope
+  $savedEAP = $ErrorActionPreference
+  try {
+    [Environment]::SetEnvironmentVariable('PMSEC_SOURCE_ONLY', '1', 'Process')
+    if ($EnvVars) { foreach ($k in $EnvVars.Keys) { [Environment]::SetEnvironmentVariable($k, $EnvVars[$k], 'Process') } }
+    return (& {
+      . $Pmsec
+      $script:Scope = $Scope
+      & $Body
+    })
+  } finally {
+    $script:Scope = $savedScope
+    $ErrorActionPreference = $savedEAP
+    foreach ($k in $keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k], 'Process') }
+  }
+}
+
+T 'mise layer paths (posix / WSL scope)' {
+  $h = NewHome
+  try {
+    $p = InvokeMiseHelper @{ Label = 'test'; Home = $h; Platform = 'linux' } @{ XDG_CONFIG_HOME = (PathJoin $h 'xdg') } { Get-MiseLayerPaths }
+    $dir = PathJoin $h '.config' 'mise'
+    if ($p.MiseDir -ne $dir) { $script:LastFail = "MiseDir: $($p.MiseDir)"; return $false }
+    if ($p.BaseConfig -ne (PathJoin $dir 'config.toml')) { $script:LastFail = "BaseConfig: $($p.BaseConfig)"; return $false }
+    if ($p.PmsecConfig -ne (PathJoin $dir 'config.pmsec.toml')) { $script:LastFail = "PmsecConfig: $($p.PmsecConfig)"; return $false }
+    return ($p.LocalMiserc -eq (PathJoin $dir 'miserc.local.toml'))
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'mise layer paths (win32)' {
+  $h = NewHome
+  try {
+    $local = PathJoin $h 'LocalAppData'
+    $p = InvokeMiseHelper @{ Label = 'windows'; Home = $h; Platform = 'win32' } @{ LOCALAPPDATA = $local; MISE_GLOBAL_CONFIG_FILE = (PathJoin $h 'x.toml') } { Get-MiseLayerPaths }
+    if ($p.PmsecConfig -ne (PathJoin $local 'mise' 'config.pmsec.toml')) { $script:LastFail = "PmsecConfig: $($p.PmsecConfig)"; return $false }
+    $p = InvokeMiseHelper @{ Label = 'windows'; Home = $h; Platform = 'win32' } $null { Get-MiseLayerPaths }
+    $want = PathJoin $h 'AppData' 'Local' 'mise' 'config.toml'
+    if ($p.BaseConfig -ne $want) { $script:LastFail = "BaseConfig: $($p.BaseConfig) want $want"; return $false }
+    return $true
+  } finally { Remove-Item -Recurse -Force -LiteralPath $h }
+}
+
+T 'mise new mode version gate' {
+  $win = @{ Label = 'windows'; Home = [System.IO.Path]::GetTempPath(); Platform = 'win32' }
+  $cases = @(
+    @(@{ Major = 2026; Minor = 11; Patch = 0 }, $null, $true),
+    @(@{ Major = 2027; Minor = 1; Patch = 0 }, $null, $true),
+    @(@{ Major = 2026; Minor = 10; Patch = 9 }, $null, $false),
+    @($null, $null, $false),
+    @(@{ Major = 2026; Minor = 11; Patch = 0 }, @{ MISE_GLOBAL_CONFIG_FILE = 'x.toml' }, $false)
+  )
+  foreach ($c in $cases) {
+    $v = $c[0]
+    $got = InvokeMiseHelper $win $c[1] { Test-MiseNewMode $v }
+    if ($got -ne $c[2]) { $script:LastFail = "version $($v | ConvertTo-Json -Compress) env $($c[1] | ConvertTo-Json -Compress): got $got"; return $false }
+  }
+  return $true
+}
+
 # ---------- summary ----------
 
 Write-Host ""

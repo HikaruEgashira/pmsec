@@ -129,6 +129,30 @@ function Get-MisePath {
   }
   return (PathJoin (Get-PmsecHome) '.config' 'mise' 'config.toml')
 }
+# mise layer files for the config.pmsec.toml mode (#194). All live in mise's
+# default config dir; MISE_GLOBAL_CONFIG_FILE is deliberately ignored because
+# new mode is only used when it is unset (see Test-MiseNewMode).
+function Get-MiseLayerPaths {
+  if ((Get-PmsecPlatform) -eq 'win32') {
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
+  } else {
+    $base = PathJoin (Get-PmsecHome) '.config'
+  }
+  $dir = PathJoin $base 'mise'
+  return @{
+    MiseDir     = $dir
+    BaseConfig  = (PathJoin $dir 'config.toml')
+    PmsecConfig = (PathJoin $dir 'config.pmsec.toml')
+    LocalMiserc = (PathJoin $dir 'miserc.local.toml')
+  }
+}
+# New mode needs mise >= 2026.11.0 and no MISE_GLOBAL_CONFIG_FILE override.
+# The override is a host env var, so it only applies to the win32 scope.
+function Test-MiseNewMode($V) {
+  if (-not $V) { return $false }
+  if ((Get-PmsecPlatform) -eq 'win32' -and $env:MISE_GLOBAL_CONFIG_FILE) { return $false }
+  return [bool](VersionGte $V @(2026, 11, 0))
+}
 # Bundler's global config. BUNDLE_USER_CONFIG points at the file directly;
 # BUNDLE_USER_HOME points at the home dir (config = <home>/config). Both
 # default to ~/.bundle, matching bundler's own resolution order.
@@ -1787,6 +1811,9 @@ function CmdDoctor($Targets, [bool]$Json, [array]$Scopes) {
 }
 
 # ---------- entry ----------
+
+# PMSEC_SOURCE_ONLY=1 lets tests dot-source the helpers without running the CLI.
+if ($env:PMSEC_SOURCE_ONLY -eq '1') { return }
 
 try {
   $opts = ParseArgs $Argv
