@@ -1,0 +1,76 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.cargo/config.toml": "[install]\nglobal-min-publish-age = \"0 days\"\n[registry]\nglobal-min-publish-age = \"0 days\"  # off\n",
+    "proj/mise.toml": "[tools]\nminimum_release_age = \"7d\"\n[settings]\nminimum_release_age = \"0d\"\nminimum_release_age_excludes = [\"node\"]\n",
+    "proj/uv.toml": "exclude-newer = false\nexclude-newer-package = { foo = false }\n[pip]\nexclude-newer = \"7 days\"\n",
+    "proj/pyproject.toml": "[project]\nname = \"x\"\nexclude-newer = false\n[tool.uv]\nexclude-newer = \"0 days\"\nexclude-newer-package = { bar = \"2026-01-01\" }\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 1,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [
+      {
+        "tool": "cargo",
+        "key": "global-min-publish-age",
+        "path": "<HOME>/proj/.cargo/config.toml",
+        "configured": "0 days",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "mise",
+        "key": "minimum_release_age",
+        "path": "<HOME>/proj/mise.toml",
+        "configured": "0d",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "mise",
+        "key": "minimum_release_age_excludes",
+        "path": "<HOME>/proj/mise.toml",
+        "configured": "[\"node\"]",
+        "reason": "exclusion-list"
+      },
+      {
+        "tool": "uv",
+        "key": "exclude-newer",
+        "path": "<HOME>/proj/uv.toml",
+        "configured": "false",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "uv",
+        "key": "exclude-newer-package",
+        "path": "<HOME>/proj/uv.toml",
+        "configured": "{ foo = false }",
+        "reason": "exclusion-list"
+      },
+      {
+        "tool": "uv",
+        "key": "exclude-newer",
+        "path": "<HOME>/proj/pyproject.toml",
+        "configured": "0 days",
+        "reason": "zero-cooldown"
+      },
+      {
+        "tool": "uv",
+        "key": "exclude-newer-package",
+        "path": "<HOME>/proj/pyproject.toml",
+        "configured": "{ bar = \"2026-01-01\" }",
+        "reason": "exclusion-list"
+      }
+    ],
+    "ok": false
+  }
+}

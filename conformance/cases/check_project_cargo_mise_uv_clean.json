@@ -1,0 +1,28 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.cargo/config.toml": "[registry]\nglobal-min-publish-age = \"7 days\"\n",
+    "proj/mise.toml": "[settings]\nminimum_release_age = \"7d\"\n",
+    "proj/uv.toml": "exclude-newer = \"7 days\"\n",
+    "proj/pyproject.toml": "[tool.uv]\nexclude-newer = \"2026-01-01T00:00:00Z\"\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--tool",
+    "cargo,mise,uv",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [],
+    "ok": true
+  }
+}

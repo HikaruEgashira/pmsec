@@ -18,8 +18,15 @@ RULES = [
     {"tool": "yarn", "file": ".yarnrc.yml", "fmt": "yaml", "key": "npmMinimalAgeGate", "reason": "zero-cooldown"},
     {"tool": "yarn", "file": ".yarnrc.yml", "fmt": "yaml", "key": "enableScripts", "reason": "scripts-enabled", "bad": "true"},
     {"tool": "yarn", "file": ".yarnrc.yml", "fmt": "yaml", "key": "npmPreapprovedPackages", "reason": "exclusion-list"},
-    {"tool": "bun", "file": "bunfig.toml", "fmt": "toml", "key": "minimumReleaseAge", "reason": "zero-cooldown"},
-    {"tool": "bun", "file": "bunfig.toml", "fmt": "toml", "key": "minimumReleaseAgeExcludes", "reason": "exclusion-list"},
+    {"tool": "bun", "file": "bunfig.toml", "fmt": "toml", "section": "install", "key": "minimumReleaseAge", "reason": "zero-cooldown"},
+    {"tool": "bun", "file": "bunfig.toml", "fmt": "toml", "section": "install", "key": "minimumReleaseAgeExcludes", "reason": "exclusion-list"},
+    {"tool": "cargo", "file": ".cargo/config.toml", "fmt": "toml", "section": "registry", "key": "global-min-publish-age", "reason": "zero-cooldown"},
+    {"tool": "mise", "file": "mise.toml", "fmt": "toml", "section": "settings", "key": "minimum_release_age", "reason": "zero-cooldown"},
+    {"tool": "mise", "file": "mise.toml", "fmt": "toml", "section": "settings", "key": "minimum_release_age_excludes", "reason": "exclusion-list"},
+    {"tool": "uv", "file": "uv.toml", "fmt": "toml", "section": "", "key": "exclude-newer", "reason": "zero-cooldown"},
+    {"tool": "uv", "file": "uv.toml", "fmt": "toml", "section": "", "key": "exclude-newer-package", "reason": "exclusion-list"},
+    {"tool": "uv", "file": "pyproject.toml", "fmt": "toml", "section": "tool.uv", "key": "exclude-newer", "reason": "zero-cooldown"},
+    {"tool": "uv", "file": "pyproject.toml", "fmt": "toml", "section": "tool.uv", "key": "exclude-newer-package", "reason": "exclusion-list"},
 ]
 
 _LINE = {
@@ -39,8 +46,8 @@ def _clean(v: str, fmt: str) -> str:
     return s
 
 
-def find_key(text: str, fmt: str, key: str) -> str | None:
-    """Last value of `key` or None. yaml: top-level only; toml: [install] only."""
+def find_key(text: str, fmt: str, key: str, want: str = "") -> str | None:
+    """Last value of `key` or None. yaml: top-level only; toml: table `want` only (\"\" = root)."""
     found = None
     section = ""
     if text.startswith("\ufeff"):
@@ -51,7 +58,7 @@ def find_key(text: str, fmt: str, key: str) -> str | None:
             if h:
                 section = h.group(1).strip()
                 continue
-            if section != "install":
+            if section != want:
                 continue
         m = _LINE[fmt].match(line)
         if m and m.group(1) == key:
@@ -63,7 +70,7 @@ def weakens(rule: dict, value: str | None) -> bool:
     if value is None:
         return False
     if rule["reason"] == "zero-cooldown":
-        return re.fullmatch(r"0+(\.0+)?[A-Za-z]*", value) is not None
+        return value.lower() == "false" or re.fullmatch(r"0+(\.0+)?\s*[A-Za-z]*", value) is not None
     if rule["reason"] == "scripts-enabled":
         return value.lower() == rule["bad"]
     return True
@@ -90,7 +97,7 @@ def scan_project(d: str, only: list[str] | None) -> list[dict]:
         text = cache[p]
         if text is None:
             continue
-        value = find_key(text, rule["fmt"], rule["key"])
+        value = find_key(text, rule["fmt"], rule["key"], rule.get("section", ""))
         if weakens(rule, value):
             rows.append({"tool": rule["tool"], "key": rule["key"], "path": p, "configured": value, "reason": rule["reason"]})
     return rows
