@@ -765,5 +765,39 @@ t_composer_preserves_unrelated_keys() {
 
 T "composer preserves unrelated JSON keys" t_composer_preserves_unrelated_keys
 
+# Sources the CLI with PMSEC_SOURCE_ONLY=1 in a subshell so only the helpers
+# load; run_pmsec-style env isolation keeps host vars out.
+mise_helper() {
+  env -i PATH="$PATH" PMSEC_SOURCE_ONLY=1 "$@"
+}
+
+t_mise_layer_paths_posix() {
+  local out
+  out=$(mise_helper HOME=/home/u XDG_CONFIG_HOME=/xdg bash -c '. "$1"; path_mise_dir; echo; path_mise_base_config; echo; path_mise_pmsec_config; echo; path_mise_local_miserc' _ "$PMSEC")
+  [ "$out" = $'/xdg/mise\n/xdg/mise/config.toml\n/xdg/mise/config.pmsec.toml\n/xdg/mise/miserc.local.toml' ] || { LAST_FAIL="got: $out"; return 1; }
+  out=$(mise_helper HOME=/home/u bash -c '. "$1"; path_mise_dir' _ "$PMSEC")
+  [ "$out" = /home/u/.config/mise ] || { LAST_FAIL="got: $out"; return 1; }
+}
+T "mise layer paths (posix)" t_mise_layer_paths_posix
+
+t_mise_layer_paths_win32() {
+  local out
+  out=$(mise_helper HOME=/home/u PMSEC_PLATFORM=win32 LOCALAPPDATA=/la XDG_CONFIG_HOME=/xdg MISE_GLOBAL_CONFIG_FILE=/x.toml bash -c '. "$1"; path_mise_pmsec_config' _ "$PMSEC")
+  [ "$out" = /la/mise/config.pmsec.toml ] || { LAST_FAIL="got: $out"; return 1; }
+  out=$(mise_helper HOME=/home/u PMSEC_PLATFORM=win32 bash -c '. "$1"; path_mise_base_config' _ "$PMSEC")
+  [ "$out" = /home/u/AppData/Local/mise/config.toml ] || { LAST_FAIL="got: $out"; return 1; }
+}
+T "mise layer paths (win32)" t_mise_layer_paths_win32
+
+t_mise_new_mode_gate() {
+  local s='. "$1"; shift; mise_supports_new_mode "$@"'
+  mise_helper bash -c "$s" _ "$PMSEC" 2026 11 0 || { LAST_FAIL="2026.11.0 rejected"; return 1; }
+  mise_helper bash -c "$s" _ "$PMSEC" 2027 1 0 || { LAST_FAIL="2027.1.0 rejected"; return 1; }
+  ! mise_helper bash -c "$s" _ "$PMSEC" 2026 10 9 || { LAST_FAIL="2026.10.9 accepted"; return 1; }
+  ! mise_helper bash -c "$s" _ "$PMSEC" || { LAST_FAIL="undetected accepted"; return 1; }
+  ! mise_helper MISE_GLOBAL_CONFIG_FILE=/x.toml bash -c "$s" _ "$PMSEC" 2026 11 0 || { LAST_FAIL="override accepted"; return 1; }
+}
+T "mise new mode version gate" t_mise_new_mode_gate
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = "0" ]

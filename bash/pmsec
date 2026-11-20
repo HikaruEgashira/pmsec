@@ -103,6 +103,26 @@ path_mise() {
   fi
   printf '%s/mise/config.toml' "${XDG_CONFIG_HOME:-$home/.config}"
 }
+# mise layer files for the config.pmsec.toml mode (#194). All live in mise's
+# default config dir; MISE_GLOBAL_CONFIG_FILE is deliberately ignored because
+# new mode is only used when it is unset (see mise_supports_new_mode).
+path_mise_dir() {
+  local home; home=$(_pmsec_home)
+  if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
+    printf '%s/mise' "${LOCALAPPDATA:-$home/AppData/Local}"; return
+  fi
+  printf '%s/mise' "${XDG_CONFIG_HOME:-$home/.config}"
+}
+path_mise_base_config() { printf '%s/config.toml' "$(path_mise_dir)"; }
+path_mise_pmsec_config() { printf '%s/config.pmsec.toml' "$(path_mise_dir)"; }
+path_mise_local_miserc() { printf '%s/miserc.local.toml' "$(path_mise_dir)"; }
+# mise_supports_new_mode MAJOR MINOR PATCH — mise >= 2026.11.0 and no
+# MISE_GLOBAL_CONFIG_FILE override. No args (version undetected) fails.
+mise_supports_new_mode() {
+  [ $# -ge 3 ] || return 1
+  [ -z "${MISE_GLOBAL_CONFIG_FILE:-}" ] || return 1
+  version_gte "$1" "$2" "$3" 2026 11 0
+}
 path_aube() {
   local home; home=$(_pmsec_home)
   if [ -n "${AUBE_CONFIG_FILE:-}" ]; then printf '%s' "$AUBE_CONFIG_FILE"; return; fi
@@ -2062,4 +2082,5 @@ main() {
   esac
 }
 
-main "$@"
+# PMSEC_SOURCE_ONLY=1 lets tests source the helpers without running the CLI.
+[ "${PMSEC_SOURCE_ONLY:-}" = 1 ] || main "$@"
