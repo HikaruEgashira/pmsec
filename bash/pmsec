@@ -97,6 +97,7 @@ path_bundler() {
 }
 path_mise() {
   local home; home=$(_pmsec_home)
+  if mise_new_mode; then path_mise_pmsec_config; return; fi
   if [ -n "${MISE_GLOBAL_CONFIG_FILE:-}" ]; then printf '%s' "$MISE_GLOBAL_CONFIG_FILE"; return; fi
   if [ "${PMSEC_PLATFORM:-}" = "win32" ]; then
     printf '%s/mise/config.toml' "${LOCALAPPDATA:-$home/AppData/Local}"; return
@@ -122,6 +123,41 @@ mise_supports_new_mode() {
   [ $# -ge 3 ] || return 1
   [ -z "${MISE_GLOBAL_CONFIG_FILE:-}" ] || return 1
   version_gte "$1" "$2" "$3" 2026 11 0
+}
+# New mode (#194): managed keys live in config.pmsec.toml, loaded through
+# `env = ["pmsec"]` in miserc.local.toml, instead of the user's config.toml.
+mise_new_mode() {
+  local v
+  v=$(version_detect mise) || return 1
+  # shellcheck disable=SC2086
+  set -- $v
+  mise_supports_new_mode "$1" "$2" "$3"
+}
+# Add "pmsec" to the top-level `env` of the miserc file, keeping other entries.
+mise_add_env() {
+  local path; path=$(path_mise_local_miserc)
+  local n i line pre val post items=() item out
+  lines_load "$path"
+  n=${#LINES_BUF[@]}
+  for ((i=0; i<n; i++)); do
+    line="${LINES_BUF[i]}"
+    [[ "$line" =~ ^[[:space:]]*\[ ]] && break
+    [[ "$line" =~ ^([[:space:]]*env[[:space:]]*=[[:space:]]*)(\[[^]]*\]|\"[^\"]*\"|\'[^\']*\')(.*)$ ]] || continue
+    pre="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"; post="${BASH_REMATCH[3]}"
+    while [[ "$val" =~ \"([^\"]*)\"|\'([^\']*)\' ]]; do
+      items+=("${BASH_REMATCH[1]}${BASH_REMATCH[2]}")
+      val="${val#*"${BASH_REMATCH[0]}"}"
+    done
+    for item in "${items[@]}"; do [ "$item" = "pmsec" ] && return 0; done
+    items+=(pmsec)
+    out=""
+    for item in "${items[@]}"; do out+="${out:+, }$(json_str "$item")"; done
+    LINES_BUF[i]="${pre}[${out}]${post}"
+    lines_dump | write_atomic "$path"
+    return
+  done
+  lines_set_key env 'env = ["pmsec"]' '=' ''
+  lines_dump | write_atomic "$path"
 }
 path_aube() {
   local home; home=$(_pmsec_home)
@@ -1196,8 +1232,19 @@ tool_unset_composer() {
 tool_read() {
   local tool="$1" key sep section path val days bval
   if [ "$tool" = "composer" ]; then tool_read_composer; return; fi
+  if [ "$tool" = "mise" ] && [ -z "${_MISE_READ_PATH:-}" ] && mise_new_mode; then
+    # Before migration the managed keys still sit in config.toml; report the
+    # strictest cooldown so enable carries it into config.pmsec.toml.
+    local cur old cd od
+    cur=$(_MISE_READ_PATH=$(path_mise_pmsec_config) tool_read mise) || cur=""
+    old=$(_MISE_READ_PATH=$(path_mise_base_config) tool_read mise) || old=""
+    cd="${cur##*|}"; od="${old##*|}"
+    if [ -n "$od" ] && { [ -z "$cd" ] || [ "$od" -gt "$cd" ]; }; then cur="$old"; fi
+    [ -n "$cur" ] || return 1
+    printf '%s' "$cur"; return 0
+  fi
   key=$(tool_key "$tool"); sep=$(tool_sep "$tool"); section=$(tool_section "$tool")
-  path=$(tool_path "$tool")
+  path=${_MISE_READ_PATH:-$(tool_path "$tool")}
   if [ "$tool" = "pnpm" ] && pnpm_uses_yaml; then
     key='minimumReleaseAge'; sep=':'; section=''
     path=$(path_pnpm_config_yaml)
@@ -1291,6 +1338,10 @@ tool_write() {
     _tool_write_one "$(path_pnpm_config_yaml)" 'minimumReleaseAge' \
       "minimumReleaseAge: $((days * 1440))" ':' '' "$tool" 1 || return 1
   fi
+  if [ "$tool" = "mise" ] && mise_new_mode; then
+    mise_add_env || return 1
+    _tool_unset_one "$(path_mise_base_config)" mise 0 >/dev/null || return 1
+  fi
 }
 
 _tool_unset_one() {
@@ -1325,6 +1376,10 @@ tool_unset() {
   [ "$r" = "1" ] && removed=1
   if [ "$tool" = "pnpm" ]; then
     r=$(_tool_unset_one "$(path_pnpm_config_yaml)" "$tool" 1) || return 1
+    [ "$r" = "1" ] && removed=1
+  fi
+  if [ "$tool" = "mise" ] && mise_new_mode; then
+    r=$(_tool_unset_one "$(path_mise_base_config)" "$tool" 0) || return 1
     [ "$r" = "1" ] && removed=1
   fi
   printf '%d' "$removed"
@@ -1374,11 +1429,14 @@ tool_read_extras() {
   else
     path=$(tool_path "$tool")
   fi
+  local mise_base=""
+  if [ "$tool" = "mise" ] && mise_new_mode; then mise_base=$(path_mise_base_config); fi
   lines_load "$path"
   while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
     def=0
-    if cur=$(lines_read_key "$ek" "$es" "$esec"); then
+    if cur=$(lines_read_key "$ek" "$es" "$esec") \
+       || { [ -n "$mise_base" ] && cur=$(lines_load "$mise_base"; lines_read_key "$ek" "$es" "$esec"); }; then
       if [ -n "$esafe" ]; then
         case ",$esafe," in
           *",$cur,"*) ok=1 ;;

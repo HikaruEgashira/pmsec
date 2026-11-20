@@ -122,6 +122,7 @@ function Get-CargoPath {
   return (PathJoin (Get-PmsecHome) '.cargo' 'config.toml')
 }
 function Get-MisePath {
+  if (Test-MiseNewModeActive) { return (Get-MiseLayerPaths).PmsecConfig }
   if ((Get-PmsecPlatform) -eq 'win32') {
     if ($env:MISE_GLOBAL_CONFIG_FILE) { return $env:MISE_GLOBAL_CONFIG_FILE }
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { PathJoin (Get-PmsecHome) 'AppData' 'Local' }
@@ -152,6 +153,35 @@ function Test-MiseNewMode($V) {
   if (-not $V) { return $false }
   if ((Get-PmsecPlatform) -eq 'win32' -and $env:MISE_GLOBAL_CONFIG_FILE) { return $false }
   return [bool](VersionGte $V @(2026, 11, 0))
+}
+# New mode (#194): managed keys live in config.pmsec.toml, loaded through
+# `env = ["pmsec"]` in miserc.local.toml, instead of the user's config.toml.
+# Like pnpm, detection only runs for the host scope unless overridden.
+function Test-MiseNewModeActive {
+  if ((Get-PmsecPlatform) -ne 'win32' -and -not $env:PMSEC_MISE_VERSION) { return $false }
+  return (Test-MiseNewMode (VersionDetect 'mise'))
+}
+# Add "pmsec" to the top-level `env` of the miserc file, keeping other entries.
+function Add-MiseEnv {
+  $path = (Get-MiseLayerPaths).LocalMiserc
+  LinesLoad $path
+  for ($i = 0; $i -lt $script:LinesBuf.Count; $i++) {
+    $line = [string]$script:LinesBuf[$i]
+    if ($line -match '^\s*\[') { break }
+    if ($line -notmatch "^(\s*env\s*=\s*)(\[[^\]]*\]|""[^""]*""|'[^']*')(.*)$") { continue }
+    $pre = $Matches[1]; $val = $Matches[2]; $post = $Matches[3]
+    $items = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($val, "`"([^`"]*)`"|'([^']*)'")) {
+      $items.Add($m.Groups[1].Value + $m.Groups[2].Value)
+    }
+    if ($items -contains 'pmsec') { return }
+    $items.Add('pmsec')
+    $script:LinesBuf[$i] = $pre + '[' + (($items | ForEach-Object { JsonString $_ }) -join ', ') + ']' + $post
+    WriteAtomic $path (LinesDump)
+    return
+  }
+  LinesSetKey 'env' 'env = ["pmsec"]' '=' ''
+  WriteAtomic $path (LinesDump)
 }
 # Bundler's global config. BUNDLE_USER_CONFIG points at the file directly;
 # BUNDLE_USER_HOME points at the home dir (config = <home>/config). Both
@@ -1093,8 +1123,21 @@ function ToolUnsetComposer {
   return @{ Path = $path; Removed = $removed }
 }
 
-function ToolRead([string]$Tool) {
+function ToolRead([string]$Tool, [string]$PathOverride = '') {
   if ($Tool -eq 'composer') { return (ToolReadComposer) }
+  if ($Tool -eq 'mise' -and -not $PathOverride -and (Test-MiseNewModeActive)) {
+    # Before migration the managed keys still sit in config.toml; report the
+    # strictest cooldown so enable carries it into config.pmsec.toml.
+    $layers = Get-MiseLayerPaths
+    $cur = ToolRead 'mise' $layers.PmsecConfig
+    $old = ToolRead 'mise' $layers.BaseConfig
+    $extras = New-Object System.Collections.Generic.List[hashtable]
+    for ($i = 0; $i -lt $cur.Extras.Count; $i++) {
+      if ($null -eq $cur.Extras[$i].Configured) { $extras.Add($old.Extras[$i]) } else { $extras.Add($cur.Extras[$i]) }
+    }
+    $src = if ($null -ne $old.Days -and ($null -eq $cur.Days -or $old.Days -gt $cur.Days)) { $old } else { $cur }
+    return @{ Key = $cur.Key; Path = $cur.Path; Configured = $src.Configured; Days = $src.Days; Extras = $extras }
+  }
   $toolVersion = $null
   # Version detection runs the local binary; only meaningful for the host
   # scope. For a WSL scope we'd have to shell into the distro and that's not
@@ -1109,7 +1152,7 @@ function ToolRead([string]$Tool) {
   $key = if ($useYaml) { 'minimumReleaseAge' } else { ToolKey $Tool }
   $sep = if ($useYaml) { ':' } else { ToolSep $Tool }
   $section = if ($useYaml) { '' } else { ToolSection $Tool }
-  $path = if ($useYaml) { Get-PnpmConfigPath } else { ToolPath $Tool }
+  $path = if ($useYaml) { Get-PnpmConfigPath } elseif ($PathOverride) { $PathOverride } else { ToolPath $Tool }
   LinesLoad $path
   $val = LinesReadKey $key $sep $section
   $days = $null
@@ -1195,6 +1238,10 @@ function ToolWrite([string]$Tool, [int]$Days) {
   if ($Tool -eq 'pnpm') {
     ToolWriteFile (Get-PnpmConfigPath) 'minimumReleaseAge' ('minimumReleaseAge: ' + ($Days * 1440)) ':' '' $Tool $true
   }
+  if ($Tool -eq 'mise' -and (Test-MiseNewModeActive)) {
+    Add-MiseEnv
+    [void](ToolUnsetFile (Get-MiseLayerPaths).BaseConfig $Tool $false)
+  }
   return @{ Path = $path }
 }
 
@@ -1223,6 +1270,9 @@ function ToolUnset([string]$Tool) {
   $removed = ToolUnsetFile $path $Tool $false
   if ($Tool -eq 'pnpm') {
     if (ToolUnsetFile (Get-PnpmConfigPath) $Tool $true) { $removed = $true }
+  }
+  if ($Tool -eq 'mise' -and (Test-MiseNewModeActive)) {
+    if (ToolUnsetFile (Get-MiseLayerPaths).BaseConfig $Tool $false) { $removed = $true }
   }
   return @{ Path = $path; Removed = $removed }
 }

@@ -1,0 +1,146 @@
+{
+  "env": {
+    "PMSEC_MISE_VERSION": "2026.11.0"
+  },
+  "setup": {
+    ".config/mise/config.toml": "[settings]\nminimum_release_age = \"30d\"\n"
+  },
+  "pre": [
+    [
+      "--tool",
+      "mise",
+      "--days",
+      "7"
+    ]
+  ],
+  "args": [
+    "--tool",
+    "mise",
+    "--days",
+    "7",
+    "--check",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "bundleDays": 7,
+    "rows": [
+      {
+        "tool": "mise",
+        "key": "minimum_release_age",
+        "path": "<HOME>/.config/mise/config.pmsec.toml",
+        "configured": "\"30d\"",
+        "days": 30,
+        "extras": [
+          {
+            "key": "paranoid",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "gpg_verify",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "github_attestations",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "slsa",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "locked_verify_provenance",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "ruby.github_attestations",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "python.github_attestations",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "provenance_api_failures_fatal",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "aqua.github_attestations",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "aqua.cosign",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "aqua.minisign",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "aqua.slsa",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "github.github_attestations",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "github.slsa",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "node.gpg_verify",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "swift.gpg_verify",
+            "configured": "true",
+            "expected": "true",
+            "ok": true
+          },
+          {
+            "key": "not_found_system_fallback",
+            "configured": "false",
+            "expected": "false",
+            "ok": true
+          }
+        ],
+        "warn": null
+      }
+    ],
+    "ok": true
+  },
+  "expected_files": {
+    ".config/mise/config.toml": "[settings]\n"
+  }
+}

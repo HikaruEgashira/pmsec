@@ -1,0 +1,47 @@
+{
+  "env": {
+    "PMSEC_MISE_VERSION": "2026.11.0"
+  },
+  "setup": {
+    ".config/mise/miserc.local.toml": "env = [\"pmsec\"]\n"
+  },
+  "pre": [
+    [
+      "--tool",
+      "mise",
+      "--days",
+      "1",
+      "--json"
+    ]
+  ],
+  "args": [
+    "--tool",
+    "mise",
+    "--days",
+    "1",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "enabled": true,
+    "bundleDays": 1,
+    "results": [
+      {
+        "tool": "mise",
+        "path": "<HOME>/.config/mise/config.pmsec.toml",
+        "days": 1,
+        "requested": 1,
+        "kept": true,
+        "forced": false,
+        "ok": true,
+        "warn": null
+      }
+    ],
+    "warnings": [],
+    "ok": true
+  },
+  "expected_files": {
+    ".config/mise/config.pmsec.toml": "[settings]\nnot_found_system_fallback = false\nswift.gpg_verify = true\nnode.gpg_verify = true\ngithub.slsa = true\ngithub.github_attestations = true\naqua.slsa = true\naqua.minisign = true\naqua.cosign = true\naqua.github_attestations = true\nprovenance_api_failures_fatal = true\npython.github_attestations = true\nruby.github_attestations = true\nlocked_verify_provenance = true\nslsa = true\ngithub_attestations = true\ngpg_verify = true\nparanoid = true\nminimum_release_age = \"1d\"\n",
+    ".config/mise/miserc.local.toml": "env = [\"pmsec\"]\n"
+  }
+}
