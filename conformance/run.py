@@ -82,14 +82,24 @@ def normalize(obj, home: Path):
     return obj
 
 
+def case_env(case: dict, home: Path) -> dict[str, str]:
+    """Return the case's env overrides with <HOME> expanded to the case temp dir."""
+    return {k: v.replace("<HOME>", str(home)) for k, v in case.get("env", {}).items()}
+
+
+def case_applies(impl: str, case: dict) -> bool:
+    """A case without `impls` runs on every port."""
+    return impl in case.get("impls", [impl])
+
+
 def run_case(impl: str, case_path: Path) -> tuple[bool, str] | None:
     case = json.loads(case_path.read_text())
-    if impl not in case.get("impls", [impl]):
+    if not case_applies(impl, case):
         return None
     home = Path(tempfile.mkdtemp(prefix="pmsec-conf-"))
     try:
         env = env_for(impl, home)
-        env.update(case.get("env", {}))
+        env.update(case_env(case, home))
         for rel, body in case.get("setup", {}).items():
             target = home / rel
             target.parent.mkdir(parents=True, exist_ok=True)
