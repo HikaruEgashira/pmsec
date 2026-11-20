@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from pmsec import __version__
+from pmsec.project import scan_project
 from pmsec.tools import aube, bun, bundler, cargo, composer, mise, npm, pnpm, uv, yarn
 from pmsec.util.context import Context
 from pmsec.util.paths import current_platform
@@ -24,6 +25,7 @@ examples:
   uvx pmsec --days 7
   uvx pmsec --days 1 --force
   uvx pmsec --check
+  uvx pmsec --check --project
   uvx pmsec --disable --tool npm
 """
 
@@ -55,6 +57,7 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--check", action="store_true", help="verify the bundle is in place (exit 1 if anything missing)")
     mode.add_argument("--disable", action="store_true", help="remove the hardening bundle from selected tools")
     mode.add_argument("--doctor", action="store_true", help="diagnose effective paths/owner/uid (read-only; for unattended-deployment debugging)")
+    p.add_argument("--project", nargs="?", const=".", metavar="DIR", help="with --check: scan DIR (default cwd) project configs for keys weakening the baseline")
     p.add_argument("--tool", help="comma-separated subset of tools (npm,pnpm,yarn,bun,cargo,mise,uv,bundler,aube,composer)")
     p.add_argument("--json", action="store_true", help="emit JSON output")
     p.add_argument("--days", type=_positive_int, default=BUNDLE_DAYS, help=f"cooldown days (default {BUNDLE_DAYS})")
@@ -114,6 +117,21 @@ def _render_human(rows, min_days):
                 ex_value = e["configured"] or "(unset)"
             out.append(f"{ex_status} {r['tool']:<4} {e['key']} = {ex_value}  [{r['path']}]")
     return "\n".join(out) + "\n"
+
+
+def _check_project(args, targets, out, err):
+    rows = scan_project(args.project, [t.NAME for t in targets] if args.tool else None)
+    ok = not rows
+    if args.json:
+        out.write(json.dumps({"scope": "project", "bundleDays": args.days, "rows": rows, "ok": ok}, indent=2) + "\n")
+    elif ok:
+        out.write(f"OK      project: no weakening keys  [{args.project}]\n")
+    else:
+        for r in rows:
+            out.write(f"WEAK    {r['tool'].ljust(4)} {r['key']} = {r['configured']}  ({r['reason']})  [{r['path']}]\n")
+    if not ok:
+        err.write(f"pmsec: {len(rows)} project setting(s) weaken the baseline\n")
+    return 0 if ok else 1
 
 
 def _check(args, targets, ctx: Context, out, err):
@@ -334,9 +352,14 @@ def main(
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
 
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.project is not None and not args.check:
+        parser.error("--project requires --check")
     targets = _select(args.tool)
     ctx = Context(env=env, home=home, platform=platform)
+    if args.project is not None:
+        return _check_project(args, targets, out, err)
     if args.check:
         return _check(args, targets, ctx, out, err)
     if args.disable:

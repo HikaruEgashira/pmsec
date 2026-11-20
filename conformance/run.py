@@ -82,8 +82,10 @@ def normalize(obj, home: Path):
     return obj
 
 
-def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
+def run_case(impl: str, case_path: Path) -> tuple[bool, str] | None:
     case = json.loads(case_path.read_text())
+    if impl not in case.get("impls", [impl]):
+        return None
     home = Path(tempfile.mkdtemp(prefix="pmsec-conf-"))
     try:
         env = env_for(impl, home)
@@ -96,7 +98,7 @@ def run_case(impl: str, case_path: Path) -> tuple[bool, str]:
         for step in case.get("pre", []):
             subprocess.run(build_cmd(impl, step), env=env, cwd=REPO, check=False, capture_output=True)
         proc = subprocess.run(
-            build_cmd(impl, case["args"]),
+            build_cmd(impl, [a.replace("<HOME>", str(home)) for a in case["args"]]),
             env=env, cwd=REPO, capture_output=True, text=True,
         )
         if proc.returncode != case.get("expected_exit", 0):
@@ -135,15 +137,20 @@ def main() -> int:
         if not cases:
             print(f"no case named {args.case}", file=sys.stderr)
             return 2
-    failed = 0
+    failed = skipped = 0
     for case in cases:
-        ok, msg = run_case(args.impl, case)
+        res = run_case(args.impl, case)
+        if res is None:
+            print(f"[{args.impl:10s}] SKIP {case.stem}")
+            skipped += 1
+            continue
+        ok, msg = res
         status = "PASS" if ok else "FAIL"
         print(f"[{args.impl:10s}] {status} {case.stem}")
         if not ok:
             print(msg)
             failed += 1
-    print(f"\n{len(cases) - failed} passed, {failed} failed")
+    print(f"\n{len(cases) - failed - skipped} passed, {failed} failed, {skipped} skipped")
     return 1 if failed else 0
 
 
