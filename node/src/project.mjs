@@ -2,6 +2,7 @@
 // configs for keys that weaken the user-level baseline pmsec installs.
 // Rules are evaluated in table order; the last occurrence of a key wins.
 import { readFileSync } from "node:fs";
+import { readJsonKey } from "./util/jsonconf.mjs";
 
 export const RULES = [
   { tool: "npm", file: ".npmrc", fmt: "ini", key: "min-release-age", reason: "zero-cooldown" },
@@ -24,18 +25,28 @@ export const RULES = [
   { tool: "uv", file: "uv.toml", fmt: "toml", section: "", key: "exclude-newer-package", reason: "exclusion-list" },
   { tool: "uv", file: "pyproject.toml", fmt: "toml", section: "tool.uv", key: "exclude-newer", reason: "zero-cooldown" },
   { tool: "uv", file: "pyproject.toml", fmt: "toml", section: "tool.uv", key: "exclude-newer-package", reason: "exclusion-list" },
+  { tool: "bundler", file: ".bundle/config", fmt: "yaml", key: "BUNDLE_COOLDOWN", reason: "zero-cooldown" },
+  { tool: "composer", file: "composer.json", fmt: "json", key: "config.policy.cooldown.period", reason: "zero-cooldown" },
+  { tool: "composer", file: "composer.json", fmt: "json", key: "config.allow-plugins", reason: "scripts-enabled", bad: "true" },
+  { tool: "composer", file: "composer.json", fmt: "json", key: "config.secure-http", reason: "insecure-transport", bad: "false" },
+  { tool: "composer", file: "composer.json", fmt: "json", key: "config.disable-tls", reason: "insecure-transport", bad: "true" },
 ];
 
 function clean(v, fmt) {
   let s = v.replace(/\r$/, "");
-  if (fmt !== "ini") s = s.replace(/\s+#.*$/, "");
+  if (fmt !== "ini" && fmt !== "json") s = s.replace(/\s+#.*$/, "");
   s = s.trim();
   if (s.length >= 2 && (s[0] === '"' || s[0] === "'") && s[s.length - 1] === s[0]) s = s.slice(1, -1);
   return s;
 }
 
-// Returns the last value of `key` or null. yaml: top-level only; toml: table `want` only ("" = root).
+// Returns the last value of `key` or null. yaml: top-level only; toml: table `want` only ("" = root);
+// json: `key` is a dotted member path.
 export function findKey(text, fmt, key, want = "") {
+  if (fmt === "json") {
+    const raw = readJsonKey(text.replace(/^\uFEFF/, ""), key.split("."));
+    return raw === null ? null : clean(raw, fmt);
+  }
   let found = null;
   let section = "";
   for (const line of text.replace(/^\uFEFF/, "").split("\n")) {
@@ -55,7 +66,7 @@ export function findKey(text, fmt, key, want = "") {
 export function weakens(rule, value) {
   if (value === null) return false;
   if (rule.reason === "zero-cooldown") return value.toLowerCase() === "false" || /^0+(\.0+)?\s*[A-Za-z]*$/.test(value);
-  if (rule.reason === "scripts-enabled") return value.toLowerCase() === rule.bad;
+  if (rule.bad !== undefined) return value.toLowerCase() === rule.bad;
   return true;
 }
 

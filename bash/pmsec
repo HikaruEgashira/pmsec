@@ -1712,12 +1712,27 @@ mise|mise.toml|toml|settings|minimum_release_age_excludes|exclusion-list|
 uv|uv.toml|toml||exclude-newer|zero-cooldown|
 uv|uv.toml|toml||exclude-newer-package|exclusion-list|
 uv|pyproject.toml|toml|tool.uv|exclude-newer|zero-cooldown|
-uv|pyproject.toml|toml|tool.uv|exclude-newer-package|exclusion-list|'
+uv|pyproject.toml|toml|tool.uv|exclude-newer-package|exclusion-list|
+bundler|.bundle/config|yaml||BUNDLE_COOLDOWN|zero-cooldown|
+composer|composer.json|json||config.policy.cooldown.period|zero-cooldown|
+composer|composer.json|json||config.allow-plugins|scripts-enabled|true
+composer|composer.json|json||config.secure-http|insecure-transport|false
+composer|composer.json|json||config.disable-tls|insecure-transport|true'
 
 # project_find_key FILE FMT KEY [SECTION] → prints last value, returns 1 if absent.
-# yaml: top-level only; toml: table SECTION only (empty = root).
+# yaml: top-level only; toml: table SECTION only (empty = root); json: KEY is a dotted member path.
 project_find_key() {
   local file="$1" fmt="$2" key="$3" want="${4-}" line k v section="" found=0 val="" first=1
+  if [ "$fmt" = "json" ]; then
+    local -a parts
+    IFS=. read -r -a parts <<< "$key"
+    lines_load "$file"
+    LINES_BUF[0]="${LINES_BUF[0]#$'\xef\xbb\xbf'}"
+    v=$(_json_read_key "${parts[@]: -1}" "${parts[@]:0:${#parts[@]}-1}") || return 1
+    case "$v" in \"*\") v="${v:1:${#v}-2}" ;; esac
+    printf '%s' "$v"
+    return 0
+  fi
   local re_ini='^[[:space:]]*([^=[:space:]]+)[[:space:]]*=(.*)$'
   local re_yaml='^([A-Za-z0-9_-]+)[[:space:]]*:(.*)$'
   local re_toml='^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=(.*)$'
@@ -1763,10 +1778,10 @@ cmd_check_project() {
       zero-cooldown)
         lower=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
         { [ "$lower" = "false" ] || [[ $val =~ ^0+(\.0+)?[[:space:]]*[A-Za-z]*$ ]]; } && weak=1 ;;
-      scripts-enabled)
+      exclusion-list) weak=1 ;;
+      *)
         lower=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
         [ "$lower" = "$bad" ] && weak=1 ;;
-      *) weak=1 ;;
     esac
     [ "$weak" = "1" ] || continue
     count=$((count+1))

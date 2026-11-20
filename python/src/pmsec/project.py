@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import re
 
+from pmsec.util.jsonconf import read_json_key
+
 RULES = [
     {"tool": "npm", "file": ".npmrc", "fmt": "ini", "key": "min-release-age", "reason": "zero-cooldown"},
     {"tool": "npm", "file": ".npmrc", "fmt": "ini", "key": "ignore-scripts", "reason": "scripts-enabled", "bad": "false"},
@@ -27,6 +29,11 @@ RULES = [
     {"tool": "uv", "file": "uv.toml", "fmt": "toml", "section": "", "key": "exclude-newer-package", "reason": "exclusion-list"},
     {"tool": "uv", "file": "pyproject.toml", "fmt": "toml", "section": "tool.uv", "key": "exclude-newer", "reason": "zero-cooldown"},
     {"tool": "uv", "file": "pyproject.toml", "fmt": "toml", "section": "tool.uv", "key": "exclude-newer-package", "reason": "exclusion-list"},
+    {"tool": "bundler", "file": ".bundle/config", "fmt": "yaml", "key": "BUNDLE_COOLDOWN", "reason": "zero-cooldown"},
+    {"tool": "composer", "file": "composer.json", "fmt": "json", "key": "config.policy.cooldown.period", "reason": "zero-cooldown"},
+    {"tool": "composer", "file": "composer.json", "fmt": "json", "key": "config.allow-plugins", "reason": "scripts-enabled", "bad": "true"},
+    {"tool": "composer", "file": "composer.json", "fmt": "json", "key": "config.secure-http", "reason": "insecure-transport", "bad": "false"},
+    {"tool": "composer", "file": "composer.json", "fmt": "json", "key": "config.disable-tls", "reason": "insecure-transport", "bad": "true"},
 ]
 
 _LINE = {
@@ -38,7 +45,7 @@ _LINE = {
 
 def _clean(v: str, fmt: str) -> str:
     s = v[:-1] if v.endswith("\r") else v
-    if fmt != "ini":
+    if fmt not in ("ini", "json"):
         s = re.sub(r"\s+#.*$", "", s)
     s = s.strip()
     if len(s) >= 2 and s[0] in "\"'" and s[-1] == s[0]:
@@ -47,7 +54,11 @@ def _clean(v: str, fmt: str) -> str:
 
 
 def find_key(text: str, fmt: str, key: str, want: str = "") -> str | None:
-    """Last value of `key` or None. yaml: top-level only; toml: table `want` only (\"\" = root)."""
+    """Last value of `key` or None. yaml: top-level only; toml: table `want` only (\"\" = root);
+    json: `key` is a dotted member path."""
+    if fmt == "json":
+        raw = read_json_key(text.lstrip("\ufeff"), key.split("."))
+        return None if raw is None else _clean(raw, fmt)
     found = None
     section = ""
     if text.startswith("\ufeff"):
@@ -71,7 +82,7 @@ def weakens(rule: dict, value: str | None) -> bool:
         return False
     if rule["reason"] == "zero-cooldown":
         return value.lower() == "false" or re.fullmatch(r"0+(\.0+)?\s*[A-Za-z]*", value) is not None
-    if rule["reason"] == "scripts-enabled":
+    if "bad" in rule:
         return value.lower() == rule["bad"]
     return True
 

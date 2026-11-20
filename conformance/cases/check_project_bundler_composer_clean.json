@@ -1,0 +1,24 @@
+{
+  "impls": [
+    "bash",
+    "node",
+    "python"
+  ],
+  "setup": {
+    "proj/.bundle/config": "---\nBUNDLE_COOLDOWN: \"7\"\n",
+    "proj/composer.json": "{\"require\": {\"php\": \">=8.2\"}, \"config\": {\"allow-plugins\": {\"acme/plugin\": true}, \"secure-http\": true, \"disable-tls\": false, \"policy\": {\"cooldown\": {\"period\": \"7 days\"}}}}\n"
+  },
+  "args": [
+    "--check",
+    "--project",
+    "<HOME>/proj",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "scope": "project",
+    "bundleDays": 1,
+    "rows": [],
+    "ok": true
+  }
+}
