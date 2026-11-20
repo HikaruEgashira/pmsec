@@ -15,8 +15,15 @@ export const RULES = [
   { tool: "yarn", file: ".yarnrc.yml", fmt: "yaml", key: "npmMinimalAgeGate", reason: "zero-cooldown" },
   { tool: "yarn", file: ".yarnrc.yml", fmt: "yaml", key: "enableScripts", reason: "scripts-enabled", bad: "true" },
   { tool: "yarn", file: ".yarnrc.yml", fmt: "yaml", key: "npmPreapprovedPackages", reason: "exclusion-list" },
-  { tool: "bun", file: "bunfig.toml", fmt: "toml", key: "minimumReleaseAge", reason: "zero-cooldown" },
-  { tool: "bun", file: "bunfig.toml", fmt: "toml", key: "minimumReleaseAgeExcludes", reason: "exclusion-list" },
+  { tool: "bun", file: "bunfig.toml", fmt: "toml", section: "install", key: "minimumReleaseAge", reason: "zero-cooldown" },
+  { tool: "bun", file: "bunfig.toml", fmt: "toml", section: "install", key: "minimumReleaseAgeExcludes", reason: "exclusion-list" },
+  { tool: "cargo", file: ".cargo/config.toml", fmt: "toml", section: "registry", key: "global-min-publish-age", reason: "zero-cooldown" },
+  { tool: "mise", file: "mise.toml", fmt: "toml", section: "settings", key: "minimum_release_age", reason: "zero-cooldown" },
+  { tool: "mise", file: "mise.toml", fmt: "toml", section: "settings", key: "minimum_release_age_excludes", reason: "exclusion-list" },
+  { tool: "uv", file: "uv.toml", fmt: "toml", section: "", key: "exclude-newer", reason: "zero-cooldown" },
+  { tool: "uv", file: "uv.toml", fmt: "toml", section: "", key: "exclude-newer-package", reason: "exclusion-list" },
+  { tool: "uv", file: "pyproject.toml", fmt: "toml", section: "tool.uv", key: "exclude-newer", reason: "zero-cooldown" },
+  { tool: "uv", file: "pyproject.toml", fmt: "toml", section: "tool.uv", key: "exclude-newer-package", reason: "exclusion-list" },
 ];
 
 function clean(v, fmt) {
@@ -27,15 +34,15 @@ function clean(v, fmt) {
   return s;
 }
 
-// Returns the last value of `key` or null. yaml: top-level only; toml: [install] only.
-export function findKey(text, fmt, key) {
+// Returns the last value of `key` or null. yaml: top-level only; toml: table `want` only ("" = root).
+export function findKey(text, fmt, key, want = "") {
   let found = null;
   let section = "";
   for (const line of text.replace(/^\uFEFF/, "").split("\n")) {
     if (fmt === "toml") {
       const h = /^\s*\[([^\]]*)\]/.exec(line);
       if (h) { section = h[1].trim(); continue; }
-      if (section !== "install") continue;
+      if (section !== want) continue;
     }
     const m = fmt === "ini" ? /^\s*([^=\s]+?)(?:\[\])?\s*=(.*)$/.exec(line)
       : fmt === "yaml" ? /^([A-Za-z0-9_-]+)\s*:(.*)$/.exec(line)
@@ -47,7 +54,7 @@ export function findKey(text, fmt, key) {
 
 export function weakens(rule, value) {
   if (value === null) return false;
-  if (rule.reason === "zero-cooldown") return /^0+(\.0+)?[A-Za-z]*$/.test(value);
+  if (rule.reason === "zero-cooldown") return value.toLowerCase() === "false" || /^0+(\.0+)?\s*[A-Za-z]*$/.test(value);
   if (rule.reason === "scripts-enabled") return value.toLowerCase() === rule.bad;
   return true;
 }
@@ -70,7 +77,7 @@ export function scanProject(dir, only) {
     }
     const text = cache.get(p);
     if (text === null) continue;
-    const value = findKey(text, rule.fmt, rule.key);
+    const value = findKey(text, rule.fmt, rule.key, rule.section ?? "");
     if (weakens(rule, value)) rows.push({ tool: rule.tool, key: rule.key, path: p, configured: value, reason: rule.reason });
   }
   return rows;

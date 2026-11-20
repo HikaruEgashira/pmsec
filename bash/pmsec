@@ -1692,25 +1692,32 @@ cmd_check() {
 # ---------- --check --project ----------
 # Read-only scan of project-level package-manager configs for keys that
 # weaken the user-level baseline. Rules run in table order; last key wins.
-# tool|file|fmt|key|reason|bad
-PROJECT_RULES='npm|.npmrc|ini|min-release-age|zero-cooldown|
-npm|.npmrc|ini|ignore-scripts|scripts-enabled|false
-npm|.npmrc|ini|strict-allow-scripts|scripts-enabled|false
-npm|.npmrc|ini|dangerously-allow-all-scripts|scripts-enabled|true
-npm|.npmrc|ini|min-release-age-exclude|exclusion-list|
-pnpm|pnpm-workspace.yaml|yaml|minimumReleaseAge|zero-cooldown|
-pnpm|pnpm-workspace.yaml|yaml|dangerouslyAllowAllBuilds|scripts-enabled|true
-pnpm|pnpm-workspace.yaml|yaml|minimumReleaseAgeExclude|exclusion-list|
-yarn|.yarnrc.yml|yaml|npmMinimalAgeGate|zero-cooldown|
-yarn|.yarnrc.yml|yaml|enableScripts|scripts-enabled|true
-yarn|.yarnrc.yml|yaml|npmPreapprovedPackages|exclusion-list|
-bun|bunfig.toml|toml|minimumReleaseAge|zero-cooldown|
-bun|bunfig.toml|toml|minimumReleaseAgeExcludes|exclusion-list|'
+# tool|file|fmt|section|key|reason|bad (section: toml table, empty = root)
+PROJECT_RULES='npm|.npmrc|ini||min-release-age|zero-cooldown|
+npm|.npmrc|ini||ignore-scripts|scripts-enabled|false
+npm|.npmrc|ini||strict-allow-scripts|scripts-enabled|false
+npm|.npmrc|ini||dangerously-allow-all-scripts|scripts-enabled|true
+npm|.npmrc|ini||min-release-age-exclude|exclusion-list|
+pnpm|pnpm-workspace.yaml|yaml||minimumReleaseAge|zero-cooldown|
+pnpm|pnpm-workspace.yaml|yaml||dangerouslyAllowAllBuilds|scripts-enabled|true
+pnpm|pnpm-workspace.yaml|yaml||minimumReleaseAgeExclude|exclusion-list|
+yarn|.yarnrc.yml|yaml||npmMinimalAgeGate|zero-cooldown|
+yarn|.yarnrc.yml|yaml||enableScripts|scripts-enabled|true
+yarn|.yarnrc.yml|yaml||npmPreapprovedPackages|exclusion-list|
+bun|bunfig.toml|toml|install|minimumReleaseAge|zero-cooldown|
+bun|bunfig.toml|toml|install|minimumReleaseAgeExcludes|exclusion-list|
+cargo|.cargo/config.toml|toml|registry|global-min-publish-age|zero-cooldown|
+mise|mise.toml|toml|settings|minimum_release_age|zero-cooldown|
+mise|mise.toml|toml|settings|minimum_release_age_excludes|exclusion-list|
+uv|uv.toml|toml||exclude-newer|zero-cooldown|
+uv|uv.toml|toml||exclude-newer-package|exclusion-list|
+uv|pyproject.toml|toml|tool.uv|exclude-newer|zero-cooldown|
+uv|pyproject.toml|toml|tool.uv|exclude-newer-package|exclusion-list|'
 
-# project_find_key FILE FMT KEY → prints last value, returns 1 if absent.
-# yaml: top-level only; toml: [install] only.
+# project_find_key FILE FMT KEY [SECTION] → prints last value, returns 1 if absent.
+# yaml: top-level only; toml: table SECTION only (empty = root).
 project_find_key() {
-  local file="$1" fmt="$2" key="$3" line k v section="" found=0 val="" first=1
+  local file="$1" fmt="$2" key="$3" want="${4-}" line k v section="" found=0 val="" first=1
   local re_ini='^[[:space:]]*([^=[:space:]]+)[[:space:]]*=(.*)$'
   local re_yaml='^([A-Za-z0-9_-]+)[[:space:]]*:(.*)$'
   local re_toml='^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=(.*)$'
@@ -1719,7 +1726,7 @@ project_find_key() {
     if [ "$first" = "1" ]; then line="${line#$'\xef\xbb\xbf'}"; first=0; fi
     if [ "$fmt" = "toml" ]; then
       if [[ $line =~ $re_head ]]; then section=$(lines_trim "${BASH_REMATCH[1]}"); continue; fi
-      [ "$section" = "install" ] || continue
+      [ "$section" = "$want" ] || continue
     fi
     case "$fmt" in
       ini)  [[ $line =~ $re_ini ]] || continue ;;
@@ -1745,15 +1752,17 @@ project_find_key() {
 
 cmd_check_project() {
   local dir="$OPT_PROJECT" rows_json="" first=1 count=0
-  local tool file fmt key reason bad path val lower weak
-  while IFS='|' read -r tool file fmt key reason bad; do
+  local tool file fmt sect key reason bad path val lower weak
+  while IFS='|' read -r tool file fmt sect key reason bad; do
     case " ${SELECTED[*]} " in *" $tool "*) ;; *) continue ;; esac
     if [ "$dir" = "." ]; then path="$file"; else path="${dir%/}/$file"; [ "$dir" = "/" ] && path="/$file"; fi
     [ -f "$path" ] || continue
-    val=$(project_find_key "$path" "$fmt" "$key") || continue
+    val=$(project_find_key "$path" "$fmt" "$key" "$sect") || continue
     weak=0
     case "$reason" in
-      zero-cooldown) [[ $val =~ ^0+(\.0+)?[A-Za-z]*$ ]] && weak=1 ;;
+      zero-cooldown)
+        lower=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+        { [ "$lower" = "false" ] || [[ $val =~ ^0+(\.0+)?[[:space:]]*[A-Za-z]*$ ]]; } && weak=1 ;;
       scripts-enabled)
         lower=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
         [ "$lower" = "$bad" ] && weak=1 ;;
