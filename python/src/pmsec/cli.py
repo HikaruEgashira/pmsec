@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pmsec import __version__
 from pmsec.project import scan_project
+from pmsec.tools import mise as mise_tool
 from pmsec.tools import aube, bun, bundler, cargo, composer, mise, npm, pnpm, uv, yarn
 from pmsec.util.context import Context
 from pmsec.util.paths import current_platform
@@ -87,9 +88,16 @@ def _preflight_warn(t, ctx: Context) -> str | None:
 def _gather(targets, ctx: Context):
     rows = []
     for t in targets:
-        r = t.read(ctx)
-        rows.append({"tool": t.NAME, "key": t.KEY, "warn": _preflight_warn(t, ctx), **r})
+        r = dict(t.read(ctx))
+        migrate_warn = r.pop("migrate_warn", None)
+        rows.append({"tool": t.NAME, "key": t.KEY, "warn": migrate_warn or _preflight_warn(t, ctx), **r})
     return rows
+
+
+def _layer_fail(r) -> bool:
+    # An unwired selector or unmigrated legacy layer fails check.
+    sel = r.get("selector")
+    return (sel is not None and not sel["wired"]) or r["warn"] == mise_tool.MIGRATE_WARN
 
 
 def _render_human(rows, min_days):
@@ -116,6 +124,10 @@ def _render_human(rows, min_days):
             else:
                 ex_value = e["configured"] or "(unset)"
             out.append(f"{ex_status} {r['tool']:<4} {e['key']} = {ex_value}  [{r['path']}]")
+        sel = r.get("selector")
+        if sel:
+            sel_status = "OK     " if sel["wired"] else "MISSING"
+            out.append(f"{sel_status} {r['tool']:<4} env includes \"pmsec\" = {str(sel['wired']).lower()}  [{sel['path']}]")
     return "\n".join(out) + "\n"
 
 
@@ -138,7 +150,8 @@ def _check(args, targets, ctx: Context, out, err):
     rows = _gather(targets, ctx)
     failing_primary = [r for r in rows if r["days"] is None or r["days"] < args.days]
     failing_extras = [e for r in rows for e in r.get("extras", []) if not e["ok"]]
-    ok = not failing_primary and not failing_extras
+    failing_layers = [r for r in rows if _layer_fail(r)]
+    ok = not failing_primary and not failing_extras and not failing_layers
     if args.json:
         out.write(json.dumps({"bundleDays": args.days, "rows": rows, "ok": ok}, indent=2) + "\n")
     else:
@@ -147,6 +160,8 @@ def _check(args, targets, ctx: Context, out, err):
         err.write(f"pmsec: {len(failing_primary)} tool(s) below {args.days} days — run `pmsec`\n")
     if failing_extras:
         err.write(f"pmsec: {len(failing_extras)} hardening setting(s) not at safe value — run `pmsec`\n")
+    if failing_layers:
+        err.write(f"pmsec: {len(failing_layers)} tool(s) with config layers not wired — run `pmsec`\n")
     return 0 if ok else 1
 
 

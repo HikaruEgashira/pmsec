@@ -133,6 +133,72 @@ mise_new_mode() {
   set -- $v
   mise_supports_new_mode "$1" "$2" "$3"
 }
+# shellcheck disable=SC2016
+MISE_MIGRATE_WARN='config.pmsec.toml holds pmsec settings, but this mise (< 2026.11.0, undetected, or MISE_GLOBAL_CONFIG_FILE set) does not load it. Run `pmsec --tool mise` to migrate them back into config.toml.'
+# Print the entries of the top-level `env` of the miserc file, one per line.
+mise_env_items() {
+  local n i line val
+  lines_load "$(path_mise_local_miserc)"
+  n=${#LINES_BUF[@]}
+  for ((i=0; i<n; i++)); do
+    line="${LINES_BUF[i]}"
+    [[ "$line" =~ ^[[:space:]]*\[ ]] && break
+    [[ "$line" =~ ^[[:space:]]*env[[:space:]]*=[[:space:]]*(\[[^]]*\]|\"[^\"]*\"|\'[^\']*\') ]] || continue
+    val="${BASH_REMATCH[1]}"
+    while [[ "$val" =~ \"([^\"]*)\"|\'([^\']*)\' ]]; do
+      printf '%s\n' "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+      val="${val#*"${BASH_REMATCH[0]}"}"
+    done
+    return 0
+  done
+}
+# True when miserc.local.toml selects the pmsec config env.
+mise_wired() { mise_env_items | grep -qx 'pmsec'; }
+# True when config.pmsec.toml holds any managed key.
+mise_pmsec_has_managed() {
+  local ek ev el es esec esafe
+  _MISE_READ_PATH=$(path_mise_pmsec_config) tool_read mise >/dev/null && return 0
+  lines_load "$(path_mise_pmsec_config)"
+  while IFS='|' read -r ek ev el es esec esafe; do
+    [ -z "$ek" ] && continue
+    lines_read_key "$ek" "$es" "$esec" >/dev/null && return 0
+  done < <(tool_extras mise)
+  return 1
+}
+# Legacy mode with new-mode artifacts left behind (#194): mise does not load
+# them, so check fails closed and enable migrates them back.
+mise_legacy_stale() {
+  ! mise_new_mode || return 1
+  mise_wired || mise_pmsec_has_managed
+}
+# Drop "pmsec" from the top-level `env` of the miserc file; drop the line when empty.
+mise_remove_env() {
+  local path; path=$(path_mise_local_miserc)
+  local n i line pre val post items=() item out found=0
+  lines_load "$path"
+  n=${#LINES_BUF[@]}
+  for ((i=0; i<n; i++)); do
+    line="${LINES_BUF[i]}"
+    [[ "$line" =~ ^[[:space:]]*\[ ]] && break
+    [[ "$line" =~ ^([[:space:]]*env[[:space:]]*=[[:space:]]*)(\[[^]]*\]|\"[^\"]*\"|\'[^\']*\')(.*)$ ]] || continue
+    pre="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"; post="${BASH_REMATCH[3]}"
+    while [[ "$val" =~ \"([^\"]*)\"|\'([^\']*)\' ]]; do
+      item="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+      if [ "$item" = "pmsec" ]; then found=1; else items+=("$item"); fi
+      val="${val#*"${BASH_REMATCH[0]}"}"
+    done
+    [ "$found" = "1" ] || return 0
+    if [ "${#items[@]}" -gt 0 ]; then
+      out=""
+      for item in "${items[@]}"; do out+="${out:+, }$(json_str "$item")"; done
+      LINES_BUF[i]="${pre}[${out}]${post}"
+    else
+      LINES_BUF=("${LINES_BUF[@]:0:i}" "${LINES_BUF[@]:i+1}")
+    fi
+    lines_dump | write_atomic "$path"
+    return
+  done
+}
 # Add "pmsec" to the top-level `env` of the miserc file, keeping other entries.
 mise_add_env() {
   local path; path=$(path_mise_local_miserc)
@@ -1232,12 +1298,18 @@ tool_unset_composer() {
 tool_read() {
   local tool="$1" key sep section path val days bval
   if [ "$tool" = "composer" ]; then tool_read_composer; return; fi
-  if [ "$tool" = "mise" ] && [ -z "${_MISE_READ_PATH:-}" ] && mise_new_mode; then
-    # Before migration the managed keys still sit in config.toml; report the
-    # strictest cooldown so enable carries it into config.pmsec.toml.
+  if [ "$tool" = "mise" ] && [ -z "${_MISE_READ_PATH:-}" ] && { mise_new_mode || mise_legacy_stale; }; then
+    # Before migration the managed keys still sit in the other layer
+    # (config.toml in new mode, config.pmsec.toml in legacy mode); report the
+    # strictest cooldown so enable carries it over.
     local cur old cd od
-    cur=$(_MISE_READ_PATH=$(path_mise_pmsec_config) tool_read mise) || cur=""
-    old=$(_MISE_READ_PATH=$(path_mise_base_config) tool_read mise) || old=""
+    if mise_new_mode; then
+      cur=$(_MISE_READ_PATH=$(path_mise_pmsec_config) tool_read mise) || cur=""
+      old=$(_MISE_READ_PATH=$(path_mise_base_config) tool_read mise) || old=""
+    else
+      cur=$(_MISE_READ_PATH=$(path_mise) tool_read mise) || cur=""
+      old=$(_MISE_READ_PATH=$(path_mise_pmsec_config) tool_read mise) || old=""
+    fi
     cd="${cur##*|}"; od="${old##*|}"
     if [ -n "$od" ] && { [ -z "$cd" ] || [ "$od" -gt "$cd" ]; }; then cur="$old"; fi
     [ -n "$cur" ] || return 1
@@ -1341,6 +1413,10 @@ tool_write() {
   if [ "$tool" = "mise" ] && mise_new_mode; then
     mise_add_env || return 1
     _tool_unset_one "$(path_mise_base_config)" mise 0 >/dev/null || return 1
+  elif [ "$tool" = "mise" ]; then
+    # Reverse migration: drop the new-mode layer mise no longer loads.
+    _tool_unset_one "$(path_mise_pmsec_config)" mise 0 >/dev/null || return 1
+    mise_remove_env || return 1
   fi
 }
 
@@ -1430,7 +1506,10 @@ tool_read_extras() {
     path=$(tool_path "$tool")
   fi
   local mise_base=""
-  if [ "$tool" = "mise" ] && mise_new_mode; then mise_base=$(path_mise_base_config); fi
+  if [ "$tool" = "mise" ]; then
+    if mise_new_mode; then mise_base=$(path_mise_base_config)
+    elif mise_legacy_stale; then mise_base=$(path_mise_pmsec_config); fi
+  fi
   lines_load "$path"
   while IFS='|' read -r ek ev el es esec esafe; do
     [ -z "$ek" ] && continue
@@ -1666,7 +1745,8 @@ pad4() {
 }
 
 cmd_check() {
-  local rows_json="" first=1 failing=0 failing_extras=0 tool path val days warn
+  local rows_json="" first=1 failing=0 failing_extras=0 failing_layers=0 tool path val days warn
+  local sel_path sel_wired
   for tool in "${SELECTED[@]}"; do
     path=$(tool_path "$tool")
     val=""; days=""
@@ -1675,6 +1755,17 @@ cmd_check() {
     fi
     warn=$(tool_preflight "$tool")
     if [ -z "$days" ] || [ "$days" -lt "$OPT_DAYS" ]; then failing=$((failing+1)); fi
+    # mise new mode reports the miserc selector; an unwired selector or an
+    # unmigrated legacy layer fails check.
+    sel_path=""; sel_wired=0
+    if [ "$tool" = "mise" ]; then
+      if mise_new_mode; then
+        sel_path=$(path_mise_local_miserc)
+        if mise_wired; then sel_wired=1; else failing_layers=$((failing_layers+1)); fi
+      elif mise_legacy_stale; then
+        warn="$MISE_MIGRATE_WARN"; failing_layers=$((failing_layers+1))
+      fi
+    fi
 
     # Collect extras for this tool into parallel arrays.
     local row_key; row_key=$(tool_key "$tool")
@@ -1714,7 +1805,9 @@ cmd_check() {
         if [ "${extras_def[ei]}" = "1" ]; then def_json=", \"defaultEnforced\": true"; else def_json=""; fi
         rows_json+="{\"key\": $(json_str "${extras_keys[ei]}"), \"configured\": $ec_json, \"expected\": $(json_str "${extras_exp[ei]}"), \"ok\": $ok_json$def_json}"
       done
-      rows_json+=']}'
+      rows_json+=']'
+      [ -n "$sel_path" ] && rows_json+=", \"selector\": {\"path\": $(json_str "$sel_path"), \"wired\": $(json_bool "$sel_wired")}"
+      rows_json+='}'
     else
       local status display
       if [ -z "$val" ]; then display="(unset)"; else display="$val"; fi
@@ -1734,16 +1827,21 @@ cmd_check() {
         fi
         printf '%s %s %s = %s  [%s]\n' "$ex_status" "$(pad4 "$tool")" "${extras_keys[ei]}" "$ex_display" "$path"
       done
+      if [ -n "$sel_path" ]; then
+        if [ "$sel_wired" = "1" ]; then ex_status="OK     "; ex_display=true; else ex_status="MISSING"; ex_display=false; fi
+        printf '%s %s env includes "pmsec" = %s  [%s]\n' "$ex_status" "$(pad4 "$tool")" "$ex_display" "$sel_path"
+      fi
     fi
   done
   if [ "$OPT_JSON" = "1" ]; then
     local ok="true"
-    { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && ok="false"
+    { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ] || [ "$failing_layers" -gt 0 ]; } && ok="false"
     printf '{\n  "bundleDays": %d,\n  "rows": [\n%s\n  ],\n  "ok": %s\n}\n' "$OPT_DAYS" "$rows_json" "$ok"
   fi
   [ "$failing" -gt 0 ] && printf 'pmsec: %d tool(s) below %d days — run `pmsec`\n' "$failing" "$OPT_DAYS" >&2
   [ "$failing_extras" -gt 0 ] && printf 'pmsec: %d hardening setting(s) not at safe value — run `pmsec`\n' "$failing_extras" >&2
-  { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ]; } && return 1
+  [ "$failing_layers" -gt 0 ] && printf 'pmsec: %d tool(s) with config layers not wired — run `pmsec`\n' "$failing_layers" >&2
+  { [ "$failing" -gt 0 ] || [ "$failing_extras" -gt 0 ] || [ "$failing_layers" -gt 0 ]; } && return 1
   return 0
 }
 

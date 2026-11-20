@@ -105,12 +105,16 @@ function preflightWarn(t, ctx) {
 async function gatherStatus(targets, ctx) {
   return Promise.all(targets.map(async t => {
     const r = await t.read(ctx);
-    return {
+    const row = {
       tool: t.name, key: r.key ?? t.key, path: r.path,
       configured: r.configured, days: r.days,
       extras: r.extras ?? [],
-      warn: preflightWarn(t, ctx)
+      warn: r.migrateWarn ?? preflightWarn(t, ctx)
     };
+    if (r.selector) row.selector = r.selector;
+    // Not serialized: an unwired selector or unmigrated legacy layer fails check.
+    Object.defineProperty(row, "layerFail", { value: Boolean(r.migrateWarn) || r.selector?.wired === false });
+    return row;
   }));
 }
 
@@ -126,6 +130,10 @@ function renderHuman(rows, min) {
       const exValue = e.defaultEnforced ? `(default — runtime enforces ${e.expected})` : (e.configured ?? "(unset)");
       lines.push(`${exStatus} ${r.tool.padEnd(4)} ${e.key} = ${exValue}  [${r.path}]`);
     }
+    if (r.selector) {
+      const selStatus = r.selector.wired ? "OK     " : "MISSING";
+      lines.push(`${selStatus} ${r.tool.padEnd(4)} env includes "pmsec" = ${r.selector.wired}  [${r.selector.path}]`);
+    }
   }
   return lines.join("\n") + "\n";
 }
@@ -134,11 +142,13 @@ async function runCheck(targets, { json, days }, ctx, out, err) {
   const rows = await gatherStatus(targets, ctx);
   const failingPrimary = rows.filter(r => r.days === null || r.days < days);
   const failingExtras = rows.flatMap(r => r.extras.filter(e => !e.ok));
-  const ok = failingPrimary.length === 0 && failingExtras.length === 0;
+  const failingLayers = rows.filter(r => r.layerFail);
+  const ok = failingPrimary.length === 0 && failingExtras.length === 0 && failingLayers.length === 0;
   if (json) out.write(JSON.stringify({ bundleDays: days, rows, ok }, null, 2) + "\n");
   else out.write(renderHuman(rows, days));
   if (failingPrimary.length) err.write(`pmsec: ${failingPrimary.length} tool(s) below ${days} days — run \`pmsec\`\n`);
   if (failingExtras.length) err.write(`pmsec: ${failingExtras.length} hardening setting(s) not at safe value — run \`pmsec\`\n`);
+  if (failingLayers.length) err.write(`pmsec: ${failingLayers.length} tool(s) with config layers not wired — run \`pmsec\`\n`);
   return ok ? 0 : 1;
 }
 
