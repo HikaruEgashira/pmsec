@@ -36,5 +36,21 @@ class ConformanceEnvTest(unittest.TestCase):
                 self.assertEqual(row["path"].replace("<HOME>", home.as_posix()), expected)
 
 
+class CaseFieldsTest(unittest.TestCase):
+    def test_home_is_expanded_in_case_env(self):
+        home = Path("/tmp/pmsec-conformance-home")
+        case = {"env": {"HOME": "<HOME>/not-home", "PMSEC_HOME": "<HOME>", "X": "plain"}}
+        self.assertEqual(
+            run.case_env(case, home),
+            {"HOME": f"{home}/not-home", "PMSEC_HOME": str(home), "X": "plain"},
+        )
+        self.assertEqual(run.case_env({}, home), {})
+
+    def test_impls_restricts_a_case_and_defaults_to_every_port(self):
+        self.assertTrue(run.case_applies("bash", {}))
+        self.assertTrue(run.case_applies("node", {"impls": ["bash", "node"]}))
+        self.assertFalse(run.case_applies("powershell", {"impls": ["bash", "node"]}))
+
+
 if __name__ == "__main__":
     unittest.main()

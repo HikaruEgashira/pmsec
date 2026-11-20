@@ -12,6 +12,7 @@ Case shape:
 
 ```json
 {
+  "impls": ["bash", "node", "python"],
   "env": { "PMSEC_PNPM_VERSION": "11.0.0" },
   "setup": { "<rel-path>": "<file body>" },
   "pre": [["pmsec", "args"]],
@@ -23,10 +24,12 @@ Case shape:
 ```
 
 Optional `impls` restricts a case to the listed ports (others report SKIP).
+A `null` body in `expected_files` asserts the file does not exist.
 `<HOME>` in `args` is replaced with the case temp dir.
 
 Optional `env` entries override the runner defaults for both `pre` and the
-asserted invocation. `<HOME>` in `expected_json` is replaced with the case
+asserted invocation; `<HOME>` in their values is replaced with the case temp
+dir (e.g. `"HOME": "<HOME>/not-home", "PMSEC_HOME": "<HOME>"`). `<HOME>` in `expected_json` is replaced with the case
 temp dir.
 
 ## Run
