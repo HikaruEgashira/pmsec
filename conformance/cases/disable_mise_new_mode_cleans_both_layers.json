@@ -1,0 +1,33 @@
+{
+  "env": {
+    "PMSEC_MISE_VERSION": "2026.11.0"
+  },
+  "setup": {
+    ".config/mise/config.toml": "[settings]\nexperimental = true\nparanoid = true\n",
+    ".config/mise/config.pmsec.toml": "[settings]\nminimum_release_age = \"7d\"\nslsa = true\n",
+    ".config/mise/miserc.local.toml": "env = [\"pmsec\"]\n"
+  },
+  "args": [
+    "--tool",
+    "mise",
+    "--disable",
+    "--json"
+  ],
+  "expected_exit": 0,
+  "expected_json": {
+    "results": [
+      {
+        "tool": "mise",
+        "path": "<HOME>/.config/mise/config.pmsec.toml",
+        "removed": true,
+        "ok": true
+      }
+    ],
+    "ok": true
+  },
+  "expected_files": {
+    ".config/mise/config.toml": "[settings]\nexperimental = true\n",
+    ".config/mise/config.pmsec.toml": "[settings]\n",
+    ".config/mise/miserc.local.toml": "env = [\"pmsec\"]\n"
+  }
+}

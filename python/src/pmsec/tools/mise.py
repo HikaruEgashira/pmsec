@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -7,8 +8,8 @@ from pmsec.util.context import Context
 from pmsec.util.extras import apply_extras, read_extras, remove_extras
 from pmsec.util.io import write_atomic
 from pmsec.util.lines import read_key, remove_key, set_key
-from pmsec.util.paths import mise_config_path
-from pmsec.util.version import build_preflight
+from pmsec.util.paths import mise_config_path, mise_layer_paths, mise_supports_new_mode
+from pmsec.util.version import build_preflight, detect_version
 
 NAME = "mise"
 KEY = "minimum_release_age"
@@ -47,8 +48,46 @@ _DURATION = re.compile(
 )
 
 
+def _new_mode(ctx: Context) -> bool:
+    # New mode (#194): managed keys live in config.pmsec.toml, loaded through
+    # `env = ["pmsec"]` in miserc.local.toml, instead of the user's config.toml.
+    v = detect_version("mise", env=ctx.env, override_key="PMSEC_MISE_VERSION")
+    return mise_supports_new_mode(v, ctx.env)
+
+
+def _layers(ctx: Context) -> dict[str, Path]:
+    return mise_layer_paths(ctx.env, ctx.home, ctx.platform)
+
+
 def path(ctx: Context) -> Path:
+    if _new_mode(ctx):
+        return _layers(ctx)["pmsec_config"]
     return mise_config_path(ctx.env, ctx.home, ctx.platform)
+
+
+_ENV_LINE = re.compile(r"""^(\s*env\s*=\s*)(\[[^\]]*\]|"[^"]*"|'[^']*')(.*)$""")
+
+
+def add_mise_env(text: str) -> str:
+    """Add "pmsec" to the top-level `env` of a miserc file, keeping other entries."""
+    lines = re.split(r"\r?\n", text)
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*\[", line):
+            break
+        m = _ENV_LINE.match(line)
+        if not m:
+            continue
+        items = [a if a or not b else b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', m.group(2))]
+        if "pmsec" in items:
+            return text
+        items.append("pmsec")
+        lines[i] = f"{m.group(1)}[{', '.join(json.dumps(x) for x in items)}]{m.group(3)}"
+        return ("\r\n" if "\r\n" in text else "\n").join(lines)
+    return set_key(text, "env", 'env = ["pmsec"]')
+
+
+def _read_text(p: Path) -> str:
+    return p.read_text("utf-8-sig") if p.exists() else ""
 
 
 def _parse_days(value: str | None) -> int | None:
@@ -68,29 +107,58 @@ def _parse_days(value: str | None) -> int | None:
     return n
 
 
+def _read_layer(raw: str) -> dict:
+    value = read_key(raw, KEY, section=SECTION)
+    return {"configured": value, "days": _parse_days(value), "extras": read_extras(raw, EXTRAS)}
+
+
+def _strip_managed(text: str) -> tuple[str, bool]:
+    after, removed_cooldown = remove_key(text, KEY, section=SECTION)
+    after, removed_extras = remove_extras(after, EXTRAS)
+    return after, removed_cooldown or removed_extras
+
+
 def read(ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8-sig") if p.exists() else ""
-    value = read_key(raw, KEY, section=SECTION)
-    return {"path": str(p), "configured": value, "days": _parse_days(value), "extras": read_extras(raw, EXTRAS)}
+    cur = _read_layer(_read_text(p))
+    if not _new_mode(ctx):
+        return {"path": str(p), **cur}
+    # Before migration the managed keys still sit in config.toml; report the
+    # strictest cooldown so enable carries it into config.pmsec.toml.
+    old = _read_layer(_read_text(_layers(ctx)["base_config"]))
+    use_old = old["days"] is not None and (cur["days"] is None or old["days"] > cur["days"])
+    merged = [o if e["configured"] is None else e for e, o in zip(cur["extras"], old["extras"])]
+    src = old if use_old else cur
+    return {"path": str(p), "configured": src["configured"], "days": src["days"], "extras": merged}
 
 
 def write(days: int, ctx: Context) -> dict:
     p = path(ctx)
-    raw = p.read_text("utf-8-sig") if p.exists() else ""
-    text = apply_extras(set_key(raw, KEY, f'{KEY} = "{days}d"', section=SECTION), EXTRAS, ctx)
+    text = apply_extras(set_key(_read_text(p), KEY, f'{KEY} = "{days}d"', section=SECTION), EXTRAS, ctx)
     write_atomic(p, text, home=ctx.home)
+    if _new_mode(ctx):
+        layers = _layers(ctx)
+        rc = _read_text(layers["local_miserc"])
+        next_rc = add_mise_env(rc)
+        if next_rc != rc:
+            write_atomic(layers["local_miserc"], next_rc, home=ctx.home)
+        base, removed = _strip_managed(_read_text(layers["base_config"]))
+        if removed:
+            write_atomic(layers["base_config"], base, home=ctx.home)
     return {"path": str(p)}
 
 
 def unset(ctx: Context) -> dict:
     p = path(ctx)
-    if not p.exists():
-        return {"path": str(p), "removed": False}
-    before = p.read_text("utf-8-sig")
-    after, removed_cooldown = remove_key(before, KEY, section=SECTION)
-    after, removed_extras = remove_extras(after, EXTRAS)
-    removed = removed_cooldown or removed_extras
-    if removed:
-        write_atomic(p, after, home=ctx.home)
+    targets = [p]
+    if _new_mode(ctx):
+        targets.append(_layers(ctx)["base_config"])
+    removed = False
+    for t in targets:
+        if not t.exists():
+            continue
+        after, r = _strip_managed(t.read_text("utf-8-sig"))
+        if r:
+            write_atomic(t, after, home=ctx.home)
+            removed = True
     return {"path": str(p), "removed": removed}
