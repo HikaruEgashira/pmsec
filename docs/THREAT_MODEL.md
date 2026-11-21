@@ -34,7 +34,7 @@ not security problems. Covered by `conformance/`.
 
 ### B. Root or orchestrator writing into another user's home
 
-This is the real boundary. `PMSEC_HOME` (bash, powershell, python) or an Intune
+This is the real boundary. `PMSEC_HOME` (all four ports) or an Intune
 platform script makes a privileged process write into a directory controlled
 by a less-privileged user. That user can plant symlinks, junctions, and
 pre-existing files at any path pmsec will touch, before or between runs.
@@ -45,10 +45,9 @@ Required guarantees:
    and at the `.bak` path. All four ports refuse both.
 2. Never let a symlinked parent directory redirect `mkdir -p` or the final
    rename outside the home. bash resolves the deepest existing ancestor
-   physically and refuses if it leaves the physical home; python applies the
-   same guard under euid 0. node does not honor `PMSEC_HOME`, so this path
-   does not exist for it (see F4).
-3. Hand ownership back without following links (`chown -h`; python uses `os.chown(follow_symlinks=False)`). bash and python;
+   physically and refuses if it leaves the physical home; node and python
+   apply the same guard under euid 0 (see F4).
+3. Hand ownership back without following links (`chown -h`; node uses `lchown`, python `os.chown(follow_symlinks=False)`). bash, node and python;
    powershell relies on Windows ACL inheritance.
 4. Never escalate privileges on its own. pmsec prints a chown hint on
    `EACCES` and exits non-zero. It does not run `sudo` (see F1).
